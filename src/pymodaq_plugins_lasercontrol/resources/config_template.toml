@@ -1,0 +1,38 @@
+title = 'Configuration of the Laser Control PyMoDAQ extension (one file per machine)'
+
+[machine]
+# Name of this machine. It selects the roles file roles_<name>.toml (e.g. "lab" or "mock").
+# Empty = host name of the computer.
+name = ""
+# Default operator written in the recordings metadata (can be changed in the UI).
+operator = ""
+
+[paths]
+# Empty values = defaults inside the PyMoDAQ local folder: ~/.pymodaq/laser_control/...
+data_folder = ""
+presets_folder = ""        # may point to a shared/git folder so the same presets are used on both machines
+recordings_folder = ""
+# O8: folder shared with computer B. On selected events (shake, ML lost...) a small JSON trigger
+# file is written there so that B can save a few camera images. Empty = disabled.
+event_trigger_folder = ""
+
+[ui]
+refresh_hz = 5                 # UI refresh rate (cahier des charges: <= 5 Hz)
+estop_shortcut = "F12"         # emergency stop keyboard shortcut (Pause/Break is always active too)
+plot_history_s = 600           # length of the live curves (s)
+
+[core]
+tick_hz = 20                   # scheduler rate of the event driven core (GUI thread)
+
+[detectors]
+autostart_grab = false         # start the continuous grab of the detectors used by roles at extension start
+
+[recording]
+autostart = false              # start the recording session when the extension opens
+max_file_mb = 500              # rotation of the HDF5 session files
+max_file_hours = 12
+
+[shaker]
+enabled = true
+ip = "rp-f01dda.local"         # Red Pitaya running the piezo shaker burst (SCPI)
+amplitude_v = 0.1              # max 0.1 V as in the historical code

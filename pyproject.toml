@@ -1,0 +1,73 @@
+[features]  # defines the plugin features contained into this plugin (read by hatch_build.py)
+instruments = true   # LaserSim mock actuator + 0D detector (office simulation, cahier des charges T1.3)
+extensions = true    # the "Laser Control" dashboard extension
+models = false
+h5exporters = false
+scanners = false
+
+[urls]
+package-url = 'https://github.com/your-group/pymodaq_plugins_lasercontrol'  # adapt to your repository
+
+[project]
+name = "pymodaq_plugins_lasercontrol"
+description = 'Laser Control: PyMoDAQ extension to stabilise a mode-locked thin-disk laser (PID, optimiser, safety, recording)'
+dependencies = [
+    "pymodaq>=5.1.0",   # developed against 5.1.10, tested on 5.1.10 and 5.2.11
+    "numpy",
+    "h5py",
+    "toml",
+]
+authors = [
+    {name = "Laser Control contributors"},
+]
+maintainers = [
+    {name = "Laser Control contributors"},
+]
+
+# nottodo: leave everything below as is (PyMoDAQ plugin template conventions)
+
+dynamic = ["version", "urls", "entry-points"]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-qt"]
+analysis = ["pandas"]
+
+[build-system]
+requires = [
+    "hatchling>=1.9.0",
+    "hatch-vcs",
+    "toml",
+    "pymodaq_utils>=0.0.6",
+]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata.hooks.custom]
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.1.0"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/hatch_build.py", "/README.md", "/LICENSE", "/docs", "/tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pymodaq_plugins_lasercontrol"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "pymodaq: integration tests that need PyMoDAQ control modules and a Qt application",
+]
