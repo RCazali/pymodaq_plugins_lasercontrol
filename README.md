@@ -7,9 +7,11 @@ un cœur qui arbitre tout accès au matériel, des engines en logique pure, et u
 
 - **Barre d'état toujours visible** : état global, un bouton par automatisme, fraîcheur des données
   de l'ordi B, intensité par rapport au seuil, ML ON / OFF / Instable, Note, Shake, REC, ARRÊT D'URGENCE.
-- **Onglets** : Vue d'ensemble (stabilisation en un clic, une carte par moteur avec propriétaire et
-  enveloppe), Alignement (jog clavier, historique), XY, PID (plusieurs PID), Optimisation,
-  Scan 1D, Enregistrement, Presets, Configuration.
+- **Onglet Alignement = poste de travail** : jog clavier, historique, et sous les moteurs un bouton par
+  PID ou optimisation choisi (« Bouton dans Alignement ») : un clic démarre, un autre arrête.
+- **Autres onglets** : Vue d'ensemble (stabilisation en un clic, une carte par moteur avec propriétaire
+  et enveloppe), XY, PID (plusieurs PID), Optimisation (plusieurs optimisations nommées), Scan 1D,
+  Enregistrement, Presets, Configuration.
 - **Sécurité** : les invariants S1–S12 sont appliqués par le cœur, pas par l'interface, et chacun a
   son test automatique.
 - **Enregistrement** HDF5 (snapshots périodiques, rafales autour du shake, notes, état ML).
@@ -17,7 +19,7 @@ un cœur qui arbitre tout accès au matériel, des engines en logique pure, et u
   bureau et au labo, seul le fichier de rôles de la machine change.
 - **Simulateur LaserSim** (plugins moteur et détecteur 0D) pour travailler au bureau.
 
-![Vue d'ensemble avec le simulateur : stabilisation active sur deux PID](docs/images/overview.png)
+![Onglet Alignement avec le simulateur : deux PID et une optimisation lancés depuis leurs boutons](docs/images/alignment.png)
 
 ## Compatibilité
 
@@ -36,7 +38,7 @@ cd pymodaq_plugins_lasercontrol
 pip install -e .
 ```
 
-La version vient des tags git (`hatch-vcs`, 0.1.0 sans dépôt git). L'extension apparaît dans le
+La version vient des tags git (`hatch-vcs`, 0.2.0 sans dépôt git). L'extension apparaît dans le
 menu *Extensions* du dashboard sous le nom **Laser Control**. Les plugins `LaserSim` (moteur et
 détecteur 0D) apparaissent dans les listes de plugins.
 
@@ -50,23 +52,31 @@ python -m pymodaq_plugins_lasercontrol.tools.sim_preset
 python -m pymodaq_plugins_lasercontrol.extensions.laser_control laser_sim
 ```
 
-La première commande écrit le preset de dashboard `laser_sim` (une *experiment* en PyMoDAQ 5.2) avec six
-moteurs simulés et le détecteur `SimB`, qui joue l'ordi B. Elle écrit aussi le fichier de rôles du
-simulateur si cette machine n'en a pas encore, avec les mêmes noms de rôles que le modèle du labo
-(`docs/exemples/roles_lab.toml`). La seconde ouvre le dashboard avec ce preset et l'extension. On peut
-aussi ouvrir le dashboard comme d'habitude, charger `laser_sim`, puis *Extensions → Laser Control*.
+La première commande écrit :
 
-Ensuite :
+- le preset de dashboard `laser_sim` (une *experiment* en PyMoDAQ 5.2) : dix moteurs simulés et le
+  détecteur `SimB`, qui joue l'ordi B. S'il existe déjà, `--force` le remplace (nécessaire pour avoir
+  les moteurs des bancs de test) ;
+- les rôles du simulateur, ajoutés au fichier de rôles de la machine sans toucher aux rôles présents,
+  avec les mêmes noms que le modèle du labo (`docs/exemples/roles_lab.toml`) ;
+- le preset Laser Control **« Démo simulateur »**.
 
-1. Barre d'état : **▶ Acquisition** lance l'acquisition continue de `SimB`.
-2. **Configuration → Sécurité** : pour chaque moteur piloté automatiquement, renseigner *Pas max*,
-   *Excursion max* et *Débit max* (obligatoires), et la garde intensité (rôle `Laser_power`).
-3. **PID → Ajouter un PID** : signal `Cam1_x`, moteur `OC_H`, gains (voir `docs/reglage_pid.md`).
-4. **Vue d'ensemble → Activer la stabilisation**.
-5. **Presets → Enregistrer sous…**
+La seconde ouvre le dashboard avec ce preset et l'extension (ou : dashboard habituel, charger
+`laser_sim`, puis *Extensions → Laser Control*). Ensuite : **Presets → Démo simulateur → Charger**,
+puis **▶ Acquisition** dans la barre d'état, et l'onglet **Alignement**.
+
+Le simulateur contient deux bancs de test simples, en plus du laser simulé :
+
+| Banc | Moteurs | Signal | Automatisme de la démo |
+|---|---|---|---|
+| pointé de faisceau | `Steer_H`, `Steer_V` | `Beam_x`, `Beam_y` (µm, 0 = centré) | PID « Faisceau H » et « Faisceau V » (consigne 0, Kp 0.6) |
+| photodiode derrière un trou | `PD_X`, `PD_Y` | `PD_current` (mA, 2 mA au mieux) | « Optim photodiode » (une passe), « Suivi photodiode » (périodique) |
+| laser | `OC_H`, `OC_V`… | `Cam1_x`, `Laser_power`… | « Cam1 X ← OC_H », « Optim puissance OC » |
+
+Les optima dérivent lentement (environ une minute). Déréglez un banc au clavier, puis cliquez son bouton.
 
 Pour simuler des pannes, utilisez les réglages du viewer `SimB` dans le dashboard : bruit, dérive,
-chutes d'intensité, *muted* (ordi B muet) et *frozen* (valeurs figées).
+chutes d'intensité (désactivées par défaut), *muted* (ordi B muet) et *frozen* (valeurs figées).
 
 ## Mise en service au labo (ordi A)
 
@@ -80,9 +90,11 @@ l'ordi A → extension Laser Control.
    rôles les mêmes noms qu'au bureau (modèle : `docs/exemples/roles_lab.toml`), avec l'unité et le sens
    de chaque moteur. Sous « Compteurs de trames », choisir pour l'ordi B son canal compteur de trames (O9).
 3. **Anciens profils** : **Presets → Importer un ancien profil…** accepte les sessions LaserController,
-   les profils PID et optimiseur, et les profils XY. Les moteurs et canaux deviennent des rôles. Les
+   les profils PID et optimiseur (chacun devient une optimisation nommée), et les profils XY. Les moteurs et canaux deviennent des rôles. Les
    limites `max_step`, `max_excursion` et débit ne sont pas inventées : elles restent à renseigner.
-4. **Presets → Vérifier sur cette machine**, essai en CW, puis **Marquer comme validé…**
+4. **PID / Optimisation** : donner à chaque automatisme utile un nom court (« Optim HA »,
+   « Stab. OC_X »…) et cocher **Bouton dans Alignement**.
+5. **Presets → Vérifier sur cette machine**, essai en CW, puis **Marquer comme validé…**
 
 Script de lancement unique : `python -m pymodaq_plugins_lasercontrol.extensions.laser_control <preset>`.
 
@@ -112,10 +124,10 @@ src/pymodaq_plugins_lasercontrol/
 ├── hardware/      ports PyMoDAQ (DAQ_Move / DAQ_Viewer), simulateur, shaker Red Pitaya
 ├── recording/     snapshots, écriture HDF5 dans un thread, rafales, fichiers déclencheurs (O8), lecture
 ├── presets/       schéma versionné, stockage, validation, import des anciens profils
-├── ui/            barre d'état, onglets, journal
+├── ui/            barre d'état, onglets, boutons d'automatismes de l'Alignement (quick_panel), journal
 ├── extensions/    laser_control.py : la classe d'extension PyMoDAQ
 ├── daq_move_plugins/, daq_viewer_plugins/plugins_0D/   plugins LaserSim
-└── tools/         sim_preset.py : preset du simulateur
+└── tools/         sim_preset.py : preset du simulateur, ses rôles et le preset « Démo simulateur »
 ```
 
 Le cœur et les engines ne dépendent ni de Qt ni de PyMoDAQ. Ils sont testés avec une horloge et du
@@ -135,7 +147,7 @@ dans `docs/conception.md`.
 | Lot | État |
 |---|---|
 | L0 | Remplacé par la refonte : chaque correctif est couvert par le nouveau cœur (arrêt d'urgence par `stop_motion`, pause et reprise des PID, NaN au lieu de 0.0, garde intensité, plus de reconnexion des détecteurs, rien de bloquant). |
-| L1 | Fait : structure, rôles, simulateur, 68 tests, version et hash git dans l'UI et dans les enregistrements, journal rotatif. À faire de votre côté : branches et tags (T1.5), NTP (T1.7). Le simulateur est à recaler sur des mesures réelles (T9.1). |
+| L1 | Fait : structure, rôles, simulateur, 71 tests, version et hash git dans l'UI et dans les enregistrements, journal rotatif. À faire de votre côté : branches et tags (T1.5), NTP (T1.7). Le simulateur est à recaler sur des mesures réelles (T9.1). |
 | L2 | Alignement et XY sont dans l'extension, derrière la propriété des moteurs (T2.3). L'inventaire du matériel, le preset unique du labo et le retrait de l'ancien dashboard restent à faire au labo. |
 | L3, L4 | Faits : broker, fraîcheur et heartbeat, propriété (D4 / D5 / O3-A), superviseur S1–S5, machine d'états, bus d'événements, arrêt d'urgence ; PID multiples, moniteur passif, scan 1D, interface optimiseur avec les 4 modes historiques. |
 | L5 | Fait. La lisibilité à distance et sur un petit écran reste à vérifier sur place (T5.9, T8.2). |

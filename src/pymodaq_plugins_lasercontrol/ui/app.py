@@ -130,7 +130,6 @@ class LaserControlApp(QtCore.QObject):
         self.store = PresetStore(self.paths.presets)
         self.session_store = SessionStore(self.paths.session_file)
         self.preset: dict = default_preset('Nouveau preset')
-        self.optimizer: Optional[OptimizerAutomation] = None
         self.recorder = Recorder(self.core, self.paths.recordings, self.preset['recording'], self.metadata,
                                  max_mb=float(config_get(config, 'recording', 'max_file_mb', default=500)),
                                  max_hours=float(config_get(config, 'recording', 'max_file_hours', default=12)))
@@ -212,6 +211,9 @@ class LaserControlApp(QtCore.QObject):
         self.tabs['alignment'] = AlignmentWidget(self.manual, shake_callback=lambda: self.shake('clavier'),
                                                  history_path=self.paths.history_file)
         self.tabs['alignment'].config_changed.connect(self._mark_dirty)
+        from .quick_panel import QuickPanel
+        self.quick_panel = QuickPanel(self)
+        self.tabs['alignment'].set_bottom_panel(self.quick_panel)
         self.tabs['xy'] = XYTab(self)
         self.tabs['pid'] = PIDTab(self)
         self.tabs['optimizer'] = OptimizerTab(self)
@@ -300,8 +302,9 @@ class LaserControlApp(QtCore.QObject):
         if auto_id.startswith('PID:'):
             self.tab_widget.setCurrentWidget(self.tabs['pid'])
             self.tabs['pid'].select(auto_id)
-        elif auto_id == 'OPT':
+        elif auto_id.startswith('OPT:'):
             self.tab_widget.setCurrentWidget(self.tabs['optimizer'])
+            self.tabs['optimizer'].select(auto_id)
         elif auto_id == 'SCAN':
             self.tab_widget.setCurrentWidget(self.tabs['scan'])
         elif auto_id.startswith('XYSCAN:'):
@@ -346,19 +349,79 @@ class LaserControlApp(QtCore.QObject):
         a = self.ensure_pid(cfg)
         return self.core.start(a.id)
 
+    def optimizer(self, opt_id: str) -> Optional[OptimizerAutomation]:
+        a = self.core.get(f'OPT:{opt_id}')
+        return a if isinstance(a, OptimizerAutomation) else None
+
     def start_optimizer(self, cfg: dict, single_shot: bool) -> Tuple[bool, str]:
-        opt = self.optimizer
+        """Start the optimisation ``cfg['id']`` (one pass, periodic, or full if cfg['config'] says so).
+        The automation is rebuilt from the current settings each time it starts (its cost history is kept)."""
+        aid = f"OPT:{cfg['id']}"
+        label = cfg.get('label') or cfg['id']
+        opt = self.core.get(aid)
         if opt is None or opt.state == AutoState.OFF:
-            opt = OptimizerAutomation(cfg['config'], cfg['motors'], cfg['signals'])
-            if self.optimizer is not None:
-                opt.history = self.optimizer.history
-                opt.iteration = self.optimizer.iteration
-                self.core.remove_automation('OPT')
-            self.optimizer = opt
+            new = OptimizerAutomation(cfg['config'], cfg['motors'], cfg['signals'], auto_id=aid, label=label)
+            if opt is not None:
+                new.history = opt.history
+                new.iteration = opt.iteration
+                new.pass_count = opt.pass_count
+                self.core.remove_automation(aid)
+            opt = new
             self.core.add_automation(opt)
         opt.single_shot = single_shot
-        opt.label = 'Optimiseur' if not cfg['config'].get('full_optimization') else 'Optim. complète'
+        opt.label = label + (' (complète)' if cfg['config'].get('full_optimization') else '')
         return self.core.start(opt.id)
+
+    # ================================================================== Alignment buttons
+    def quick_items(self) -> List[dict]:
+        """Automations shown as buttons in the Alignment tab ('Bouton dans Alignement' ticked), in the
+        order of the PID then Optimisation tabs: [{'id', 'kind', 'key', 'label', 'action'}]."""
+        out = []
+        pid_tab = self.tabs.get('pid')
+        if pid_tab is not None:
+            out += pid_tab.quick_items()
+        opt_tab = self.tabs.get('optimizer')
+        if opt_tab is not None:
+            out += opt_tab.quick_items()
+        return out
+
+    def quick_click(self, auto_id: str, action: str = 'toggle') -> Tuple[bool, str]:
+        """One click on an Alignment button, no confirmation: OFF -> start, HELD -> resume, engaged -> stop.
+        ``action`` forces 'start' / 'stop' / 'resume' (context menu). Refusals go to the journal."""
+        a = self.core.get(auto_id)
+        state = a.state if a is not None else AutoState.OFF
+        if action == 'toggle':
+            action = 'resume' if state == AutoState.HELD else ('stop' if state in ENGAGED_STATES else 'start')
+        if action == 'stop':
+            self.core.stop(auto_id, 'arrêt depuis Alignement')
+            return True, ''
+        if action == 'resume':
+            ok, msg = self.core.resume(auto_id)
+            if not ok:
+                self.core.events.publish(EventKind.AUTOMATION_START, auto_id, f'Reprise refusée : {msg}', Level.WARNING)
+            return ok, msg
+        if auto_id.startswith('PID:'):
+            cfg = self.tabs['pid'].config_of(auto_id)
+            if cfg is None:
+                return False, 'PID introuvable'
+            if state in ENGAGED_STATES:
+                self.core.stop(auto_id, 'redémarrage depuis Alignement')
+            return self.start_pid(cfg)
+        if auto_id.startswith('OPT:'):
+            cfg = self.tabs['optimizer'].config_of(auto_id)
+            if cfg is None:
+                return False, 'optimisation introuvable'
+            if not cfg['motors'] or not cfg['signals']:
+                msg = 'cocher au moins un moteur et un signal objectif (onglet Optimisation)'
+                self.core.events.publish(EventKind.AUTOMATION_START, auto_id, f'Démarrage refusé : {msg}',
+                                         Level.WARNING)
+                return False, msg
+            if state in ENGAGED_STATES:
+                self.core.stop(auto_id, 'redémarrage depuis Alignement')
+            how = cfg.get('button_action', 'single')
+            cfg['config']['full_optimization'] = how == 'full'
+            return self.start_optimizer(cfg, single_shot=how != 'periodic')
+        return False, f'automatisme inconnu : {auto_id}'
 
     def stabilization_pids(self) -> List[dict]:
         pid_tab = self.tabs.get('pid')
@@ -552,7 +615,6 @@ class LaserControlApp(QtCore.QObject):
         for a in list(self.core.automations.values()):
             if a.kind in ('pid', 'optimizer'):
                 self.core.remove_automation(a.id)
-        self.optimizer = None
         for cfg in p.get('pids', []):
             self.ensure_pid(cfg)
         self.core.preset_name = p.get('name', '')

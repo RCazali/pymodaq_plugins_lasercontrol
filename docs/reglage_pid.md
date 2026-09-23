@@ -42,14 +42,17 @@ d'être envoyé, et le PID est en pause pendant la question.
 |---|---|---|
 | Période | 0.5 s | plus court que le temps de réponse de la caméra, c'est inutile |
 | Kp | 0.05 – 0.5 (unités moteur / unité signal) | partir de ~ 0.3 × (1 / sensibilité), la sensibilité étant la variation du signal pour un pas de 1 |
-| Ki | 0 au début, puis ~ Kp / 20 s⁻¹ | l'intégrale compense la dérive thermique lente (~ 1 min) |
+| Ki | **0** | le moteur intègre déjà les pas : P seul annule une erreur constante. Un petit Ki (≈ Kp / 50) ne sert qu'à réduire le retard sur une dérive rapide, et après une grosse erreur l'intégrale met longtemps à se vider (écart résiduel) |
 | Kd | 0 | avec un signal bruité à 2 Hz, le D amplifie surtout le bruit |
 | Bande morte | ~ 2 × l'écart-type du bruit du signal | évite de « chasser » le bruit |
 | Pas max / itération | quelques pas du moteur | borne chaque correction |
 | Attente après mvt | 0 à 0.5 s | si la caméra intègre encore l'ancienne position |
 
 Procédure : P seul avec confirmation, puis P sans confirmation. On augmente Kp jusqu'à une légère
-oscillation, et on le divise par deux. On ajoute ensuite Ki jusqu'à suivre la dérive sans osciller.
+oscillation, et on le divise par deux (Kp ≈ 1 / sensibilité fait le chemin en un pas). Si la mesure
+reste en retard sur la dérive, ajouter un Ki faible, et vérifier qu'il n'y a pas d'écart qui persiste
+après un grand déréglage. Au simulateur, les PID « Faisceau H / V » de la démo (Kp 0.6, Ki 0) montrent
+le comportement attendu.
 Dans l'onglet PID, la courbe mesure / consigne et les contributions P, I, D sont affichées en direct.
 
 ## 3. Poids (plusieurs moteurs pour un signal)

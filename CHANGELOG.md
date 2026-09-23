@@ -2,6 +2,30 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : tags git (`hatch-vcs`).
 
+## [0.2.0] — 2026-09-23
+
+L'onglet Alignement devient le poste de travail principal.
+
+### Ajouté
+- **Boutons d'automatismes dans l'onglet Alignement**, sous les moteurs : un par PID ou optimisation
+  marqué « Bouton dans Alignement ». Un clic démarre, un autre arrête, un clic sur un automatisme gelé
+  le reprend, sans confirmation. Clic droit : reprendre, arrêter, ouvrir les réglages. Un refus
+  (limites manquantes, arrêt d'urgence…) s'affiche sous les boutons et dans le journal, sans boîte de
+  dialogue.
+- **Plusieurs optimisations nommées** (onglet Optimisation : ajouter, dupliquer, renommer, supprimer),
+  chacune avec son nom court et l'action de son bouton (une passe, périodique, complète).
+- Simulateur : deux bancs de test, pointé de faisceau (`Steer_H/V` → `Beam_x/y`) et photodiode
+  (`PD_X/Y` → `PD_current`). `tools.sim_preset` écrit aussi le preset Laser Control
+  « Démo simulateur » (PID et optimisations avec bouton, limites de sécurité, axes d'alignement).
+
+### Modifié
+- Presets : schéma 2 (`optimizers`, liste). Un preset du schéma 1 est converti au chargement : son
+  optimiseur devient l'optimisation « Optimiseur ».
+- La barre d'état ne montre plus que les automatismes engagés.
+- `tools.sim_preset` complète le fichier de rôles existant (sans modifier les rôles présents).
+- Simulateur : chutes d'intensité aléatoires désactivées par défaut (réglage du viewer `SimB`).
+- Guide PID : partir de Ki = 0 (le moteur intègre déjà les pas).
+
 ## [0.1.0] — 2026-09-23
 
 Première version : une seule extension remplace LaserController, XY Stage Controller et leurs

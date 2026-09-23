@@ -12,7 +12,7 @@ hardware/pymodaq_ports.py   DAQMovePort / DAQViewerPort : adaptateurs Qt ↔ por
 core/ ─ LaserCore (coordinator.py) ─────────────────────────────────────────────────────────┐
   broker.py      seul accès au matériel : ordres, fin de mouvement, délais, mouvements externes  │
   signals.py     dernière valeur de chaque canal 0D, âge, compteur de trames (O9), NaN = invalide │
-  ownership.py   un propriétaire par moteur (Humain, PID:x, OPT, SCAN…), préemption D4 / D5      │
+  ownership.py   un propriétaire par moteur (Humain, PID:x, OPT:x, SCAN…), préemption D4 / D5    │
   safety.py      S1–S5 : fraîcheur, garde intensité, pas bornés, enveloppe, débit, limites abs   │
   states.py      états par automatisme (OFF, ARMED, ACTIVE, PAUSED, HELD, ERROR) et état global  │
   roles.py       rôles logiques ↔ modules / canaux de la machine (TOML)                          │
@@ -24,6 +24,7 @@ engines/  PIDAutomation, OptimizerAutomation (+ algorithmes enfichables), Scan1D
 recording/ Recorder (snapshots, rafales, tampon avant événement), H5Writer (thread), triggers (O8)
 presets/  schéma versionné, store JSON, validation par machine, import des anciens profils
 ui/       LaserControlApp + onglets ; les widgets ne parlent qu'au cœur et à ManualControl
+          quick_panel.py : boutons d'automatismes sous les moteurs de l'Alignement
 extensions/laser_control.py   classe CustomExt (PyMoDAQ 5.1 et 5.2)
 ```
 
@@ -89,8 +90,11 @@ Délai de mouvement : `test_move_timeout_holds`. Les tests `test_pymodaq_ports.p
   citent que les rôles. La validation d'un preset sur une machine liste les rôles manquants, et seul
   l'automatisme concerné est bloqué.
 - **Presets** (`presets/schema.py`) : JSON avec `schema_version`, nom, description, statut
-  (brouillon / validé, date, auteur, commentaire), conditions, PID, optimiseur, sécurité, alignement,
-  XY, scan, enregistrement, courbes. `migrate()` fait monter les anciennes versions. L'empreinte du contenu
+  (brouillon / validé, date, auteur, commentaire), conditions, PID (`pids`), optimisations
+  (`optimizers`, une liste depuis le schéma 2), sécurité, alignement, XY, scan, enregistrement,
+  courbes. `migrate()` fait monter les anciennes versions (schéma 1 → 2 : l'optimiseur unique
+  devient l'optimisation « Optimiseur »). Chaque PID et optimisation porte `label` (nom court),
+  `show_in_alignment` et, pour une optimisation, `button_action` (`single`, `periodic`, `full`). L'empreinte du contenu
   est notée à la validation : un preset validé dont le contenu a changé repasse en brouillon.
 - **Enregistrement** (`recording/`) : un fichier HDF5 par session (rotation par taille et par durée).
   Chaque snapshot contient **tous** les rôles, tous les moteurs (position lue et commandée), tous les
@@ -98,6 +102,13 @@ Délai de mouvement : `test_move_timeout_holds`. Les tests `test_pymodaq_ports.p
   l'état de sécurité, l'état ML, le preset et son empreinte. Les événements sont dans une table
   séparée. Le tampon circulaire avant événement et les rafales sont rattachés à un `event_id`.
   Lecture : `recording.load_session()`.
+
+**Boutons de l'Alignement** (`ui/quick_panel.py`) : `LaserControlApp.quick_items()` liste les
+automatismes cochés (ordre des onglets PID puis Optimisation), `quick_click(id)` fait l'action d'un
+clic (OFF → `start`, HELD → `resume`, sinon `stop`) avec les réglages actuels de l'onglet. Rien de
+plus : les refus viennent des mêmes contrôles du cœur (`validate`, sécurité, arrêt d'urgence) et sont
+publiés dans le journal. `AlignmentWidget.set_bottom_panel()` place le panneau sous les cartes ; le
+widget d'alignement lui-même ne connaît toujours que `ManualControl`.
 
 ## 5. Ajouter un moteur
 
@@ -113,7 +124,7 @@ Aucun code à écrire :
    **Appliquer et enregistrer**.
 4. **Configuration → Sécurité** : `max_step`, `max_excursion`, `rate_max`, et au besoin `abs_min` /
    `abs_max` et la résolution. Sans elles, aucun automatisme ne peut piloter ce moteur.
-5. Le moteur apparaît dans la Vue d'ensemble, les listes des PID, de l'optimiseur et des scans, et
+5. Le moteur apparaît dans la Vue d'ensemble, les listes des PID, des optimisations et des scans, et
    dans l'enregistrement.
 
 ## 6. Ajouter un détecteur ou une grandeur 0D (O7)
@@ -156,8 +167,9 @@ class MonEngine(Automation):
   réellement envoyés : un moteur encore occupé n'en reçoit pas, et l'engine réessaie au tick suivant.
 - Les hooks `validate`, `on_start` (message d'erreur = refus), `on_stop`, `on_pause`, `on_resume` et
   `on_hold` sont disponibles. `is_done()` signale la fin, et le cœur arrête alors l'automatisme.
-- Le cœur ajoute l'automatisme avec `core.add_automation()`. Il apparaît dans la barre d'état et le
-  journal, et il est enregistré.
+- Le cœur ajoute l'automatisme avec `core.add_automation()`. Il apparaît dans la barre d'état (quand il
+  est engagé) et le journal, et il est enregistré. Pour lui donner un bouton dans l'Alignement, son
+  onglet fournit `quick_items()` et `config_of()` (voir `pid_tab.py`), et `quick_click` sait le démarrer.
 
 ### Ajouter un algorithme d'optimisation (L10)
 

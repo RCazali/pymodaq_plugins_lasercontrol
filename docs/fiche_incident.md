@@ -47,7 +47,8 @@ ne bouge et l'intégrale des PID est gelée.
    réseau fonctionne-t-il ?
 3. Côté ordi A : le voyant doit redevenir vert. S'il reste gris ou rouge, cliquer **▶ Acquisition**, ou
    réinitialiser le DAQ_Viewer LECO dans le dashboard.
-4. Vérifier les centroïdes, puis **Reprendre** (Vue d'ensemble), une fois les valeurs revenues (O10-A).
+4. Vérifier les centroïdes, puis **Reprendre** (Vue d'ensemble, ou un clic sur chaque bouton rouge de
+   l'onglet Alignement), une fois les valeurs revenues (O10-A).
 
 ## 4. Intensité à 0 ou chute (pompe coupée, mode-lock perdu)
 

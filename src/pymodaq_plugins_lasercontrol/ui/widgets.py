@@ -288,3 +288,63 @@ def scroll_wrap(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
     sa.setFrameShape(QtWidgets.QFrame.NoFrame)
     sa.setWidget(widget)
     return sa
+
+
+class FlowLayout(QtWidgets.QLayout):
+    """Left-to-right layout that wraps to the next line (Qt 'flow layout' example)."""
+
+    def __init__(self, parent=None, spacing: int = 6):
+        super().__init__(parent)
+        self._items: List[QtWidgets.QLayoutItem] = []
+        self._spacing = spacing
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, i):
+        return self._items[i] if 0 <= i < len(self._items) else None
+
+    def takeAt(self, i):
+        return self._items.pop(i) if 0 <= i < len(self._items) else None
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QtCore.QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QtCore.QSize()
+        for it in self._items:
+            size = size.expandedTo(it.minimumSize())
+        m = self.contentsMargins()
+        return size + QtCore.QSize(m.left() + m.right(), m.top() + m.bottom())
+
+    def _do_layout(self, rect, test_only: bool) -> int:
+        m = self.contentsMargins()
+        r = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x, y, line_h = r.x(), r.y(), 0
+        for it in self._items:
+            hint = it.sizeHint()
+            next_x = x + hint.width() + self._spacing
+            if next_x - self._spacing > r.right() + 1 and line_h > 0:
+                x = r.x()
+                y = y + line_h + self._spacing
+                next_x = x + hint.width() + self._spacing
+                line_h = 0
+            if not test_only:
+                it.setGeometry(QtCore.QRect(QtCore.QPoint(x, y), hint))
+            x = next_x
+            line_h = max(line_h, hint.height())
+        return y + line_h - rect.y() + m.bottom()

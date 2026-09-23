@@ -22,7 +22,7 @@ from typing import Dict, List, Tuple
 from ..core.roles import RoleMap, sanitize_role_name
 from ..core.safety import ActuatorLimits, SafetyConfig
 from ..engines.pid import PIDSettings
-from .schema import default_pid, default_preset, normalize
+from .schema import default_optimizer, default_pid, default_preset, normalize
 from .store import read_json
 
 
@@ -135,7 +135,16 @@ class LegacyImport:
                 preset['alignment'] = align
             preset['xy_groups'] = groups
         elif isinstance(data, dict) and ('opt_config' in data or 'active_motors' in data):
-            preset['optimizer'] = self.optimizer_from_profile(data)
+            opt = self.optimizer_from_profile(data)
+            taken = {o.get('id') for o in preset.get('optimizers', [])}
+            opt_id, n = sanitize_role_name(Path(path).stem) or 'Optim', 2
+            base = opt_id
+            while opt_id in taken:
+                opt_id, n = f'{base}_{n}', n + 1
+            d = default_optimizer(opt_id)
+            d.update(opt)
+            d['id'] = opt_id
+            preset.setdefault('optimizers', []).append(d)
         elif isinstance(data, dict) and 'pid_profiles' in data:
             preset['pids'] = self.pids_from_profile(data.get('pid_profiles') or {}, safety)
         elif isinstance(data, dict) and data and all(isinstance(v, dict) and ('weights' in v or 'detector' in v)

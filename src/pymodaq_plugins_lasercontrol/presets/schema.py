@@ -22,7 +22,7 @@ from ..core.safety import SafetyConfig
 from ..engines.optimizer.automation import DEFAULT_OPT_CONFIG
 from ..engines.pid import PIDSettings
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 META_KEYS = ('name', 'description', 'status', 'validated_on', 'validated_by', 'validation_notes',
              'validated_hash', 'created', 'modified', 'schema_version')
 STATUSES = ('draft', 'validated')
@@ -47,9 +47,19 @@ def default_recording() -> dict:
     }
 
 
+#: action of an optimisation button of the Alignment tab
+OPT_BUTTON_ACTIONS = ('single', 'periodic', 'full')
+OPT_BUTTON_ACTION_LABELS = {'single': 'une passe', 'periodic': 'périodique', 'full': 'optimisation complète'}
+
+
 def default_pid(pid_id: str = 'PID_1') -> dict:
-    return {'id': pid_id, 'label': '', 'in_stabilization': True, 'signal': '', 'motors': {},
-            'settings': PIDSettings().to_dict()}
+    return {'id': pid_id, 'label': '', 'in_stabilization': True, 'show_in_alignment': False, 'signal': '',
+            'motors': {}, 'settings': PIDSettings().to_dict()}
+
+
+def default_optimizer(opt_id: str = 'Optim_1') -> dict:
+    return {'id': opt_id, 'label': '', 'show_in_alignment': False, 'button_action': 'single',
+            'config': dict(DEFAULT_OPT_CONFIG), 'motors': [], 'signals': []}
 
 
 def default_preset(name: str = 'Nouveau preset') -> dict:
@@ -68,7 +78,7 @@ def default_preset(name: str = 'Nouveau preset') -> dict:
         'conditions': {'regime': 'CW', 'pump_power': '', 'notes': ''},
         'safety': SafetyConfig().to_dict(),
         'pids': [],
-        'optimizer': {'config': dict(DEFAULT_OPT_CONFIG), 'motors': [], 'signals': []},
+        'optimizers': [],
         'scan': {'role': '', 'start': -10.0, 'stop': 10.0, 'step': 1.0, 'dwell': 0.2, 'samples': 1,
                  'channels': [], 'relative': True, 'return_to_start': True, 'check_intensity': False},
         'recording': default_recording(),
@@ -99,11 +109,20 @@ def normalize(preset: dict) -> dict:
         d['motors'] = {str(r): float(w) for r, w in (pid.get('motors', {}) or {}).items()}
         pids.append(d)
     p['pids'] = pids
-    opt = p['optimizer']
-    cfg = dict(DEFAULT_OPT_CONFIG)
-    cfg.update(opt.get('config', {}) or {})
-    cfg['full_optimization'] = False
-    opt['config'] = cfg
+    opts = []
+    for i, opt in enumerate(p.get('optimizers', []) or []):
+        d = default_optimizer(f'Optim_{i + 1}')
+        d.update({k: v for k, v in opt.items() if k != 'config'})
+        cfg = dict(DEFAULT_OPT_CONFIG)
+        cfg.update(opt.get('config', {}) or {})
+        cfg['full_optimization'] = False
+        d['config'] = cfg
+        d['motors'] = [dict(m) for m in d.get('motors') or []]
+        d['signals'] = [dict(x) for x in d.get('signals') or []]
+        if d.get('button_action') not in OPT_BUTTON_ACTIONS:
+            d['button_action'] = 'single'
+        opts.append(d)
+    p['optimizers'] = opts
     if p.get('status') not in STATUSES:
         p['status'] = 'draft'
     return p
@@ -114,7 +133,16 @@ def migrate(p: dict) -> dict:
     version = int(p.get('schema_version', SCHEMA_VERSION) or SCHEMA_VERSION)
     if version > SCHEMA_VERSION:
         raise ValueError(f"preset créé par une version plus récente (schéma {version})")
-    # future: if version < 2: ... ; p['schema_version'] = 2
+    if version < 2:
+        # v1 had a single optimiser ('optimizer'); v2 has named optimisations ('optimizers')
+        old = p.pop('optimizer', None) or {}
+        if 'optimizers' not in p:
+            p['optimizers'] = []
+            if old.get('motors') or old.get('signals'):
+                d = default_optimizer('Optimiseur')
+                d.update({k: old[k] for k in ('config', 'motors', 'signals') if k in old})
+                p['optimizers'].append(d)
+    p.pop('optimizer', None)
     p['schema_version'] = SCHEMA_VERSION
     return p
 
@@ -132,9 +160,9 @@ def roles_used(preset: dict) -> Dict[str, List[str]]:
         acts.update(r for r, w in (pid.get('motors') or {}).items() if w)
         if pid.get('signal'):
             sigs.add(pid['signal'])
-    opt = preset.get('optimizer', {})
-    acts.update(m['role'] for m in opt.get('motors', []) if m.get('role'))
-    sigs.update(s['role'] for s in opt.get('signals', []) if s.get('role'))
+    for opt in preset.get('optimizers', []) or []:
+        acts.update(m['role'] for m in opt.get('motors', []) if m.get('role'))
+        sigs.update(s['role'] for s in opt.get('signals', []) if s.get('role'))
     sc = preset.get('scan', {})
     if sc.get('role'):
         acts.add(sc['role'])
@@ -241,8 +269,11 @@ def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
         probs += guard_problems
         rep.automations[aid] = probs
 
-    opt = preset.get('optimizer', {})
-    if opt.get('motors') or opt.get('signals'):
+    for opt in preset.get('optimizers', []) or []:
+        aid = f"OPT:{opt.get('id')}"
+        if aid in ids:
+            rep.errors.append(f"identifiant d'optimisation en double : {opt.get('id')}")
+        ids.add(aid)
         probs = []
         for m in opt.get('motors', []):
             probs += actuator_problems(m.get('role', '')) + limits_problems(m.get('role', ''))
@@ -253,7 +284,7 @@ def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
         if not [s for s in opt.get('signals', []) if float(s.get('weight', 0) or 0) != 0]:
             probs.append("aucun signal objectif")
         probs += guard_problems
-        rep.automations['OPT'] = probs
+        rep.automations[aid] = probs
 
     dup = roles.duplicate_modules()
     for module, rs in dup.items():

@@ -16,7 +16,7 @@
 | Élément | Signification |
 |---|---|
 | Grand badge à gauche | **Repos** (rien d'engagé) · **En marche** · **Gel sécurité** (un automatisme est gelé) · **ARRÊT D'URGENCE** · **Erreur** |
-| Boutons d'automatismes | un par PID, l'optimiseur, les scans. Couleur = état. Un clic ouvre l'onglet concerné. |
+| Boutons d'automatismes | un par automatisme **engagé** (PID, optimisation, scan). Couleur = état. Un clic ouvre l'onglet concerné. |
 | Voyant détecteur (ex. `LECO_B 0.3 s`) | âge de la dernière trame : vert = frais, orange = en retard, rouge = périmé (les automatismes gèlent). |
 | `I …` | intensité (garde S2) et % de la référence : vert = au-dessus du seuil, rouge = sous le seuil (gel), gris = inconnue. « garde DÉSACTIVÉE » en orange si la garde est coupée dans la configuration. |
 | ML ON / ML OFF / Instable | état du mode-lock, **à cliquer par vous** : il est horodaté et enregistré. |
@@ -34,7 +34,35 @@ apparaissent en rouge.
 ne démarre rien. Si un rôle ou un canal manque sur cette machine, un avertissement l'indique et
 l'automatisme concerné ne pourra pas être activé. **Vérifier sur cette machine** refait le contrôle.
 
-## 4. Activer / désactiver la stabilisation
+## 4. Travailler depuis l'onglet Alignement
+
+![Onglet Alignement : axes, boutons d'automatismes sous les moteurs, historique](images/alignment.png)
+
+Sous les moteurs, un **bouton par automatisme** choisi : dans l'onglet PID ou Optimisation, donner un
+**Nom affiché** court (« Optim HA », « Stab. OC_X »…) et cocher **Bouton dans Alignement**. Pour une
+optimisation, **Action du bouton** : *une passe* (s'arrête seule), *périodique* (une passe toutes les
+N minutes jusqu'à l'arrêt) ou *optimisation complète*.
+
+| Bouton | Un clic | Couleur |
+|---|---|---|
+| Arrêté | démarre, **sans confirmation** | gris |
+| Actif, armement, pause, erreur | arrête (les moteurs restent où ils sont) | vert, bleu, orange, violet |
+| Gelé (sécurité) | reprend, si la cause a disparu | rouge |
+
+- Clic droit : démarrer, reprendre, arrêter, **Ouvrir les réglages**.
+- La ligne du bouton donne l'état : erreur du PID, itération de la passe, prochaine passe, raison du gel.
+  L'infobulle donne le détail (signal, moteurs, pas max).
+- Si le démarrage est refusé (limites de sécurité manquantes, signal absent, arrêt d'urgence…), la
+  raison s'écrit en rouge au-dessus des boutons et dans le journal. Pas de boîte de dialogue.
+- Les réglages restent dans leur onglet ; le bouton démarre avec les réglages affichés, même non
+  enregistrés.
+- Le clavier reste actif : un clic sur un bouton ne le désactive pas. Bouger au clavier un moteur piloté
+  arrête l'automatisme qui le pilote (§ 5).
+- Deux automatismes sur le même moteur : le dernier lancé prend la main, l'autre passe en pause et
+  reprend seul ensuite (par exemple un PID pendant une passe d'optimisation).
+- La hauteur de la zone des boutons se règle avec la poignée entre les moteurs et les boutons.
+
+## 5. Activer / désactiver la stabilisation (Vue d'ensemble)
 
 **Vue d'ensemble** :
 
@@ -43,7 +71,7 @@ l'automatisme concerné ne pourra pas être activé. **Vérifier sur cette machi
   confirme. C'est **tout ou rien** : si un PID ne peut pas démarrer, aucun ne démarre, et la raison
   s'affiche en rouge sous le résumé ;
 - **Désactiver** : arrête les PID de stabilisation. Les moteurs restent où ils sont ;
-- **Reprendre** : relance les PID gelés par une sécurité, une fois la cause disparue (voir 5).
+- **Reprendre** : relance les PID gelés par une sécurité, une fois la cause disparue (voir 6).
 
 Les cartes des moteurs montrent la position, le **propriétaire** (Libre, Humain, nom du PID,
 Optimiseur, Scan) et la jauge d'**enveloppe** (vert, puis orange, puis rouge près du bord).
@@ -53,13 +81,13 @@ l'automatisme qui le possède. Le journal l'indique : « Cam1 X : ACTIVE → OFF
 OC_H (alignement)) ». Un mouvement lancé depuis le module PyMoDAQ lui-même, hors de l'extension, est
 détecté et arrête aussi l'automatisme (« mouvement externe détecté »).
 
-## 5. Que faire si c'est rouge
+## 6. Que faire si c'est rouge
 
 ![Gel de sécurité : l'ordi B ne répond plus, les deux PID sont gelés](images/overview_hold.png)
 
 | Ce que je vois | Cause probable | Quoi faire |
 |---|---|---|
-| **Gel sécurité**, PID en *Gelé (sécurité)*, raison « données périmées » | ordi B muet, LECO coupé, acquisition arrêtée | vérifier l'ordi B et le voyant détecteur (▶ Acquisition si besoin). Quand il est vert : **Reprendre**. |
+| **Gel sécurité**, PID en *Gelé (sécurité)*, raison « données périmées » | ordi B muet, LECO coupé, acquisition arrêtée | vérifier l'ordi B et le voyant détecteur (▶ Acquisition si besoin). Quand il est vert : **Reprendre** (ou un clic sur le bouton rouge dans Alignement). |
 | raison « … compteur de trames figé » | l'ordi B envoie encore, mais son compteur n'avance plus | redémarrer l'acquisition ou l'extension de l'ordi B, puis **Reprendre**. |
 | raison « intensité sous le seuil » ou « intensité inconnue » | laser éteint, mode-lock perdu, pompe réduite, mesure de puissance absente | rétablir le laser ou la mesure. **Reprendre** n'est possible qu'au-dessus du seuil plus l'hystérésis. |
 | raison « enveloppe atteinte sur … » | le PID pousse un moteur au bord de son excursion : dérive trop grande, mauvais signe ou mauvais gain | ne pas reprendre en aveugle. Recentrer à la main si nécessaire, vérifier le signe (voir `reglage_pid.md`), puis **Nouvelle référence d'enveloppe** ou relancer. |
@@ -71,16 +99,14 @@ détecté et arrête aussi l'automatisme (« mouvement externe détecté »).
 
 En cas de doute, **Désactiver** : rien ne bouge. Pour tout incident sérieux, voir `fiche_incident.md`.
 
-## 6. Enregistrer et annoter
+## 7. Enregistrer et annoter
 
 - **● REC** démarre une session HDF5 : un snapshot périodique et des rafales autour des événements
   choisis dans l'onglet Enregistrement.
 - Cliquez **ML ON / ML OFF / Instable** à chaque changement du mode-lock et ajoutez des **Notes** :
   c'est ce qui rend les enregistrements exploitables.
 
-## 7. Raccourcis
-
-![Onglet Alignement : axes (touches 1…9, 0), axe actif, historique cliquable](images/alignment.png)
+## 8. Raccourcis
 
 | Où | Touches |
 |---|---|

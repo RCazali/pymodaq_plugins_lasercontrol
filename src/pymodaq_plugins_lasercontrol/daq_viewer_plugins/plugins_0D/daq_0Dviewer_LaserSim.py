@@ -1,6 +1,7 @@
 """Simulated 0D data of computer B (centroids, power, XUV flux, frame counter), cahier des charges T1.3.
 
 Data names / labels: ``Cam1/{x,y,sum}``, ``Cam2/{x,y,sum}``, ``Laser/power``, ``XUV/flux``,
+``Beam/{x,y}`` and ``PD/current`` (test benches: beam steering, photodiode),
 ``Stats/frame_counter`` (heartbeat, option O9-A). Channel keys seen by Laser Control are
 ``<viewer title>/<name>/<label>``, e.g. ``SimB/Cam1/x``.
 
@@ -23,7 +24,7 @@ class DAQ_0DViewer_LaserSim(DAQ_Viewer_base):
         {'title': 'Noise scale:', 'name': 'noise', 'type': 'float', 'value': 1.0, 'min': 0.0},
         {'title': 'Drift amplitude (µm):', 'name': 'drift_amplitude', 'type': 'float', 'value': 6.0, 'min': 0.0},
         {'title': 'Drift period (s):', 'name': 'drift_period_s', 'type': 'float', 'value': 120.0, 'min': 1.0},
-        {'title': 'Intensity drops / min:', 'name': 'dropout_rate_per_min', 'type': 'float', 'value': 0.3,
+        {'title': 'Intensity drops / min:', 'name': 'dropout_rate_per_min', 'type': 'float', 'value': 0.0,
          'min': 0.0},
         {'title': 'Mute (B silent):', 'name': 'muted', 'type': 'bool', 'value': False},
         {'title': 'Freeze (frozen frames):', 'name': 'frozen', 'type': 'bool', 'value': False},

@@ -162,21 +162,72 @@ def test_05_optimizer_one_pass(ext):
     e, win, model, data = ext
     a = e.app
     opt_tab = a.tabs['optimizer']
-    cfg = {'config': {'interval_min': 10.0, 'dwell': 0.0, 'max_iterations': 2, 'run_mode': 'Joint (all motors at once)',
+    cfg = {'id': 'Jet', 'label': 'Optim jet',
+           'config': {'interval_min': 10.0, 'dwell': 0.0, 'max_iterations': 2, 'run_mode': 'Joint (all motors at once)',
                       'probe_samples': 1, 'noise_samples': 3},
            'motors': [{'role': 'Sim_JET_X', 'max_step': 1.0, 'probe_step': 0.5, 'order': 0}],
            'signals': [{'role': 'XUV_flux', 'mode': 'Maximize', 'weight': 1.0, 'p': 2.0, 'target_value': 0.0,
                         'auto_target': True}]}
-    opt_tab.load_from_preset({'optimizer': cfg})
+    opt_tab.load_from_preset({'optimizers': [cfg]})
     a.tab_widget.setCurrentWidget(opt_tab)
-    ok, msg = a.start_optimizer(opt_tab.get_config(), single_shot=True)
+    ok, msg = a.start_optimizer(opt_tab.config_of('OPT:Jet'), single_shot=True)
     assert ok, msg
+    opt = a.optimizer('Jet')
+    assert opt.label == 'Optim jet'
     t0 = time.time()
-    while time.time() - t0 < 40 and a.optimizer.state.value != 'OFF':
+    while time.time() - t0 < 40 and opt.state.value != 'OFF':
         run(0.2)
-    assert a.optimizer.state.value == 'OFF', (a.optimizer.phase, a.optimizer.reason)
-    assert a.optimizer.pass_count == 1
-    assert len(a.optimizer.history) >= 1
+    assert opt.state.value == 'OFF', (opt.phase, opt.reason)
+    assert opt.pass_count == 1
+    assert len(opt.history) >= 1
+    # a second optimisation lives next to the first one
+    opt_tab.add(dict(cfg, id='Jet2', label='Optim jet bis'))
+    assert [c['id'] for c in opt_tab.configs()] == ['Jet', 'Jet2']
+    opt_tab.tabs.setCurrentWidget(opt_tab.widgets['Jet2'])
+    a.core.remove_automation('OPT:Jet2')
+    opt_tab.widgets.pop('Jet2').deleteLater()
+    opt_tab.tabs.removeTab(opt_tab.tabs.currentIndex())
+
+
+def test_05b_alignment_buttons(ext):
+    """PID / optimisation buttons of the Alignment tab: one click, no confirmation."""
+    e, win, model, data = ext
+    a = e.app
+    a.tabs['pid'].widgets['H'].settings.child('show_in_alignment').setValue(True)
+    a.tabs['optimizer'].widgets['Jet'].settings.child('show_in_alignment').setValue(True)
+    a.tab_widget.setCurrentWidget(a.tabs['alignment'])
+    run(0.6)
+    panel = a.quick_panel
+    assert panel.isVisible()
+    assert list(panel.cards) == ['PID:H', 'OPT:Jet']
+    assert panel.cards['PID:H'].name.text() == 'Centroïde H'
+    panel._on_click('PID:H')
+    pid = a.core.get('PID:H')
+    assert pid.state.value == 'ACTIVE', pid.reason
+    panel._on_click('PID:H')                   # debounced: a double click does not stop it
+    assert pid.state.value == 'ACTIVE'
+    run(0.8)
+    assert 'Actif' in panel.cards['PID:H'].line.text()
+    panel._on_click('PID:H')
+    assert pid.state.value == 'OFF'
+    run(0.6)
+    panel._on_click('OPT:Jet')                 # 'une passe' by default
+    opt = a.optimizer('Jet')
+    assert opt.state.value in ('ACTIVE', 'ARMED'), opt.reason
+    t0 = time.time()
+    while time.time() - t0 < 40 and opt.state.value != 'OFF':
+        run(0.2)
+    assert opt.state.value == 'OFF' and opt.pass_count == 2
+    # refusals are written under the buttons (and in the journal), never in a dialog
+    a.core.emergency_stop('test')
+    run(0.6)
+    panel._on_click('PID:H')
+    assert pid.state.value == 'OFF'
+    assert panel.message.isVisible() and 'URGENCE' in panel.message.text()
+    a.core.reset_estop()
+    a.tabs['optimizer'].widgets['Jet'].settings.child('show_in_alignment').setValue(False)
+    run(0.4)
+    assert list(panel.cards) == ['PID:H']
 
 
 def test_06_scan_tab(ext):

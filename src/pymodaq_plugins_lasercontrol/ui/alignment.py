@@ -442,7 +442,14 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.card_grid.setSpacing(5)
         self.card_grid.setContentsMargins(2, 2, 2, 2)
         self.pos_scroll.setWidget(self.card_container)
-        splitter.addWidget(self.pos_scroll)
+        # left column: motor cards, then (set_bottom_panel) the automation buttons
+        self.left_split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.left_split.setChildrenCollapsible(False)
+        self.left_split.addWidget(self.pos_scroll)
+        self.left_split.splitterMoved.connect(self._on_left_split_moved)
+        self.bottom_panel: Optional[QtWidgets.QWidget] = None
+        self._left_split_user = False
+        splitter.addWidget(self.left_split)
         right = QtWidgets.QWidget()
         right_l = QtWidgets.QVBoxLayout(right)
         right_l.setContentsMargins(0, 0, 0, 0)
@@ -556,6 +563,33 @@ class AlignmentWidget(QtWidgets.QWidget):
         for b in self.findChildren(QtWidgets.QAbstractButton):
             if b is not self.kb_label:
                 b.setFocusPolicy(QtCore.Qt.NoFocus)
+
+    # ================================================================ bottom panel (automation buttons)
+    def set_bottom_panel(self, widget: QtWidgets.QWidget):
+        """Widget shown under the motor cards (the automation buttons of the extension)."""
+        self.bottom_panel = widget
+        self.left_split.addWidget(widget)
+        self.left_split.setStretchFactor(0, 1)
+        self.left_split.setStretchFactor(1, 1)
+        QtCore.QTimer.singleShot(0, self.fit_left_split)
+
+    def _on_left_split_moved(self, *args):
+        self._left_split_user = True
+
+    def fit_left_split(self, force: bool = False):
+        """Motor cards get the height they need (at most 70 %), the automation buttons the rest."""
+        if self.bottom_panel is None or (self._left_split_user and not force):
+            return
+        total = sum(self.left_split.sizes())
+        if total <= 0:
+            return
+        need = self.card_container.sizeHint().height() + 6
+        top = max(min(need, int(total * 0.7)), 80)
+        self.left_split.setSizes([top, max(total - top, 60)])
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        QtCore.QTimer.singleShot(0, self.fit_left_split)
 
     def set_keyboard_active(self, active: bool):
         if active:
@@ -701,6 +735,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             n += 1
         for c in range(cols):
             self.card_grid.setColumnStretch(c, 1)
+        QtCore.QTimer.singleShot(0, self.fit_left_split)
         self.card_grid.setRowStretch((n + cols - 1) // cols, 1)
 
     def _build_detail(self):
@@ -1369,6 +1404,8 @@ class AlignmentWidget(QtWidgets.QWidget):
         for act in list(self._busy):
             if not self.manual.is_busy(act) and act not in self._stepping:
                 self._set_busy(act, False)
+        if self.bottom_panel is not None and self.bottom_panel.isVisible() and hasattr(self.bottom_panel, 'refresh'):
+            self.bottom_panel.refresh()
 
     def shutdown(self):
         self.release_all_jogs()

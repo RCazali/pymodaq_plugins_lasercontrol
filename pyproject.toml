@@ -58,7 +58,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 source = "vcs"
-fallback-version = "0.1.0"
+fallback-version = "0.2.0"
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/hatch_build.py", "/README.md", "/LICENSE", "/docs", "/tests"]

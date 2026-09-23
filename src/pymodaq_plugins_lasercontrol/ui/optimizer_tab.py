@@ -1,18 +1,22 @@
-"""Drift optimiser tab: historical settings and modes (behind the pluggable interface T4.5),
-periodic passes, 'Optimize now', 'Full optimization', passive live monitor (T4.3) and cost plot.
+"""Optimisation tab: several named optimisations (e.g. « Optim HA », « Optim OC »), each with the
+historical settings and modes (behind the pluggable interface T4.5), periodic passes, 'Optimize now',
+'Full optimization', passive live monitor (T4.3) and cost plot. Each one can have a button in the
+Alignment tab ('Bouton dans Alignement').
 """
 from __future__ import annotations
 
 import math
 import time
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets
 from pymodaq_gui.parameter import Parameter, ParameterTree
 
 from ..core.states import AutoState, ENGAGED_STATES
+from ..core.roles import sanitize_role_name
 from ..engines.optimizer import DEFAULT_OPT_CONFIG, RUN_MODES
+from ..presets.schema import OPT_BUTTON_ACTION_LABELS, default_optimizer
 from .widgets import StateBadge, ask_yes_no, fit_table_height, fmt, info, reset_rows, styled_button, warn
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -24,6 +28,15 @@ MONITOR_COLORS = ['#00c2ff', '#ff9100', '#7cff00', '#ff4dd2', '#ffd23f', '#a276f
 def opt_params() -> list:
     d = DEFAULT_OPT_CONFIG
     return [
+        {'title': 'Nom affiché :', 'name': 'label', 'type': 'str', 'value': '',
+         'tip': 'Nom court, aussi utilisé pour le bouton de l’onglet Alignement (ex. Optim HA)'},
+        {'title': 'Bouton dans Alignement :', 'name': 'show_in_alignment', 'type': 'bool', 'value': False,
+         'tip': 'Affiche un bouton sous les moteurs de l’onglet Alignement : un clic lance, un autre arrête '
+                '(sans confirmation)'},
+        {'title': 'Action du bouton :', 'name': 'button_action', 'type': 'list',
+         'limits': {v: k for k, v in OPT_BUTTON_ACTION_LABELS.items()}, 'value': 'single',
+         'tip': 'une passe : s’arrête seule à la fin · périodique : une passe toutes les N min jusqu’à l’arrêt · '
+                'complète : recherche agressive en une passe'},
         {'title': 'Intervalle entre passes (min) :', 'name': 'interval_min', 'type': 'float', 'value': d['interval_min'],
          'min': 0.05},
         {'title': 'Temps d’attente après mouvement (s) :', 'name': 'dwell', 'type': 'float', 'value': d['dwell'],
@@ -79,10 +92,13 @@ MOTOR_COLS = ['Moteur (rôle)', 'Pas max', 'Pas de sonde', 'Ordre']
 SIGNAL_COLS = ['Actif', 'Signal (rôle)', 'Mode', 'Poids', 'Exposant p', 'Cible', 'Auto']
 
 
-class OptimizerTab(QtWidgets.QWidget):
-    def __init__(self, app: 'LaserControlApp', parent=None):
+class SingleOptimizerWidget(QtWidgets.QWidget):
+    """One named optimisation (automation ``OPT:<id>``)."""
+
+    def __init__(self, app: 'LaserControlApp', cfg: dict, parent=None):
         super().__init__(parent)
         self.app = app
+        self.opt_id = cfg['id']
         self._loading = False
         self._monitor_curves: Dict[str, pg.PlotDataItem] = {}
         main = QtWidgets.QHBoxLayout(self)
@@ -137,7 +153,7 @@ class OptimizerTab(QtWidgets.QWidget):
         btns.addWidget(self.btn_full, 2, 0, 1, 2)
         left.addLayout(btns)
         self.btn_start.clicked.connect(self._on_start)
-        self.btn_stop.clicked.connect(lambda: self.app.core.stop('OPT', 'arrêt manuel'))
+        self.btn_stop.clicked.connect(lambda: self.app.core.stop(self.auto_id, 'arrêt manuel'))
         self.btn_now.clicked.connect(self._on_now)
         self.btn_full.clicked.connect(self._on_full)
         self.btn_resume.clicked.connect(self._on_resume)
@@ -183,6 +199,18 @@ class OptimizerTab(QtWidgets.QWidget):
         right.addWidget(cost, 2)
         main.addLayout(right, 1)
         self.set_hardware()
+        self.load_config(cfg)
+
+    @property
+    def auto_id(self) -> str:
+        return f'OPT:{self.opt_id}'
+
+    @property
+    def automation(self):
+        return self.app.optimizer(self.opt_id)
+
+    def label(self) -> str:
+        return self.settings.child('label').value() or self.opt_id
 
     # ------------------------------------------------------------------ tables
     def set_hardware(self, cfg: dict = None):
@@ -254,6 +282,7 @@ class OptimizerTab(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------ config
     def get_config(self) -> dict:
+        """{'id', 'label', 'show_in_alignment', 'button_action', 'config', 'motors', 'signals'}"""
         cfg = {}
         for key, path in FLAT_KEYS.items():
             try:
@@ -278,12 +307,21 @@ class OptimizerTab(QtWidgets.QWidget):
                                 'p': float(self.table_signals.cellWidget(r, 4).value()),
                                 'target_value': float(self.table_signals.cellWidget(r, 5).value()),
                                 'auto_target': bool(self.table_signals.cellWidget(r, 6).isChecked())})
-        return {'config': cfg, 'motors': motors, 'signals': signals}
+        cfg['full_optimization'] = False
+        return {'id': self.opt_id, 'label': self.settings.child('label').value(),
+                'show_in_alignment': bool(self.settings.child('show_in_alignment').value()),
+                'button_action': self.settings.child('button_action').value(),
+                'config': cfg, 'motors': motors, 'signals': signals}
 
-    def load_from_preset(self, preset: dict):
-        opt = preset.get('optimizer', {})
+    def load_config(self, opt: dict):
         self._loading = True
         try:
+            for key in ('label', 'show_in_alignment', 'button_action'):
+                if opt.get(key) is not None:
+                    try:
+                        self.settings.child(key).setValue(opt[key])
+                    except Exception:
+                        pass
             for key, path in FLAT_KEYS.items():
                 if key in opt.get('config', {}):
                     try:
@@ -294,19 +332,16 @@ class OptimizerTab(QtWidgets.QWidget):
             self._loading = False
         self.set_hardware({'motors': opt.get('motors', []), 'signals': opt.get('signals', [])})
 
-    def write_to_preset(self, preset: dict):
-        cfg = self.get_config()
-        cfg['config']['full_optimization'] = False
-        preset['optimizer'] = cfg
-
     def _on_changed(self, *args):
         if self._loading:
             return
         self.app.preset_dirty = True
-        opt = self.app.optimizer
+        opt = self.automation
         if opt is not None and opt.state in ENGAGED_STATES:
             cfg = self.get_config()
+            full = opt.config.get('full_optimization', False)
             opt.configure(config=cfg['config'], signals=cfg['signals'])   # motors: only when stopped
+            opt.config['full_optimization'] = full
 
     # ------------------------------------------------------------------ actions
     def _check(self, cfg) -> bool:
@@ -323,10 +358,10 @@ class OptimizerTab(QtWidgets.QWidget):
         if self._check(cfg):
             ok, msg = self.app.start_optimizer(cfg, single_shot=False)
             if not ok:
-                warn(self, 'Optimiseur', 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
+                warn(self, self.label(), 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
 
     def _on_now(self):
-        opt = self.app.optimizer
+        opt = self.automation
         if opt is not None and opt.state == AutoState.ACTIVE and not opt.single_shot:
             if not opt.trigger_now(self.app.core.clock.now()):
                 info(self, 'Optimiseur', 'Une passe est déjà en cours.')
@@ -338,10 +373,10 @@ class OptimizerTab(QtWidgets.QWidget):
         if self._check(cfg):
             ok, msg = self.app.start_optimizer(cfg, single_shot=True)
             if not ok:
-                warn(self, 'Optimiseur', 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
+                warn(self, self.label(), 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
 
     def _on_full(self):
-        opt = self.app.optimizer
+        opt = self.automation
         if opt is not None and opt.state in ENGAGED_STATES:
             warn(self, 'Occupé', 'Arrêter d’abord l’optimiseur (sinon les deux se disputeraient les moteurs).')
             return
@@ -358,7 +393,7 @@ class OptimizerTab(QtWidgets.QWidget):
             warn(self, 'Optimiseur', 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
 
     def _on_resume(self):
-        ok, msg = self.app.core.resume('OPT')
+        ok, msg = self.app.core.resume(self.auto_id)
         if not ok:
             warn(self, 'Optimiseur', 'Reprise refusée :\n\n' + msg.replace(' ; ', '\n'))
 
@@ -384,9 +419,9 @@ class OptimizerTab(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------ refresh
     def refresh(self):
-        opt = self.app.optimizer
+        opt = self.automation
         state = opt.state if opt is not None else AutoState.OFF
-        self.state.set_state(state, opt.reason if opt else '', prefix='Optimiseur : ')
+        self.state.set_state(state, opt.reason if opt else '', prefix=f'{self.label()} : ')
         engaged = state in ENGAGED_STATES
         self.btn_start.setEnabled(not engaged and not self.app.core.estop)
         self.btn_full.setEnabled(not engaged and not self.app.core.estop)
@@ -429,3 +464,160 @@ class OptimizerTab(QtWidgets.QWidget):
                 continue
             t, v = h.arrays(since=tnow - 600)
             curve.setData(t - tnow, v, connect='finite')
+
+
+class OptimizerTab(QtWidgets.QWidget):
+    """Several named optimisations, one sub-tab each (same handling as the PID tab)."""
+
+    def __init__(self, app: 'LaserControlApp', parent=None):
+        super().__init__(parent)
+        self.app = app
+        self.widgets: Dict[str, SingleOptimizerWidget] = {}
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(3, 3, 3, 3)
+        bar = QtWidgets.QHBoxLayout()
+        self.btn_add = styled_button('➕ Ajouter une optimisation', None)
+        self.btn_dup = styled_button('⧉ Dupliquer', None, 'Nouvelle optimisation avec les mêmes réglages')
+        self.btn_rename = styled_button('✎ Renommer', None)
+        self.btn_remove = styled_button('❌ Supprimer', None)
+        self.btn_add.clicked.connect(self._on_add)
+        self.btn_dup.clicked.connect(self._on_duplicate)
+        self.btn_rename.clicked.connect(self._on_rename)
+        self.btn_remove.clicked.connect(self._on_remove)
+        for b in (self.btn_add, self.btn_dup, self.btn_rename, self.btn_remove):
+            bar.addWidget(b)
+        bar.addStretch()
+        bar.addWidget(QtWidgets.QLabel('<i>Les réglages sont enregistrés dans le preset (onglet Presets).</i>'))
+        lay.addLayout(bar)
+        self.tabs = QtWidgets.QTabWidget()
+        lay.addWidget(self.tabs)
+        self.empty = QtWidgets.QLabel('Aucune optimisation dans ce preset : « ➕ Ajouter une optimisation ».')
+        self.empty.setAlignment(QtCore.Qt.AlignCenter)
+        self.empty.setStyleSheet('color: gray; font-style: italic;')
+        lay.addWidget(self.empty)
+        self._update_empty()
+
+    def _update_empty(self):
+        self.empty.setVisible(not self.widgets)
+        self.tabs.setVisible(bool(self.widgets))
+
+    def _add_widget(self, cfg: dict) -> SingleOptimizerWidget:
+        w = SingleOptimizerWidget(self.app, cfg)
+        self.widgets[cfg['id']] = w
+        self.tabs.addTab(w, cfg.get('label') or cfg['id'])
+        self._update_empty()
+        return w
+
+    def _ask_id(self, title: str, default: str = '') -> Optional[str]:
+        name, ok = QtWidgets.QInputDialog.getText(self, title, 'Identifiant (ex. Optim_HA) :', text=default)
+        if not ok or not name.strip():
+            return None
+        opt_id = sanitize_role_name(name)
+        if opt_id in self.widgets:
+            warn(self, 'Optimisation', f'{opt_id} existe déjà')
+            return None
+        return opt_id
+
+    def add(self, cfg: dict) -> SingleOptimizerWidget:
+        w = self._add_widget(cfg)
+        self.tabs.setCurrentWidget(w)
+        self.app.preset_dirty = True
+        return w
+
+    def _on_add(self):
+        opt_id = self._ask_id('Nouvelle optimisation')
+        if opt_id:
+            self.add(default_optimizer(opt_id))
+
+    def _on_duplicate(self):
+        w = self._current()
+        if w is None:
+            return
+        opt_id = self._ask_id('Dupliquer', w.opt_id + '_2')
+        if opt_id:
+            cfg = w.get_config()
+            cfg.update({'id': opt_id, 'label': ''})
+            self.add(cfg)
+
+    def _current(self) -> Optional[SingleOptimizerWidget]:
+        w = self.tabs.currentWidget()
+        return w if isinstance(w, SingleOptimizerWidget) else None
+
+    def _on_rename(self):
+        w = self._current()
+        if w is None:
+            return
+        label, ok = QtWidgets.QInputDialog.getText(self, 'Renommer', 'Nom affiché :', text=w.label())
+        if ok:
+            w.settings.child('label').setValue(label.strip())
+
+    def _on_remove(self):
+        w = self._current()
+        if w is None:
+            return
+        a = w.automation
+        if a is not None and a.state in ENGAGED_STATES:
+            warn(self, 'Optimisation', 'Arrêter l’optimisation avant de la supprimer.')
+            return
+        if not ask_yes_no(self, 'Supprimer', f'Supprimer l’optimisation {w.label()} du preset ?'):
+            return
+        self.app.core.remove_automation(w.auto_id)
+        self.widgets.pop(w.opt_id, None)
+        self.tabs.removeTab(self.tabs.currentIndex())
+        w.deleteLater()
+        self.app.preset_dirty = True
+        self._update_empty()
+
+    def select(self, auto_id: str) -> bool:
+        w = self.widgets.get(auto_id.split(':', 1)[-1])
+        if w is not None:
+            self.tabs.setCurrentWidget(w)
+            return True
+        return False
+
+    # ------------------------------------------------------------------ preset
+    def load_from_preset(self, preset: dict):
+        self.tabs.clear()
+        for w in self.widgets.values():
+            w.deleteLater()
+        self.widgets = {}
+        for cfg in preset.get('optimizers', []):
+            self._add_widget(cfg)
+        self._update_empty()
+
+    def write_to_preset(self, preset: dict):
+        preset['optimizers'] = [w.get_config() for w in self._ordered()]
+
+    def configs(self) -> List[dict]:
+        return [w.get_config() for w in self._ordered()]
+
+    def _ordered(self) -> List[SingleOptimizerWidget]:
+        return [w for w in (self.tabs.widget(i) for i in range(self.tabs.count()))
+                if isinstance(w, SingleOptimizerWidget)]
+
+    def quick_items(self) -> List[dict]:
+        out = []
+        for w in self._ordered():
+            if w.settings.child('show_in_alignment').value():
+                out.append({'id': w.auto_id, 'kind': 'optimizer', 'key': w.opt_id, 'label': w.label(),
+                            'action': w.settings.child('button_action').value()})
+        return out
+
+    def config_of(self, auto_id: str) -> Optional[dict]:
+        w = self.widgets.get(auto_id.split(':', 1)[-1])
+        return w.get_config() if w is not None else None
+
+    def set_hardware(self):
+        for w in self.widgets.values():
+            w.set_hardware()
+
+    def refresh(self):
+        w = self._current()
+        if w is not None:
+            w.refresh()
+        for i in range(self.tabs.count()):
+            wid = self.tabs.widget(i)
+            if isinstance(wid, SingleOptimizerWidget):
+                a = wid.automation
+                st = a.state.value if a is not None else 'OFF'
+                self.tabs.setTabText(i, f'{wid.label()} [{st}]')

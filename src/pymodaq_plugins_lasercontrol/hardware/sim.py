@@ -11,6 +11,15 @@ Model (all positions in µm):
 * the XUV flux ~ power^3 x Gaussian of the gas-jet position,
 * the frame counter mimics the heartbeat channel of computer B (O9-A),
 * the detector can be *muted* (computer B silent) or *frozen* (frames keep coming, frozen values).
+
+Two independent test benches, to try the PIDs and the optimiser on something obvious:
+
+* **beam steering**: a mirror (STEER_H / STEER_V) moves a beam on a position detector,
+  ``Beam/x`` = STEER_H − drift (µm), ``Beam/y`` idem. A PID with setpoint 0, positive sign, keeps
+  the beam centred (Kp ≈ 0.5, Ki ≈ 0.05);
+* **photodiode**: a lens (PD_X / PD_Y) focuses on a photodiode behind a pinhole,
+  ``PD/current`` (mA) = 2 · exp(−r² / 2·12²) with r the distance to a drifting optimum (µm).
+  The optimiser maximises it (probe step ≈ 1 µm, max step ≈ 3 µm).
 """
 from __future__ import annotations
 
@@ -21,7 +30,13 @@ from typing import Dict, Optional
 
 import numpy as np
 
-AXES = ['OC_H', 'OC_V', 'EM_H', 'EM_V', 'AP_X', 'AP_Y', 'JET_X', 'JET_Y', 'JET_Z', 'KERR']
+AXES = ['OC_H', 'OC_V', 'EM_H', 'EM_V', 'AP_X', 'AP_Y', 'JET_X', 'JET_Y', 'JET_Z', 'KERR',
+        'STEER_H', 'STEER_V', 'PD_X', 'PD_Y']
+#: drift amplitude of each axis, relative to ``drift_amplitude`` (0.3 for the axes not listed)
+DRIFT_FACTOR = {'OC_H': 1.0, 'OC_V': 1.0, 'EM_H': 1.0, 'EM_V': 1.0,
+                'STEER_H': 1.3, 'STEER_V': 1.0, 'PD_X': 0.8, 'PD_Y': 0.8}
+PD_WIDTH = 12.0             # µm
+PD_MAX = 2.0                # mA
 UNITS = 'µm'
 
 
@@ -119,7 +134,7 @@ class LaserSimModel:
         t = now - self.t0
         opt = {}
         for i, a in enumerate(AXES):
-            amp = self.drift_amplitude * (1.0 if a in ('OC_H', 'OC_V', 'EM_H', 'EM_V') else 0.3)
+            amp = self.drift_amplitude * DRIFT_FACTOR.get(a, 0.3)
             period = self.drift_period_s * (1.0 + 0.37 * i)
             opt[a] = amp * math.sin(2 * math.pi * t / period + self._phase[a]) + self._walk[a]
         return opt
@@ -154,8 +169,13 @@ class LaserSimModel:
             cam2 = {'x': 0.4 * m['OC_H'] + 1.2 * m['EM_H'] + float(self.rng.normal(0, sigma_px)),
                     'y': 0.4 * m['OC_V'] + 1.2 * m['EM_V'] + float(self.rng.normal(0, sigma_px)),
                     'sum': max(power, 0.0) * 8e2}
+            beam = {'x': m['STEER_H'] + float(self.rng.normal(0, 0.15 * n)),
+                    'y': m['STEER_V'] + float(self.rng.normal(0, 0.15 * n))}
+            r2 = m['PD_X'] ** 2 + m['PD_Y'] ** 2
+            pd = PD_MAX * math.exp(-r2 / (2 * PD_WIDTH ** 2)) * (1 + float(self.rng.normal(0, 0.01 * n)))
             self._frame += 1
             out = {'Cam1': cam1, 'Cam2': cam2, 'Laser': {'power': max(power, 0.0)},
-                   'XUV': {'flux': max(xuv, 0.0)}, 'Stats': {'frame_counter': float(self._frame)}}
+                   'XUV': {'flux': max(xuv, 0.0)}, 'Beam': beam, 'PD': {'current': max(pd, 0.0)},
+                   'Stats': {'frame_counter': float(self._frame)}}
             self._last_frame = out
             return {k: dict(v) for k, v in out.items()}

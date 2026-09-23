@@ -25,7 +25,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
 def pid_params() -> list:
     return [
-        {'title': 'Nom affiché :', 'name': 'label', 'type': 'str', 'value': ''},
+        {'title': 'Nom affiché :', 'name': 'label', 'type': 'str', 'value': '',
+         'tip': 'Nom court, aussi utilisé pour le bouton de l’onglet Alignement'},
+        {'title': 'Bouton dans Alignement :', 'name': 'show_in_alignment', 'type': 'bool', 'value': False,
+         'tip': 'Affiche un bouton sous les moteurs de l’onglet Alignement : un clic démarre, un autre arrête '
+                '(sans confirmation), un clic sur un PID gelé le reprend'},
         {'title': 'Stabilisation :', 'name': 'in_stabilization', 'type': 'bool', 'value': True,
          'tip': 'Démarré / arrêté par les boutons « Activer / Désactiver la stabilisation » (Vue d’ensemble)'},
         {'title': 'Consigne :', 'name': 'setpoint', 'type': 'float', 'value': 0.0,
@@ -204,7 +208,7 @@ class SinglePIDWidget(QtWidgets.QWidget):
         s = {c.name(): c.value() for c in self.settings.children()}
         settings = PIDSettings.from_dict(s).to_dict()
         return {'id': self.pid_id, 'label': s.get('label', ''), 'in_stabilization': bool(s.get('in_stabilization')),
-                'signal': self.combo_signal.currentText(), 'motors': motors, 'settings': settings}
+                'show_in_alignment': bool(s.get('show_in_alignment')), 'signal': self.combo_signal.currentText(), 'motors': motors, 'settings': settings}
 
     def load_config(self, cfg: dict):
         self._loading = True
@@ -215,6 +219,7 @@ class SinglePIDWidget(QtWidgets.QWidget):
             st = dict(cfg.get('settings', {}) or {})
             st['label'] = cfg.get('label', '')
             st['in_stabilization'] = cfg.get('in_stabilization', True)
+            st['show_in_alignment'] = cfg.get('show_in_alignment', False)
             for c in self.settings.children():
                 if c.name() in st and st[c.name()] is not None:
                     try:
@@ -398,6 +403,22 @@ class PIDTab(QtWidgets.QWidget):
 
     def configs(self) -> List[dict]:
         return [w.get_config() for w in self.widgets.values()]
+
+    def _ordered(self) -> List[SinglePIDWidget]:
+        return [w for w in (self.tabs.widget(i) for i in range(self.tabs.count())) if isinstance(w, SinglePIDWidget)]
+
+    def quick_items(self) -> List[dict]:
+        """PIDs shown as buttons in the Alignment tab (cheap: read at every UI refresh)."""
+        out = []
+        for w in self._ordered():
+            if w.settings.child('show_in_alignment').value():
+                out.append({'id': w.auto_id, 'kind': 'pid', 'key': w.pid_id,
+                            'label': w.settings.child('label').value() or w.pid_id, 'action': ''})
+        return out
+
+    def config_of(self, auto_id: str) -> Optional[dict]:
+        w = self.widgets.get(auto_id.split(':', 1)[-1])
+        return w.get_config() if w is not None else None
 
     def set_hardware(self):
         for w in self.widgets.values():

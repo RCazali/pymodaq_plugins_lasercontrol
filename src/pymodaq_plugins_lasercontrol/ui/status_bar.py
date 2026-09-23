@@ -131,8 +131,9 @@ class StatusBar(QtWidgets.QFrame):
         self.global_badge.set_state(g, prefix='')
         self.btn_reset.setVisible(core.estop)
         # automations
-        autos = [a for a in core.automations.values()
-                 if a.state != AutoState.OFF or a.kind in ('pid', 'optimizer')]
+        # only what is engaged: the list of PIDs / optimisations can be long (their buttons are in
+        # the Alignment tab and their own tabs)
+        autos = [a for a in core.automations.values() if a.state != AutoState.OFF]
         ids = [a.id for a in autos]
         for aid in list(self._auto_badges):
             if aid not in ids:

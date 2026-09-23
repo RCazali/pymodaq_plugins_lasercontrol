@@ -162,8 +162,9 @@ def test_import_legacy_opt_and_xy(tmp_path):
     imp = LegacyImport(rm)
     p = imp.import_file(tmp_path / 'opt_profile_a.json')
     p = imp.import_file(tmp_path / 'Default.json', into=p)
-    assert p['optimizer']['motors'][0]['role'] == 'Jet_X'
-    assert p['optimizer']['config']['run_mode'] == 'Nelder-Mead (simplex)'
+    assert p['optimizers'][0]['id'] == 'opt_profile_a'
+    assert p['optimizers'][0]['motors'][0]['role'] == 'Jet_X'
+    assert p['optimizers'][0]['config']['run_mode'] == 'Nelder-Mead (simplex)'
     assert p['xy_groups'][0]['actuator_y'] == 'Jet_Y'
     assert p['alignment']['axes'][0]['h']['actuator'] == 'Pico_OC_H'
     assert rm.module_for('Jet_Y') == 'Jet_Y'
@@ -248,7 +249,8 @@ def test_event_trigger_files(tmp_path):
 
 
 def test_simulator_roles_file(tmp_path, monkeypatch):
-    """The office tool writes the simulator roles with the lab role names, never over an existing file."""
+    """The office tool writes the simulator roles with the lab role names; an existing roles file is
+    completed, never modified."""
     pytest.importorskip('pymodaq')
     import pymodaq_plugins_lasercontrol.ui.app as app_mod
     from pymodaq_plugins_lasercontrol.core.roles import RoleMap
@@ -260,7 +262,53 @@ def test_simulator_roles_file(tmp_path, monkeypatch):
     rm = RoleMap.load(path)
     assert rm.module_for('OC_H') == 'Sim OC_H' and rm.actuators['OC_H'].units == 'µm'
     assert rm.channel_for('Laser_power') == 'SimB/Laser/power'
+    assert rm.module_for('Steer_H') == 'Sim STEER_H' and rm.signals['PD_current'].units == 'mA'
     assert rm.heartbeats['SimB'] == 'SimB/Stats/frame_counter'
-    assert sim_preset.write_sim_roles() is None            # existing file kept
+    assert sim_preset.write_sim_roles() is None            # nothing missing: file untouched
+    rm.set_actuator('OC_H', 'Mon moteur', 'pas')
+    rm.remove('PD_X')
+    rm.save(path)
+    assert sim_preset.write_sim_roles() == path
+    rm = RoleMap.load(path)
+    assert rm.module_for('OC_H') == 'Mon moteur'             # existing role kept as is
+    assert rm.module_for('PD_X') == 'Sim PD_X'               # missing role added
     lab = RoleMap.load(Path(__file__).resolve().parents[1] / 'docs' / 'exemples' / 'roles_lab.toml')
-    assert set(lab.actuators) == set(rm.actuators) and set(lab.signals) == set(rm.signals)   # same role names
+    assert set(lab.actuators) == set(sim_preset.SIM_ACTUATOR_ROLES)   # same role names as the lab
+    assert set(lab.signals) == set(sim_preset.SIM_SIGNAL_ROLES)
+
+
+def test_simulator_demo_preset(tmp_path, monkeypatch):
+    """« Démo simulateur » is consistent with the simulator roles and modules: every automation can start."""
+    pytest.importorskip('pymodaq')
+    import pymodaq_plugins_lasercontrol.ui.app as app_mod
+    from pymodaq_plugins_lasercontrol.core.roles import RoleMap
+    from pymodaq_plugins_lasercontrol.presets import validate_preset, PresetStore
+    from pymodaq_plugins_lasercontrol.tools import sim_preset
+    orig = app_mod.resolve_paths
+    monkeypatch.setattr(app_mod, 'resolve_paths', lambda config, machine, override=None: orig(config, machine, tmp_path))
+    rm = RoleMap.load(sim_preset.write_sim_roles())
+    p = sim_preset.demo_preset()
+    modules = [m for m, _ in sim_preset.DEFAULT_MOVES]
+    rep = validate_preset(p, rm, modules)
+    assert rep.ok, rep.text()
+    assert {a for a in rep.automations} == {'PID:Beam_H', 'PID:Beam_V', 'PID:Cam1_X_OC', 'PID:Cam1_Y_OC',
+                                            'OPT:Optim_PD', 'OPT:Suivi_PD', 'OPT:Optim_OC'}
+    assert all(rm.module_for(r) in modules for r in rm.actuators)
+    path = sim_preset.write_demo_preset()
+    assert path is not None and sim_preset.write_demo_preset() is None
+    assert PresetStore(tmp_path / 'presets').load(sim_preset.DEMO_PRESET)['optimizers'][1]['button_action'] == 'periodic'
+
+
+def test_schema_v1_single_optimizer_is_migrated():
+    from pymodaq_plugins_lasercontrol.presets import normalize
+    v1 = {'schema_version': 1, 'name': 'old', 'pids': [{'id': 'H', 'signal': 'Cam1_x'}],
+          'optimizer': {'config': {'run_mode': 'Nelder-Mead (simplex)'},
+                        'motors': [{'role': 'Jet_X', 'max_step': 1, 'probe_step': 0.1}],
+                        'signals': [{'role': 'XUV_flux', 'mode': 'Maximize', 'weight': 1}]}}
+    p = normalize(v1)
+    assert p['schema_version'] == 2 and 'optimizer' not in p
+    assert p['optimizers'][0]['id'] == 'Optimiseur' and p['optimizers'][0]['show_in_alignment'] is False
+    assert p['optimizers'][0]['config']['run_mode'] == 'Nelder-Mead (simplex)'
+    assert p['pids'][0]['show_in_alignment'] is False
+    empty = normalize({'schema_version': 1, 'optimizer': {'config': {}, 'motors': [], 'signals': []}})
+    assert empty['optimizers'] == []
