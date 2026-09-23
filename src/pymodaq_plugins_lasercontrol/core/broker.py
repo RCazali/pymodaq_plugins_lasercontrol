@@ -152,7 +152,20 @@ class HardwareBroker:
 
     def units(self, module: Optional[str]) -> str:
         st = self.motors.get(module) if module else None
+        port = self.actuators.get(module) if module else None
+        if st is not None and not st.units and port is not None:
+            try:
+                st.units = port.units() or ''
+            except Exception:  # pragma: no cover
+                pass
         return st.units if st else ''
+
+    def is_initialized(self, module: Optional[str]) -> bool:
+        port = self.actuators.get(module) if module else None
+        try:
+            return bool(port is not None and port.is_initialized())
+        except Exception:  # pragma: no cover
+            return False
 
     def request_positions(self, modules: Optional[Iterable[str]] = None):
         for m in (modules or list(self.actuators)):

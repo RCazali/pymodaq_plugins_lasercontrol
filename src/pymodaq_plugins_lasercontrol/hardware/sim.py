@@ -1,0 +1,161 @@
+"""Realistic-enough simulator of the laser for office tests (cahier des charges T1.3).
+
+Shared by the ``LaserSim`` DAQ_Move plugin (one axis per module) and the ``LaserSim`` 0D
+detector plugin: both run in the same dashboard process, so a thread-safe singleton is enough.
+
+Model (all positions in µm):
+
+* the optimum position of the cavity mirrors drifts slowly (sinusoid + random walk, ~1 min),
+* camera centroids (px) are linear combinations of the misalignments (axis coupling),
+* the laser power is a Gaussian of the cavity misalignment, with random intensity drops,
+* the XUV flux ~ power^3 x Gaussian of the gas-jet position,
+* the frame counter mimics the heartbeat channel of computer B (O9-A),
+* the detector can be *muted* (computer B silent) or *frozen* (frames keep coming, frozen values).
+"""
+from __future__ import annotations
+
+import math
+import threading
+import time
+from typing import Dict, Optional
+
+import numpy as np
+
+AXES = ['OC_H', 'OC_V', 'EM_H', 'EM_V', 'AP_X', 'AP_Y', 'JET_X', 'JET_Y', 'JET_Z', 'KERR']
+UNITS = 'µm'
+
+
+class LaserSimModel:
+    _instance: Optional['LaserSimModel'] = None
+    _instance_lock = threading.Lock()
+
+    @classmethod
+    def instance(cls) -> 'LaserSimModel':
+        with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            return cls._instance
+
+    def __init__(self, seed: Optional[int] = None, clock=time.monotonic):
+        self._lock = threading.RLock()
+        self._clock = clock
+        self.rng = np.random.default_rng(seed)
+        now = clock()
+        self.t0 = now
+        self._start = {a: 0.0 for a in AXES}
+        self._target = {a: 0.0 for a in AXES}
+        self._t_start = {a: now for a in AXES}
+        self.speed = {a: 50.0 for a in AXES}               # µm/s
+        # environment
+        self.drift_amplitude = 6.0      # µm
+        self.drift_period_s = 120.0
+        self.random_walk = 0.15         # µm / sqrt(s)
+        self.noise = 1.0                # multiplies every noise level
+        self.dropout_rate_per_min = 0.3
+        self.dropout_depth = 0.9
+        self.dropout_duration_s = 2.0
+        self.base_power = 50.0          # W
+        self.width = 15.0               # µm, cavity misalignment tolerance
+        self.muted = False
+        self.frozen = False
+        self._walk = {a: 0.0 for a in AXES}
+        self._walk_t = now
+        self._phase = {a: float(self.rng.uniform(0, 2 * math.pi)) for a in AXES}
+        self._drop_until = -1.0
+        self._frame = 0
+        self._last_frame: Optional[Dict[str, Dict[str, float]]] = None
+
+    # ------------------------------------------------------------------ motion
+    def _pos(self, axis: str, now: float) -> float:
+        start, target = self._start[axis], self._target[axis]
+        dist = target - start
+        travelled = self.speed[axis] * max(now - self._t_start[axis], 0.0)
+        if travelled >= abs(dist):
+            return target
+        return start + math.copysign(travelled, dist)
+
+    def position(self, axis: str) -> float:
+        with self._lock:
+            return self._pos(axis, self._clock())
+
+    def is_moving(self, axis: str) -> bool:
+        with self._lock:
+            return self._pos(axis, self._clock()) != self._target[axis]
+
+    def move_to(self, axis: str, target: float, speed: Optional[float] = None):
+        with self._lock:
+            now = self._clock()
+            self._start[axis] = self._pos(axis, now)
+            self._target[axis] = float(target)
+            self._t_start[axis] = now
+            if speed is not None:
+                self.speed[axis] = max(float(speed), 1e-6)
+
+    def stop(self, axis: str):
+        with self._lock:
+            now = self._clock()
+            p = self._pos(axis, now)
+            self._start[axis] = self._target[axis] = p
+            self._t_start[axis] = now
+
+    def jog(self, axis: str, direction: int, velocity: float):
+        self.move_to(axis, self.position(axis) + math.copysign(1e6, direction), speed=abs(velocity))
+
+    def set_speed(self, axis: str, speed: float):
+        with self._lock:
+            now = self._clock()
+            self._start[axis] = self._pos(axis, now)
+            self._t_start[axis] = now
+            self.speed[axis] = max(float(speed), 1e-6)
+
+    # ------------------------------------------------------------------ optics
+    def optimum(self, now: float) -> Dict[str, float]:
+        dt = max(now - self._walk_t, 0.0)
+        if dt > 0:
+            for a in self._walk:
+                self._walk[a] += float(self.rng.normal(0.0, self.random_walk * math.sqrt(dt)))
+                self._walk[a] *= math.exp(-dt / 600.0)       # keep the walk bounded (10 min memory)
+            self._walk_t = now
+        t = now - self.t0
+        opt = {}
+        for i, a in enumerate(AXES):
+            amp = self.drift_amplitude * (1.0 if a in ('OC_H', 'OC_V', 'EM_H', 'EM_V') else 0.3)
+            period = self.drift_period_s * (1.0 + 0.37 * i)
+            opt[a] = amp * math.sin(2 * math.pi * t / period + self._phase[a]) + self._walk[a]
+        return opt
+
+    def frame(self) -> Optional[Dict[str, Dict[str, float]]]:
+        """One detector frame: {data name: {label: value}}. None when muted (B silent)."""
+        with self._lock:
+            if self.muted:
+                return None
+            if self.frozen and self._last_frame is not None:
+                return {k: dict(v) for k, v in self._last_frame.items()}
+            now = self._clock()
+            pos = {a: self._pos(a, now) for a in AXES}
+            opt = self.optimum(now)
+            m = {a: pos[a] - opt[a] for a in AXES}
+            n = self.noise
+            u = m['OC_H'] + 0.6 * m['EM_H']
+            v = m['OC_V'] + 0.6 * m['EM_V']
+            aperture = math.exp(-((m['AP_X']) ** 2 + (m['AP_Y']) ** 2) / (2 * 40.0 ** 2))
+            if self.dropout_rate_per_min > 0 and now > self._drop_until:
+                if self.rng.random() < self.dropout_rate_per_min / 60.0 * 0.5:   # ~2 Hz frames
+                    self._drop_until = now + self.dropout_duration_s * float(self.rng.uniform(0.5, 1.5))
+            drop = (1.0 - self.dropout_depth) if now < self._drop_until else 1.0
+            power = self.base_power * math.exp(-(u ** 2 + v ** 2) / (2 * self.width ** 2)) * aperture * drop
+            power *= 1.0 + float(self.rng.normal(0, 0.01 * n))
+            jet = math.exp(-(m['JET_X'] ** 2 + m['JET_Y'] ** 2) / (2 * 8.0 ** 2) - m['JET_Z'] ** 2 / (2 * 20.0 ** 2))
+            xuv = 1e-3 * max(power, 0.0) ** 3 / self.base_power ** 2 * jet * (1 + float(self.rng.normal(0, 0.03 * n)))
+            sigma_px = 0.2 * n
+            cam1 = {'x': 1.0 * m['OC_H'] + 0.3 * m['EM_H'] + float(self.rng.normal(0, sigma_px)),
+                    'y': 1.0 * m['OC_V'] + 0.3 * m['EM_V'] + float(self.rng.normal(0, sigma_px)),
+                    'sum': max(power, 0.0) * 1e3}
+            cam2 = {'x': 0.4 * m['OC_H'] + 1.2 * m['EM_H'] + float(self.rng.normal(0, sigma_px)),
+                    'y': 0.4 * m['OC_V'] + 1.2 * m['EM_V'] + float(self.rng.normal(0, sigma_px)),
+                    'sum': max(power, 0.0) * 8e2}
+            self._frame += 1
+            out = {'Cam1': cam1, 'Cam2': cam2, 'Laser': {'power': max(power, 0.0)},
+                   'XUV': {'flux': max(xuv, 0.0)}, 'Stats': {'frame_counter': float(self._frame)}}
+            self._last_frame = out
+            return {k: dict(v) for k, v in out.items()}

@@ -155,9 +155,9 @@ class LaserCore:
             if not self.broker.has_module(module):
                 errors.append(f"{role} : module '{module}' absent du dashboard")
                 continue
-            st = self.broker.state(module)
-            if st is not None and not st.initialized:
+            if not self.broker.is_initialized(module):
                 errors.append(f"{role} : module '{module}' non initialisé")
+                continue
             if self.broker.position(module) is None:
                 errors.append(f"{role} : position inconnue (lire la position)")
         for role in a.signal_roles():
