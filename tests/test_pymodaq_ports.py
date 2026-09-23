@@ -41,9 +41,13 @@ def modules():
 def test_move_port_roundtrip(modules):
     model, mv_h, mv_v, det = modules
     port = DAQMovePort(mv_h)
-    done = []
+    done, values = [], []
     port.on_done = lambda v: done.append(v)
+    port.on_value = lambda v: values.append(v)
+    port.request_position()
+    assert wait(lambda: values, 10)
     p0 = port.position()
+    assert p0 == pytest.approx(values[-1])
     assert p0 is not None and math.isfinite(p0)
     port.move_rel(2.0)
     assert wait(lambda: done, 10)

@@ -51,6 +51,8 @@ class DAQ_Move_LaserSim(DAQ_Move_base):
         self.controller.move_to(self.axis_name, position.value())
 
     def move_rel(self, position: DataActuator):
+        # the simulated axis is shared by every module instance: start from the real position
+        self.current_value = self.get_actuator_value()
         position = self.check_bound(self.current_value + position) - self.current_value
         self.target_value = position + self.current_value
         self.set_position_relative_with_scaling(position)

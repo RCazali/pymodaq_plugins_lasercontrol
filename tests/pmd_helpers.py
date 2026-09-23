@@ -29,17 +29,23 @@ def wait(pred=lambda: False, timeout=10.0, step=0.01):
     return pred()
 
 
+def find_param(root, name):
+    for c in root.children():
+        if c.name() == name:
+            return c
+        found = find_param(c, name)
+        if found is not None:
+            return found
+    return None
+
+
 def make_move(title, axis, parent=None, speed=200.0):
     from pymodaq.control_modules.daq_move import DAQ_Move
     mv = DAQ_Move(parent, title=title)
     mv.actuator = 'LaserSim'
-    try:
-        mv.settings.child('move_settings', 'multiaxes', 'axis').setValue(axis)
-    except Exception:
-        for p in mv.settings.child('move_settings').children():
-            if p.name() == 'multiaxes':
-                p.child('axis').setValue(axis)
-    mv.settings.child('move_settings', 'speed').setValue(speed)
+    hw = mv.settings.child(getattr(mv, '_hw_settings_name', 'move_settings'))   # 5.1: move_settings, 5.2: actuator_settings
+    find_param(hw, 'axis').setValue(axis)
+    find_param(hw, 'speed').setValue(speed)
     inits = []
     mv.init_signal.connect(lambda s: inits.append(s))
     mv.init_hardware(True)
