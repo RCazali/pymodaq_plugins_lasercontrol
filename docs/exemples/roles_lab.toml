@@ -1,0 +1,82 @@
+# Laser Control - rôles logiques de l'ordi A du labo (modèle, cahier des charges T1.2)
+#
+# À copier dans le dossier de données de l'extension sous le nom roles_<machine>.toml
+# (<machine> = [machine] name de config_lasercontrol.toml, sinon le nom de l'ordinateur).
+# Les presets ne citent QUE les noms de rôles (OC_H, Cam1_x, ...) : ce fichier est la seule chose
+# qui change entre le bureau (simulateur) et le labo. Mêmes noms de rôles que le simulateur
+# (python -m pymodaq_plugins_lasercontrol.tools.sim_preset) => un preset fait au bureau se charge ici.
+#
+# module  = titre du DAQ_Move dans le dashboard (tel qu'affiché dans son dock)
+# channel = "<titre du DAQ_Viewer>/<nom de la donnée>/<label du canal>" ; la liste exacte des canaux
+#           reçus est dans Configuration > Détecteurs > « Canaux 0D reçus » (acquisition lancée).
+# Remplacer les valeurs "A_RENSEIGNER_..." puis, dans l'extension : Configuration > Rôles > Recharger.
+
+[meta]
+machine = "lab"
+description = "Ordi A, labo : contrôleurs moteurs + DAQ_Viewer LECO de l'ordi B"
+
+[actuators.OC_H]
+module = "A_RENSEIGNER_OC_H"
+units = "step"
+note = "Coupleur de sortie, horizontal (picomoteur). Sens : + = faisceau vers la droite sur Cam1 ?"
+
+[actuators.OC_V]
+module = "A_RENSEIGNER_OC_V"
+units = "step"
+note = "Coupleur de sortie, vertical (picomoteur)"
+
+[actuators.EM_H]
+module = "A_RENSEIGNER_EM_H"
+units = "step"
+note = "Miroir de fond, horizontal (picomoteur)"
+
+[actuators.EM_V]
+module = "A_RENSEIGNER_EM_V"
+units = "step"
+note = "Miroir de fond, vertical (picomoteur)"
+
+[actuators.Jet_X]
+module = "A_RENSEIGNER_JET_X"
+units = "mm"
+note = "Jet de gaz, X"
+
+[actuators.Jet_Y]
+module = "A_RENSEIGNER_JET_Y"
+units = "mm"
+note = "Jet de gaz, Y"
+
+[signals.Cam1_x]
+channel = "A_RENSEIGNER_LECO_B/Cam1/x"
+units = "px"
+note = "Centroïde X caméra 1 (ordi B)"
+
+[signals.Cam1_y]
+channel = "A_RENSEIGNER_LECO_B/Cam1/y"
+units = "px"
+
+[signals.Cam1_sum]
+channel = "A_RENSEIGNER_LECO_B/Cam1/sum"
+
+[signals.Cam2_x]
+channel = "A_RENSEIGNER_LECO_B/Cam2/x"
+units = "px"
+
+[signals.Cam2_y]
+channel = "A_RENSEIGNER_LECO_B/Cam2/y"
+units = "px"
+
+[signals.Cam2_sum]
+channel = "A_RENSEIGNER_LECO_B/Cam2/sum"
+
+[signals.Laser_power]
+channel = "A_RENSEIGNER_Puissance/Power/W"
+units = "W"
+note = "Puissance du laser : rôle de la garde intensité (S2)"
+
+[signals.XUV_flux]
+channel = "A_RENSEIGNER_LECO_B/XUV/flux"
+
+[heartbeats]
+# O9 : compteur de trames ajouté dans l'extension de l'ordi B (+1 par trame).
+# Clé = titre du DAQ_Viewer, valeur = canal du compteur.
+"A_RENSEIGNER_LECO_B" = "A_RENSEIGNER_LECO_B/Stats/frame_counter"

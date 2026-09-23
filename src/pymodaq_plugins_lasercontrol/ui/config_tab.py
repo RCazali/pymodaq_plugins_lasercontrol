@@ -206,7 +206,9 @@ class ConfigTab(QtWidgets.QWidget):
         self.g_fixed = QtWidgets.QCheckBox('référence fixe :')
         self.g_ref = dspin(1.0, -1e12, 1e12, 6)
         self.g_capture = styled_button('📍 Capturer la référence', None,
-                                       'Référence = valeur actuelle (mode relatif, référence non fixe)')
+                                       'Référence = valeur actuelle (mode relatif, référence non fixe). '
+                                       'Sinon elle est prise automatiquement au premier engagement d’un '
+                                       'automatisme, et gardée tant qu’un automatisme reste engagé.')
         self.g_info = QtWidgets.QLabel('')
         gf.addWidget(self.g_enabled, 0, 0)
         gf.addWidget(QtWidgets.QLabel('Rôle :'), 0, 1)
@@ -323,7 +325,7 @@ class ConfigTab(QtWidgets.QWidget):
             self.app.core.events.publish('safety.info', 'SAFETY',
                                          f"Référence d'intensité capturée : {self.app.core.safety.guard.reference:.4g}")
         else:
-            warn(self, 'Garde intensité', 'Capture impossible (mode absolu, signal absent ou périmé).')
+            warn(self, 'Garde intensité', 'Capture impossible (mode absolu, signal absent, périmé ou nul).')
         self._update_guard_info()
 
     def _update_guard_info(self):

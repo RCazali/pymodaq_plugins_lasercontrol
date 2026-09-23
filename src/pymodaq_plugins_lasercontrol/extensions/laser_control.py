@@ -77,11 +77,18 @@ class LaserControl(CustomExt):
         self.app = LaserControlApp(modules_manager=self.modules_manager, dockarea=self.dockarea,
                                    window=self.mainwindow, dashboard_preset=name, config=plugin_config)
         self.setup_ui()
+        self._title = f'Laser Control — {name or "dashboard"} — machine {self.app.machine}'
         if self.mainwindow is not None:
-            self.mainwindow.setWindowTitle(f'Laser Control — {name or "dashboard"} — machine {self.app.machine}')
             self.mainwindow.installEventFilter(self)
-            if self.mainwindow.width() < 1200:
-                self.mainwindow.resize(1400, 900)
+            self._decorate_window()
+            QtCore.QTimer.singleShot(0, self._decorate_window)    # PyMoDAQ 5.2 retitles the window afterwards
+
+    def _decorate_window(self):
+        if self.mainwindow is None:
+            return
+        self.mainwindow.setWindowTitle(self._title)
+        if self.mainwindow.width() < 1200:
+            self.mainwindow.resize(1400, 900)
 
     # ---------------------------------------------------------------- CustomApp API (5.1 and 5.2)
     def setup_docks_and_widgets(self):

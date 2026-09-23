@@ -84,14 +84,15 @@ def resolve_paths(config, machine: str, data_override: Optional[Path] = None) ->
 
 def git_version() -> str:
     here = Path(__file__).resolve().parent
+    no_window = getattr(subprocess, 'CREATE_NO_WINDOW', 0)     # Windows: no console flash
     try:
         out = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=here, capture_output=True, text=True,
-                             timeout=3)
+                             timeout=3, creationflags=no_window)
         if out.returncode != 0:
             return 'inconnu'
         h = out.stdout.strip()
         dirty = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=here,
-                               capture_output=True, text=True, timeout=3)
+                               capture_output=True, text=True, timeout=3, creationflags=no_window)
         return h + ('-modifié' if dirty.stdout.strip() else '')
     except Exception:
         return 'inconnu'

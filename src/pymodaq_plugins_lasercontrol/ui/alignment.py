@@ -678,7 +678,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         card.setToolTip('\n'.join(tips))
         if not self._axis_assigned(ax):
             eff = QtWidgets.QGraphicsOpacityEffect(card)
-            eff.setOpacity(0.45)
+            eff.setOpacity(0.6)
             card.setGraphicsEffect(eff)
         return card
 

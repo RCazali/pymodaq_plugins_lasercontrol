@@ -98,6 +98,29 @@ def test_S2_low_intensity_freezes_with_hysteresis(rig):
     assert ok, why
 
 
+def test_S2_reference_is_the_intensity_at_engagement(rig):
+    """Relative guard: reference captured when the first intensity-checked automation starts, kept
+    while one stays engaged (held included), recaptured at the next engagement; never zero."""
+    a = make_pid(rig, 'A', motors={'M1': 1.0})
+    b = make_pid(rig, 'B', motors={'M2': 1.0})
+    rig.frame(s=0.0, i=1.0)
+    assert rig.core.start(a.id)[0]
+    assert rig.core.safety.guard.reference == pytest.approx(1.0)
+    rig.run(0.3, s=0.0, i=0.8)
+    assert rig.core.start(b.id)[0]                        # A engaged: same reference
+    assert rig.core.safety.guard.reference == pytest.approx(1.0)
+    rig.core.stop(a.id)
+    rig.core.stop(b.id)
+    rig.run(0.3, s=0.0, i=0.4)                            # e.g. pump reduced on purpose
+    assert rig.core.start(a.id)[0]                        # nothing engaged: new reference
+    assert rig.core.safety.guard.reference == pytest.approx(0.4)
+    rig.core.stop(a.id)
+    rig.run(0.3, s=0.0, i=0.0)                            # laser off: no reference, no start
+    ok, msg = rig.core.start(a.id)
+    assert not ok and 'intensité nulle' in msg
+    assert a.state == AutoState.OFF
+
+
 def test_S2_guard_must_be_configured():
     rig = Rig()
     rig.core.safety.config.intensity.role = None

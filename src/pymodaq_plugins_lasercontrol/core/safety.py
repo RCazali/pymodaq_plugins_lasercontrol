@@ -169,8 +169,10 @@ class IntensityGuard:
         return self.cfg.threshold * ref, (self.cfg.threshold + abs(self.cfg.hysteresis)) * ref
 
     def capture_reference(self) -> bool:
+        """Relative mode: reference = current value. Refused if the value is stale, invalid or <= 0
+        (a zero reference would make the guard ineffective)."""
         v = self.value()
-        if self.cfg.mode != 'relative' or not is_finite(v) or not self.signals.is_fresh(self.channel()):
+        if self.cfg.mode != 'relative' or not is_finite(v) or v <= 0 or not self.signals.is_fresh(self.channel()):
             return False
         self.captured_reference = float(v)
         self._low = False

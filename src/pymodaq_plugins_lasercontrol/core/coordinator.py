@@ -177,6 +177,11 @@ class LaserCore:
                 pass  # already reported by config_errors
             elif not self.signals.is_fresh(ch):
                 errors.append(f"garde intensité : {self.signals.freshness(ch)[1]}")
+            elif self.will_capture_intensity_reference(a):
+                v = self.safety.guard.value()
+                if not (is_finite(v) and v > 0):
+                    errors.append("garde intensité : intensité nulle ou invalide, pas de référence possible "
+                                  "(laser éteint ?)")
             elif self.safety.guard.evaluate() == 'low':
                 errors.append("garde intensité : intensité sous le seuil")
         try:
@@ -205,9 +210,7 @@ class LaserCore:
         positions = {m: self.broker.position(m) for m in self.modules_of(a)}
         explicit = a.explicit_ranges(self) if policy.envelope == 'explicit' else None
         self.safety.engage(a.id, positions, explicit=explicit, reset=True)
-        guard = self.safety.config.intensity
-        if policy.check_intensity and guard.enabled and guard.mode == 'relative' and \
-                guard.reference is None and self.safety.guard.captured_reference is None:
+        if self.will_capture_intensity_reference(a):
             if not self.safety.guard.capture_reference():
                 self._abort_start(a)
                 return False, "garde intensité : impossible de capturer la référence"
@@ -230,6 +233,18 @@ class LaserCore:
         self._set_state(a, AutoState.ACTIVE, kind=EventKind.AUTOMATION_START, reason='démarré')
         self._try_resume_paused()
         return True, ''
+
+    def will_capture_intensity_reference(self, a: Automation) -> bool:
+        """S2, relative mode without fixed reference: the reference is the intensity at engagement,
+        captured when the first automation checking the intensity starts; it is kept while any such
+        automation stays engaged (held ones included, so that a resume compares to it)."""
+        cfg = self.safety.config.intensity
+        if not (a.policy().check_intensity and cfg.enabled and cfg.mode == 'relative' and cfg.reference is None):
+            return False
+        if self.safety.guard.captured_reference is None:
+            return True
+        return not any(o is not a and o.state in ENGAGED_STATES and o.policy().check_intensity
+                       for o in self.automations.values())
 
     def _abort_start(self, a: Automation):
         self.safety.disengage(a.id)

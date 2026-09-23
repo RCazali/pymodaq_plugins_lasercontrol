@@ -245,3 +245,22 @@ def test_event_trigger_files(tmp_path):
     assert len(files) == 2
     assert json.loads(files[0].read_text())['kind'] in ('shake', 'ml')
     trig.close()
+
+
+def test_simulator_roles_file(tmp_path, monkeypatch):
+    """The office tool writes the simulator roles with the lab role names, never over an existing file."""
+    pytest.importorskip('pymodaq')
+    import pymodaq_plugins_lasercontrol.ui.app as app_mod
+    from pymodaq_plugins_lasercontrol.core.roles import RoleMap
+    from pymodaq_plugins_lasercontrol.tools import sim_preset
+    orig = app_mod.resolve_paths
+    monkeypatch.setattr(app_mod, 'resolve_paths', lambda config, machine, override=None: orig(config, machine, tmp_path))
+    path = sim_preset.write_sim_roles()
+    assert path is not None and path.exists()
+    rm = RoleMap.load(path)
+    assert rm.module_for('OC_H') == 'Sim OC_H' and rm.actuators['OC_H'].units == 'µm'
+    assert rm.channel_for('Laser_power') == 'SimB/Laser/power'
+    assert rm.heartbeats['SimB'] == 'SimB/Stats/frame_counter'
+    assert sim_preset.write_sim_roles() is None            # existing file kept
+    lab = RoleMap.load(Path(__file__).resolve().parents[1] / 'docs' / 'exemples' / 'roles_lab.toml')
+    assert set(lab.actuators) == set(rm.actuators) and set(lab.signals) == set(rm.signals)   # same role names

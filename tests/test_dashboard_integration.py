@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip('pymodaq')
 
-from pmd_helpers import app, wait, find_param  # noqa: E402
+from pmd_helpers import app, wait  # noqa: E402
 from qtpy import QtWidgets  # noqa: E402
 
 pytestmark = pytest.mark.pymodaq
@@ -24,11 +24,8 @@ DETECTOR = 'SimB'
 
 
 def _is_52() -> bool:
-    try:
-        import pymodaq.utils.managers.experiment.experiment_manager  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    from pymodaq_plugins_lasercontrol.tools.sim_preset import is_pymodaq_52
+    return is_pymodaq_52()
 
 
 def run(seconds: float):
@@ -36,73 +33,6 @@ def run(seconds: float):
     while time.time() - t0 < seconds:
         app().processEvents()
         time.sleep(0.01)
-
-
-def _fix_none_values(param):
-    """Parameters created without value are saved empty and loading the file would 'change' them to
-    None (the bool_push 'Show Config' then opens the plugin configuration dialog). The preset GUI gives
-    them their default: False for booleans, the first choice for lists."""
-    for child in param.children():
-        if child.type() != 'group' and child.opts.get('value', None) is None:
-            if child.type() in ('bool', 'bool_push', 'led', 'led_push'):
-                child.setValue(False)
-            elif child.type() == 'list':
-                limits = child.opts.get('limits') or []
-                values = list(limits.values()) if isinstance(limits, dict) else list(limits)
-                if values:
-                    child.setValue(values[0])
-        _fix_none_values(child)
-
-
-def _write_preset_51():
-    from pymodaq.utils.config import get_set_preset_path
-    from pymodaq_gui.parameter import Parameter, ioxml
-    import pymodaq.utils.managers.preset_manager_utils  # noqa: F401  (registers groupmove / groupdet)
-    p = Parameter.create(title='Preset', name='Preset', type='group', children=[
-        {'title': 'Filename:', 'name': 'filename', 'type': 'str', 'value': NAME},
-        {'title': 'Model Settings:', 'name': 'model_settings', 'type': 'group', 'visible': False, 'children': []},
-        {'title': 'Moves:', 'name': 'Moves', 'type': 'groupmove'},
-        {'title': 'Detectors:', 'name': 'Detectors', 'type': 'groupdet'}])
-    for title, axis in MOVES:
-        p.child('Moves').addNew(('LaserSim',))
-        m = p.child('Moves').children()[-1]
-        m.child('name').setValue(title)
-        m.child('params', 'main_settings', 'module_name').setValue(title)
-        find_param(m.child('params'), 'axis').setValue(axis)
-    p.child('Detectors').addNew(('DAQ0D', 'LaserSim'))
-    d = p.child('Detectors').children()[-1]
-    d.child('name').setValue(DETECTOR)
-    name_param = find_param(d.child('params'), 'module_name')
-    if name_param is not None:
-        name_param.setValue(DETECTOR)
-    saver = find_param(d.child('params'), 'saver_settings')
-    if saver is not None:   # loading these values hits a PyMoDAQ 5.1 viewer quirk (h5saver not created yet)
-        saver.remove()
-    _fix_none_values(p)
-    path = get_set_preset_path().joinpath(f'{NAME}.xml')
-    ioxml.parameter_to_xml_file(p, path.with_suffix(''), overwrite=True)
-    return path
-
-
-def _write_experiment_52():
-    from pymodaq.utils.config import get_set_experiment_path
-    from pymodaq.utils.managers.experiment.experiment_manager import ExperimentManager
-    from pymodaq.utils.managers.modules.utils import ModuleType
-    from pymodaq_gui.parameter import Parameter, ioxml
-    p = Parameter.create(title='Preset', name='Preset', type='group', children=ExperimentManager.params)
-    acts = p.child(ModuleType.Actuator.value)
-    for title, axis in MOVES:
-        acts.addNew(('LaserSim',))
-        m = acts.children()[-1]
-        m.child('name').setValue(title)
-        find_param(m, 'axis').setValue(axis)
-    dets = p.child(ModuleType.Detector.value)
-    dets.addNew(('DAQ0D', 'LaserSim'))
-    dets.children()[-1].child('name').setValue(DETECTOR)
-    _fix_none_values(p)
-    path = get_set_experiment_path().joinpath(f'{NAME}.xml')
-    ioxml.parameter_to_xml_file(p, path.with_suffix(''), overwrite=True)
-    return path
 
 
 @pytest.fixture(scope='module')
@@ -122,14 +52,14 @@ def loaded(tmp_path_factory):
     QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: yes)
     QtWidgets.QMessageBox.information = staticmethod(lambda *a, **k: None)
     QtWidgets.QMessageBox.warning = staticmethod(lambda *a, **k: None)
+    from pymodaq_plugins_lasercontrol.tools.sim_preset import write_sim_config
+    path = write_sim_config(NAME, MOVES, (DETECTOR,), overwrite=True)   # the office simulator tool
     if _is_52():
         from pymodaq.dashboard import load_dashboard_with_experiment
         from pymodaq_plugins_lasercontrol.extensions.laser_control import CLASS_NAME
-        path = _write_experiment_52()
         dashboard, extension, win = load_dashboard_with_experiment(NAME, CLASS_NAME.upper())
     else:
         from pymodaq_gui.utils.dock import DockArea
-        path = _write_preset_51()
         win = QtWidgets.QMainWindow()
         area = DockArea()
         win.setCentralWidget(area)
