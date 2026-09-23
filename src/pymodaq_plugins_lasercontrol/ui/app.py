@@ -390,6 +390,8 @@ class LaserControlApp(QtCore.QObject):
         errors = {a.label: self.core.validate(a) for a in todo}
         errors = {k: v for k, v in errors.items() if v}
         if errors:
+            self.core.events.publish(EventKind.AUTOMATION_START, 'UI', 'Stabilisation refusée (rien n’a été démarré) : ' +
+                                     ' | '.join(f"{k} : {' ; '.join(v)}" for k, v in errors.items()), Level.WARNING)
             warn(parent, 'Stabilisation impossible',
                  'Rien n’a été démarré :\n\n' + '\n\n'.join(f'{k} :\n  ' + '\n  '.join(v) for k, v in errors.items()))
             return
@@ -413,10 +415,31 @@ class LaserControlApp(QtCore.QObject):
         if failed:
             for a in todo:
                 self.core.stop(a.id, 'activation incomplète')
+            self.core.events.publish(EventKind.AUTOMATION_START, 'UI',
+                                     'Stabilisation annulée (tout ou rien) : ' + ' | '.join(failed), Level.WARNING)
             warn(parent, 'Stabilisation', 'Activation annulée :\n\n' + '\n'.join(failed))
         else:
             self.core.events.publish(EventKind.AUTOMATION_START, 'UI',
                                      f"Stabilisation activée ({', '.join(a.label for a in todo)})")
+
+    def held_stabilization(self) -> list:
+        """Stabilisation PIDs frozen by the safety supervisor (HELD, waiting for a manual resume, O10-A)."""
+        out = []
+        for cfg in self.stabilization_pids():
+            a = self.core.get(f"PID:{cfg['id']}")
+            if a is not None and a.state == AutoState.HELD:
+                out.append(a)
+        return out
+
+    def resume_stabilization(self, parent=None):
+        """Manual resume (O10-A) of every held stabilisation PID; each one is checked again by the core."""
+        failed = []
+        for a in self.held_stabilization():
+            ok, msg = self.core.resume(a.id)
+            if not ok:
+                failed.append(f'{a.label} : {msg}')
+        if failed:
+            warn(parent, 'Reprise', 'Reprise refusée :\n\n' + '\n'.join(failed))
 
     def deactivate_stabilization(self):
         names = []
@@ -499,7 +522,7 @@ class LaserControlApp(QtCore.QObject):
         self.preset_dirty = True
 
     def _on_roles_or_hardware_changed(self):
-        for key in ('pid', 'optimizer', 'scan', 'xy', 'alignment'):
+        for key in ('pid', 'optimizer', 'scan', 'xy', 'alignment', 'config'):
             w = self.tabs.get(key)
             if w is not None and hasattr(w, 'set_hardware'):
                 w.set_hardware()

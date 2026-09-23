@@ -13,7 +13,7 @@ from pymodaq_gui.parameter import Parameter, ParameterTree
 
 from ..core.states import AutoState, ENGAGED_STATES
 from ..engines.optimizer import DEFAULT_OPT_CONFIG, RUN_MODES
-from .widgets import StateBadge, ask_yes_no, fmt, info, styled_button, warn
+from .widgets import StateBadge, ask_yes_no, fit_table_height, fmt, info, reset_rows, styled_button, warn
 
 if TYPE_CHECKING:  # pragma: no cover
     from .app import LaserControlApp
@@ -37,7 +37,7 @@ def opt_params() -> list:
             {'title': 'Amortissement :', 'name': 'damping_factor', 'type': 'float', 'value': d['damping_factor'],
              'min': 0.0},
         ]},
-        {'title': 'Critères d’arrêt', 'name': 'stop_group', 'type': 'group', 'children': [
+        {'title': 'Critères d’arrêt', 'name': 'stop_group', 'type': 'group', 'expanded': False, 'children': [
             {'title': 'Patience (itérations) :', 'name': 'stall_patience', 'type': 'int',
              'value': d['stall_patience'], 'min': 1},
             {'title': 'Échelle de bande morte :', 'name': 'deadband_scale', 'type': 'float',
@@ -47,7 +47,7 @@ def opt_params() -> list:
             {'title': 'Reculs consécutifs max :', 'name': 'max_backoffs', 'type': 'int', 'value': d['max_backoffs'],
              'min': 1},
         ]},
-        {'title': 'Optimisation complète', 'name': 'full_opt_group', 'type': 'group', 'children': [
+        {'title': 'Optimisation complète', 'name': 'full_opt_group', 'type': 'group', 'expanded': False, 'children': [
             {'title': 'Itérations :', 'name': 'full_opt_iterations', 'type': 'int', 'value': d['full_opt_iterations'],
              'min': 1},
             {'title': 'Patience :', 'name': 'full_opt_stall_patience', 'type': 'int',
@@ -55,7 +55,7 @@ def opt_params() -> list:
             {'title': 'Échelle de bande morte :', 'name': 'full_opt_deadband_scale', 'type': 'float',
              'value': d['full_opt_deadband_scale'], 'min': 0.0001},
         ]},
-        {'title': 'Mesure', 'name': 'measure_group', 'type': 'group', 'children': [
+        {'title': 'Mesure', 'name': 'measure_group', 'type': 'group', 'expanded': False, 'children': [
             {'title': 'Trames pour le bruit :', 'name': 'noise_samples', 'type': 'int', 'value': d['noise_samples'],
              'min': 2},
             {'title': 'Trames par point :', 'name': 'probe_samples', 'type': 'int', 'value': d['probe_samples'],
@@ -94,7 +94,7 @@ class OptimizerTab(QtWidgets.QWidget):
         self.settings = Parameter.create(name='optimizer', type='group', children=opt_params())
         self.tree = ParameterTree()
         self.tree.setParameters(self.settings, showTop=False)
-        self.tree.setMinimumHeight(260)
+        self.tree.setMinimumHeight(340)
         self.settings.sigTreeStateChanged.connect(self._on_changed)
         left.addWidget(QtWidgets.QLabel('<b>1. Réglages</b>'))
         left.addWidget(self.tree)
@@ -109,6 +109,9 @@ class OptimizerTab(QtWidgets.QWidget):
         left.addWidget(QtWidgets.QLabel('<b>3. Signaux objectifs</b>'))
         self.table_signals = QtWidgets.QTableWidget(0, len(SIGNAL_COLS))
         self.table_signals.setHorizontalHeaderLabels(SIGNAL_COLS)
+        sh = self.table_signals.horizontalHeader()
+        sh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        sh.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
         self.table_signals.verticalHeader().setVisible(False)
         self.table_signals.setMinimumHeight(130)
         self.table_signals.itemChanged.connect(self._on_changed)
@@ -189,7 +192,7 @@ class OptimizerTab(QtWidgets.QWidget):
             motors = {m['role']: m for m in cfg.get('motors', [])}
             roles = sorted(self.app.core.roles.actuators)
             roles += [r for r in motors if r not in roles]
-            self.table_motors.setRowCount(len(roles))
+            reset_rows(self.table_motors, len(roles))
             for i, role in enumerate(roles):
                 it = QtWidgets.QTableWidgetItem(role if self.app.core.roles.is_actuator(role) else f'⚠ {role}')
                 it.setData(QtCore.Qt.UserRole, role)
@@ -208,12 +211,13 @@ class OptimizerTab(QtWidgets.QWidget):
                 sp = QtWidgets.QSpinBox()
                 sp.setRange(0, 999)
                 sp.setValue(int(m.get('order', i)))
+                sp.setFocusPolicy(QtCore.Qt.ClickFocus)
                 sp.valueChanged.connect(self._on_changed)
                 self.table_motors.setCellWidget(i, 3, sp)
             sigs = {s['role']: s for s in cfg.get('signals', [])}
             sroles = sorted(self.app.core.roles.signals)
             sroles += [r for r in sigs if r not in sroles]
-            self.table_signals.setRowCount(len(sroles))
+            reset_rows(self.table_signals, len(sroles))
             for i, role in enumerate(sroles):
                 s = sigs.get(role, {})
                 chk = QtWidgets.QTableWidgetItem('')
@@ -242,9 +246,11 @@ class OptimizerTab(QtWidgets.QWidget):
                 auto.setChecked(bool(s.get('auto_target', True)))
                 auto.toggled.connect(self._on_changed)
                 self.table_signals.setCellWidget(i, 6, auto)
-            self.table_signals.resizeColumnsToContents()
         finally:
             self._loading = False
+        # the left panel scrolls as a whole: the tables show all their rows (no nested scrolling)
+        fit_table_height(self.table_motors)
+        fit_table_height(self.table_signals)
 
     # ------------------------------------------------------------------ config
     def get_config(self) -> dict:

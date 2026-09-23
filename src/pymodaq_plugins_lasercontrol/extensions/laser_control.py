@@ -91,7 +91,14 @@ class LaserControl(CustomExt):
         self.setup_docks_and_widgets()
 
     def setup_menus_and_toolbars(self, menubar=None):
-        pass
+        # PyMoDAQ >= 5.2: dashboard toolbar (show / hide the dashboard, experiment and state menus).
+        # DashBoard.load_extension checks its 'show_dashboard' action once the extension is created.
+        create = getattr(self, 'create_dashboard_toolbar', None)
+        if create is not None and getattr(self.dashboard, 'experiment_manager', None) is not None:
+            try:
+                create(add_break=False)
+            except Exception as e:  # pragma: no cover - never block the extension for a toolbar
+                logger.warning(f'dashboard toolbar not created: {e}')
 
     def setup_menu(self, menubar=None):
         pass
@@ -165,12 +172,15 @@ def main():
     """Standalone launch for development: ``python -m pymodaq_plugins_lasercontrol.extensions.laser_control
     <dashboard preset or experiment name>``."""
     import sys
-    from pymodaq_gui.utils.utils import mkQApp
+    try:
+        from pymodaq_gui.qt_utils import mkQApp          # pymodaq_gui 5.2 (applies the PyMoDAQ theme)
+    except ImportError:
+        from pymodaq_gui.utils.utils import mkQApp       # pymodaq_gui 5.0 / 5.1
     app = mkQApp('Laser Control')
     name = sys.argv[1] if len(sys.argv) > 1 else 'laser_sim'
-    try:  # PyMoDAQ 5.2
+    try:  # PyMoDAQ 5.2: extensions are designated by the upper-cased class name (ExtensionEnum)
         from pymodaq.dashboard import load_dashboard_with_experiment
-        dashboard, extension, win = load_dashboard_with_experiment(name, EXTENSION_NAME)
+        dashboard, extension, win = load_dashboard_with_experiment(name, CLASS_NAME.upper())
     except ImportError:  # PyMoDAQ 5.1
         from pymodaq.utils.gui_utils.loader_utils import load_dashboard_with_preset
         dashboard, extension, win = load_dashboard_with_preset(name, EXTENSION_NAME)

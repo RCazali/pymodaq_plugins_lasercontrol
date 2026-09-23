@@ -113,24 +113,31 @@ class OverviewTab(QtWidgets.QWidget):
         self.btn_on = styled_button('▶ Activer la stabilisation', '#27ae60',
                                     'Démarre les PID du preset marqués « stabilisation » (après confirmation)')
         self.btn_off = styled_button('⏹ Désactiver', '#7f8c8d', 'Arrête les PID de stabilisation (aucun mouvement)')
-        self.btn_on.setMinimumHeight(34)
-        self.btn_off.setMinimumHeight(34)
+        self.btn_resume = styled_button('⏯ Reprendre', '#2980b9',
+                                        'Reprise manuelle des PID de stabilisation gelés par la sécurité (O10-A) : '
+                                        'données fraîches et intensité revenue exigées')
+        for b in (self.btn_on, self.btn_resume, self.btn_off):
+            b.setMinimumHeight(34)
         self.btn_on.clicked.connect(self._on_activate)
+        self.btn_resume.clicked.connect(lambda: self.app.resume_stabilization(self))
         self.btn_off.clicked.connect(self.app.deactivate_stabilization)
         sl.addWidget(self.btn_on, 0, 3)
-        sl.addWidget(self.btn_off, 0, 4)
+        sl.addWidget(self.btn_resume, 0, 4)
+        sl.addWidget(self.btn_off, 0, 5)
         sl.setColumnStretch(2, 1)
         self.summary = QtWidgets.QLabel('')
         self.summary.setWordWrap(True)
         self.summary.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        sl.addWidget(self.summary, 1, 0, 1, 5)
+        sl.addWidget(self.summary, 1, 0, 1, 6)
         self.problems = QtWidgets.QLabel('')
         self.problems.setWordWrap(True)
         self.problems.setStyleSheet('color: #c0392b;')
-        sl.addWidget(self.problems, 2, 0, 1, 5)
+        sl.addWidget(self.problems, 2, 0, 1, 6)
         outer.addWidget(stab)
 
         split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.split = split
+        self._split_fitted = False
         outer.addWidget(split, 1)
 
         # ---------------------------------------------------------- motor cards
@@ -198,6 +205,11 @@ class OverviewTab(QtWidgets.QWidget):
         super().resizeEvent(e)
         self._reflow()
 
+    def showEvent(self, e):
+        super().showEvent(e)
+        if not self._split_fitted:
+            QtCore.QTimer.singleShot(0, self._fit_cards_height)
+
     def _reflow(self):
         width = self.cards_scroll.viewport().width()
         cols = max(1, width // self.CARD_MIN_W) if width > 0 else 4
@@ -211,6 +223,21 @@ class OverviewTab(QtWidgets.QWidget):
         for c in range(cols):
             self.cards_grid.setColumnStretch(c, 1)
         self.cards_grid.setRowStretch((len(self._cards) + cols - 1) // cols, 1)
+        if self.isVisible():
+            self._fit_cards_height()
+
+    def _fit_cards_height(self):
+        """Give the motor cards the height they need (at most half of the tab), the curves the rest."""
+        total = sum(self.split.sizes())
+        if total <= 0 or not self.isVisible():
+            return
+        cols = max(self._cols, 1)
+        rows = max((len(self._cards) + cols - 1) // cols, 1)
+        card_h = max((c.sizeHint().height() for c in self._cards.values()), default=70)
+        needed = 28 + rows * (card_h + self.cards_grid.spacing()) + 12
+        cards = int(min(needed, total * 0.5))
+        self.split.setSizes([cards, total - cards])
+        self._split_fitted = True
 
     def _rebuild_plots(self):
         self.glw.clear()
@@ -221,8 +248,8 @@ class OverviewTab(QtWidgets.QWidget):
         for i, role in enumerate(roles):
             p = self.glw.addPlot(row=i, col=0)
             p.showGrid(x=True, y=True, alpha=0.25)
-            p.setLabel('left', role)
-            p.getAxis('left').setWidth(60)
+            p.getAxis('left').setWidth(64)          # same width everywhere: the time axes line up
+            p.hideButtons()
             if i < len(roles) - 1:
                 p.getAxis('bottom').setStyle(showValues=False)
             else:
@@ -231,8 +258,16 @@ class OverviewTab(QtWidgets.QWidget):
                 first = p
             else:
                 p.setXLink(first)
+            # the name goes in a small legend inside the plot (rotated axis labels overlap when
+            # several short plots are stacked)
+            try:
+                p.addLegend(offset=(6, 2), labelTextSize='8pt', verSpacing=-6)
+            except TypeError:  # pragma: no cover - old pyqtgraph
+                p.addLegend(offset=(6, 2))
+            units = self.app.core.roles.signals[role].units if role in self.app.core.roles.signals else ''
+            name = f'{role} ({units})' if units else role
             self._plots[role] = p
-            self._curves[role] = p.plot(pen=pg.mkPen(PLOT_COLORS[i % len(PLOT_COLORS)], width=1.5))
+            self._curves[role] = p.plot(pen=pg.mkPen(PLOT_COLORS[i % len(PLOT_COLORS)], width=1.5), name=name)
 
     def write_to_preset(self, preset: dict):
         preset.setdefault('overview', {})['plot_roles'] = self.signal_list.checked()
@@ -260,12 +295,15 @@ class OverviewTab(QtWidgets.QWidget):
             a = app.core.get(f"PID:{cfg['id']}")
             state = a.state.value if a is not None else 'OFF'
             mot = ', '.join(f"{r}×{w:+g}" for r, w in cfg.get('motors', {}).items() if w)
-            lines.append(f"• <b>{cfg.get('label') or cfg['id']}</b> [{state}] : {cfg.get('signal')} → {mot}")
+            reason = f" — <i>{a.reason}</i>" if a is not None and a.state in (AutoState.HELD, AutoState.PAUSED,
+                                                                             AutoState.ERROR) and a.reason else ''
+            lines.append(f"• <b>{cfg.get('label') or cfg['id']}</b> [{state}] : {cfg.get('signal')} → {mot}{reason}")
         self.summary.setText('<br>'.join(lines) if lines else
                              '<i>Aucun PID marqué « stabilisation » dans le preset.</i>')
         running = any(app.core.get(f"PID:{c['id']}") is not None and
                       app.core.get(f"PID:{c['id']}").state != AutoState.OFF for c in pids)
         self.btn_on.setEnabled(bool(pids) and not app.core.estop)
+        self.btn_resume.setEnabled(bool(app.held_stabilization()) and not app.core.estop)
         self.btn_off.setEnabled(running)
         self.problems.setText(app.stabilization_problems_text())
         for card in self._cards.values():

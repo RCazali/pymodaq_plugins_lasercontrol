@@ -50,6 +50,12 @@ class EventLogWidget(QtWidgets.QWidget):
         self.table.setWordWrap(False)
         self.table.setFocusPolicy(QtCore.Qt.ClickFocus)
         lay.addWidget(self.table)
+        bold = QtGui.QFont(self.table.font())
+        bold.setBold(True)
+        fm = QtGui.QFontMetrics(bold)
+        adv = getattr(fm, 'horizontalAdvance', None) or fm.width
+        # fixed widths, wide enough for the bold alarm rows; the message takes the rest
+        self._col_widths = [adv('00:00:00') + 18, adv('attention') + 18, adv('RECORDER:') + 18]
         self._pending: List[Event] = []
         self._token = events.subscribe(self._on_event)
         self._timer = QtCore.QTimer(self)
@@ -106,6 +112,7 @@ class EventLogWidget(QtWidgets.QWidget):
         for ev in self.events.recent(self.MAX_ROWS):
             if self._accept(ev):
                 self._append(ev)
-        self.table.resizeColumnsToContents()
+        for c, w in enumerate(self._col_widths):
+            self.table.setColumnWidth(c, w)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.scrollToBottom()

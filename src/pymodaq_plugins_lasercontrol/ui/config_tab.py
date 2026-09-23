@@ -9,7 +9,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from ..core.roles import sanitize_role_name
 from ..core.safety import ActuatorLimits, IntensityGuardConfig, SafetyConfig
-from .widgets import ask_yes_no, dspin, fmt, info, set_combo_items, styled_button, warn
+from .widgets import ask_yes_no, dspin, fmt, info, reset_rows, set_combo_items, styled_button, warn
 
 if TYPE_CHECKING:  # pragma: no cover
     from .app import LaserControlApp
@@ -124,7 +124,7 @@ class ConfigTab(QtWidgets.QWidget):
             self._add_role_row('signal', r.name, r.channel, r.units, r.note)
         dets = sorted(set(self.app.core.broker.detectors) | set(roles.heartbeats) |
                       set(self.app.core.signals.detectors()))
-        self.hb_table.setRowCount(len(dets))
+        reset_rows(self.hb_table, len(dets))
         for i, d in enumerate(dets):
             it = QtWidgets.QTableWidgetItem(d)
             it.setFlags(QtCore.Qt.ItemIsEnabled)
@@ -168,21 +168,19 @@ class ConfigTab(QtWidgets.QWidget):
         if errors:
             warn(self, 'Rôles', 'Corriger :\n' + '\n'.join(errors))
             return
-        self.app.apply_roles(rm, save=True)
-        self.load_roles()
+        self.app.apply_roles(rm, save=True)          # reloads this tab (set_hardware)
 
     def _reload_roles(self):
         self.app.reload_roles()
-        self.load_roles()
 
     def _auto_roles(self):
         rm, _ = self._table_roles()
-        created = rm.auto_complete(self.app.core.broker.modules(), self.app.core.signals.channels())
+        created = rm.auto_complete(self.app.core.broker.modules(), self.app.core.signals.channels(),
+                                   units_of=self.app.core.broker.units)
         if not created:
             info(self, 'Rôles', 'Aucun rôle manquant (modules et canaux reçus déjà couverts).')
             return
         self.app.apply_roles(rm, save=False)
-        self.load_roles()
         info(self, 'Rôles', f'{len(created)} rôle(s) créé(s). Vérifier puis « Appliquer et enregistrer ».')
 
     # ================================================================== safety
@@ -438,7 +436,7 @@ class ConfigTab(QtWidgets.QWidget):
 
     def set_hardware(self):
         self.load_roles()
-        self.load_safety(self.safety_config())
+        self.load_safety(self.app.core.safety.config)     # the core is the reference
 
     def refresh(self):
         self.refresh_detectors()

@@ -49,7 +49,8 @@ class RecordingTab(QtWidgets.QWidget):
 
         g = QtWidgets.QGroupBox('Réglages (enregistrés dans le preset)')
         form = QtWidgets.QFormLayout(g)
-        self.periodic = QtWidgets.QCheckBox('snapshots périodiques')
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        self.periodic = QtWidgets.QCheckBox('snapshots périodiques, période (s) :')
         self.period = dspin(10.0, 0.1, 86400, 2, tip='période des snapshots (s)')
         form.addRow(self.periodic, self.period)
         self.raw = QtWidgets.QCheckBox('enregistrer aussi les canaux 0D sans rôle')

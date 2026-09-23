@@ -29,7 +29,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from .log import DedupLogger, module_logger
 
@@ -133,15 +133,23 @@ class RoleMap:
         self.actuators.pop(name, None)
         self.signals.pop(name, None)
 
-    def auto_complete(self, modules: Iterable[str] = (), channels: Iterable[str] = ()) -> List[str]:
+    def auto_complete(self, modules: Iterable[str] = (), channels: Iterable[str] = (),
+                      units_of: Optional[Callable[[str], str]] = None) -> List[str]:
         """Create a role for every actuator module / 0D channel that has none (role name = a
-        sanitized version of the module / channel name). Returns the created role names."""
+        sanitized version of the module / channel name). ``units_of(module)`` fills the units of the
+        created actuator roles. Returns the created role names."""
         created = []
         taken = set(self.all_roles())
         for module in modules:
             if self.role_for_module(module) is None:
                 name = self._unique(sanitize_role_name(module), taken)
-                self.set_actuator(name, module)
+                units = ''
+                if units_of is not None:
+                    try:
+                        units = str(units_of(module) or '')
+                    except Exception:  # pragma: no cover
+                        units = ''
+                self.set_actuator(name, module, units)
                 taken.add(name)
                 created.append(name)
         channels = list(channels)

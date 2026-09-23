@@ -156,6 +156,8 @@ class AxisHistoryPlot(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._points: list = []
+        self._live = None
+        self._user_view = False          # the user zoomed / panned: stop following the data
         self._dims = 0
         self._orient: Optional[str] = None
         self._decimals = [4, 4]
@@ -209,9 +211,13 @@ class AxisHistoryPlot(QtWidgets.QWidget):
         self._cursor = pg.ScatterPlotItem(size=16, symbol='+', pen=pg.mkPen(HIST_MARKER, width=2),
                                           brush=pg.mkBrush(HIST_MARKER))
         self.plot.addItem(self._cursor)
-        self._empty = pg.TextItem('', color='#7f849c', anchor=(0.5, 0.5))
+        self._empty = pg.TextItem('', color='#7f849c', anchor=(0.5, 1.5))
         self.plot.addItem(self._empty)
+        pi.getViewBox().sigRangeChangedManually.connect(self._on_manual_range)
         v.addWidget(self.plot, stretch=1)
+
+    def _on_manual_range(self, *args):
+        self._user_view = True
 
     def set_axis(self, name, color, orient, labels, units, decimals):
         self._orient = orient
@@ -241,7 +247,11 @@ class AxisHistoryPlot(QtWidgets.QWidget):
             self._scatter.setData([], [])
             self._last.setData([], [])
             self._empty.setText('aucun actionneur' if self._dims == 0 else 'aucun mouvement enregistré')
-            self._empty.setPos(0, 0)
+            x0 = y0 = 0.0
+            if live and self._dims and all(v is not None for v in live):
+                xs, ys = self._xy([live])
+                x0, y0 = float(xs[0]), float(ys[0])
+            self._empty.setPos(x0, y0)
             self._empty.setVisible(True)
         else:
             self._empty.setVisible(False)
@@ -258,24 +268,53 @@ class AxisHistoryPlot(QtWidgets.QWidget):
             self._line.setData(xs, ys) if self._orient == '2d' else self._line.setData([], [])
             self._last.setData([xs[-1]], [ys[-1]])
         self.update_live(live)
+        if not self._user_view:
+            self.fit()
 
     def update_live(self, live):
+        self._live = list(live) if live else None
         if not live or self._dims == 0 or any(v is None for v in live):
             self._cursor.setData([], [])
             return
         xs, ys = self._xy([live])
         self._cursor.setData(xs, ys)
+        if not self._user_view:        # follow the live position when it leaves the view
+            (x0, x1), (y0, y1) = self.plot.getPlotItem().getViewBox().viewRange()
+            if not (x0 <= float(xs[0]) <= x1 and y0 <= float(ys[0]) <= y1):
+                self.fit()
+
+    @staticmethod
+    def _span(values) -> tuple:
+        """Range of values, never degenerate (a single point gets ±1 % of its value, at least ±1)."""
+        lo, hi = float(np.min(values)), float(np.max(values))
+        if hi - lo < 1e-12:
+            half = max(1.0, abs(lo) * 0.01)
+            return lo - half, hi + half
+        pad = 0.08 * (hi - lo)
+        return lo - pad, hi + pad
 
     def fit(self):
         pi = self.plot.getPlotItem()
-        if self._orient == 'h':
-            pi.enableAutoRange(x=True, y=False)
-            pi.setYRange(-1, 1, padding=0)
-        elif self._orient == 'v':
-            pi.enableAutoRange(x=False, y=True)
+        pi.disableAutoRange()
+        pts = [p[1:] for p in self._points]
+        live = getattr(self, '_live', None)
+        if live and self._dims and all(v is not None for v in live):
+            pts.append(live)
+        if not pts or self._dims == 0:
             pi.setXRange(-1, 1, padding=0)
+            pi.setYRange(-1, 1, padding=0)
+            self._user_view = False
+            return
+        xs, ys = self._xy(pts)
+        if self._orient in ('h', '2d'):
+            pi.setXRange(*self._span(xs), padding=0)
         else:
-            pi.enableAutoRange()
+            pi.setXRange(-1, 1, padding=0)
+        if self._orient in ('v', '2d'):
+            pi.setYRange(*self._span(ys), padding=0)
+        else:
+            pi.setYRange(-1, 1, padding=0)
+        self._user_view = False
 
     def _xy(self, values):
         a = np.array([[float(x) for x in v] for v in values], dtype=float)
@@ -356,9 +395,8 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.page.focus_changed.connect(self.focus_changed)
         page_l = QtWidgets.QVBoxLayout(self.page)
         page_l.setContentsMargins(3, 3, 3, 3)
-        corner = QtWidgets.QWidget()
-        status = QtWidgets.QHBoxLayout(corner)
-        status.setContentsMargins(0, 0, 2, 2)
+        status = QtWidgets.QHBoxLayout()
+        status.setContentsMargins(0, 0, 0, 2)
         status.setSpacing(8)
         self.kb_label = QtWidgets.QPushButton()
         self.kb_label.setFocusPolicy(QtCore.Qt.NoFocus)
@@ -373,6 +411,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         help_lbl = QtWidgets.QLabel('w/s ↕ · a/d ↔ · Maj rapide · 1…9,0 axe · Espace shaker')
         help_lbl.setStyleSheet('color: gray; font-style: italic;')
         status.addWidget(help_lbl)
+        status.addStretch()
         self.chk_hide = QtWidgets.QCheckBox('Masquer non assignés')
         self.chk_hide.setFocusPolicy(QtCore.Qt.NoFocus)
         self.chk_hide.toggled.connect(self._on_hide_toggled)
@@ -388,14 +427,16 @@ class AlignmentWidget(QtWidgets.QWidget):
         btn_stop.setStyleSheet('background-color: #c0392b; color: white; font-weight: bold; padding: 1px 10px;')
         btn_stop.clicked.connect(self.stop_all)
         status.addWidget(btn_stop)
-        self.inner_tabs.setCornerWidget(corner, QtCore.Qt.TopRightCorner)
+        page_l.addLayout(status)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
         page_l.addWidget(splitter, stretch=1)
         self.pos_scroll = QtWidgets.QScrollArea()
         self.pos_scroll.setWidgetResizable(True)
         self.pos_scroll.setFocusPolicy(QtCore.Qt.NoFocus)
         self.pos_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.pos_scroll.setMinimumWidth(self.CARD_MIN_W + 24)      # at least one full column of cards
         self.card_container = _CardContainer(self._reflow_cards)
         self.card_grid = QtWidgets.QGridLayout(self.card_container)
         self.card_grid.setSpacing(5)
@@ -418,6 +459,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
+        splitter.setSizes([600, 500])
         self.inner_tabs.addTab(self.page, '🕹️ Alignement')
 
         cfg = QtWidgets.QWidget()
@@ -747,6 +789,7 @@ class AlignmentWidget(QtWidgets.QWidget):
                 target.setToolTip('Cible absolue')
                 btn_go = QtWidgets.QPushButton('Go')
                 btn_go.setFocusPolicy(QtCore.Qt.NoFocus)
+                btn_go.setMaximumWidth(60)
                 btn_go.setStyleSheet('background-color: #2980b9; color: white; font-weight: bold; padding: 1px 10px;')
                 btn_go.clicked.connect(lambda _, a=act, t=target: self.move_abs(a, t.value()))
                 step = self._spin(ch.get('rel_step', 5.0 if ch_key == 'h' else 1.0))
@@ -767,7 +810,7 @@ class AlignmentWidget(QtWidgets.QWidget):
                 ctrl.setSpacing(4)
                 for w in (lt, target, btn_go):
                     ctrl.addWidget(w)
-                ctrl.addSpacing(10)
+                ctrl.addStretch(1)
                 for w in (ls, step, b_m, b_p):
                     ctrl.addWidget(w)
                 body.addLayout(ctrl, r, 0, 1, 4)
@@ -870,7 +913,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             lbl.setStyleSheet(style)
 
     def _update_speed_label(self):
-        self.speed_label.setText('⏩ RAPIDE' if self._fast else 'lent')
+        self.speed_label.setText('⏩ RAPIDE' if self._fast else 'vitesse lente')
         self.speed_label.setStyleSheet('color: #e67e22; font-weight: bold;' if self._fast else 'color: gray;')
 
     def activate_keyboard(self):

@@ -12,8 +12,18 @@ _app = None
 
 
 def app():
+    """The QApplication, created like PyMoDAQ does (5.2 needs its theme for the dashboard actions)."""
     global _app
-    _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    _app = QtWidgets.QApplication.instance()
+    if _app is None:
+        try:
+            from pymodaq_gui.qt_utils import mkQApp          # pymodaq_gui 5.2
+        except ImportError:
+            try:
+                from pymodaq_gui.utils.utils import mkQApp   # pymodaq_gui 5.0 / 5.1
+            except ImportError:  # pragma: no cover
+                mkQApp = None
+        _app = mkQApp('pytest') if mkQApp is not None else QtWidgets.QApplication([])
     return _app
 
 

@@ -26,7 +26,7 @@ class DAQ_Move_LaserSim(DAQ_Move_base):
         self.controller: LaserSimModel = None
 
     def get_actuator_value(self):
-        pos = DataActuator(data=self.controller.position(self.axis_name), units=self.controller_units)
+        pos = DataActuator(data=self.controller.position(self.axis_name), units=self.axis_unit)
         return self.get_position_with_scaling(pos)
 
     def close(self):

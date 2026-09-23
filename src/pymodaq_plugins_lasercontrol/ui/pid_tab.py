@@ -16,7 +16,8 @@ from ..core.states import AutoState, ENGAGED_STATES
 from ..core.roles import sanitize_role_name
 from ..engines.pid import PIDSettings
 from ..presets.schema import default_pid
-from .widgets import (EnvelopeGauge, StateBadge, ask_yes_no, fmt, info, set_combo_items, styled_button, warn)
+from .widgets import (EnvelopeGauge, StateBadge, ask_yes_no, fmt, info, reset_rows, set_combo_items,
+                      styled_button, warn)
 
 if TYPE_CHECKING:  # pragma: no cover
     from .app import LaserControlApp
@@ -25,11 +26,11 @@ if TYPE_CHECKING:  # pragma: no cover
 def pid_params() -> list:
     return [
         {'title': 'Nom affiché :', 'name': 'label', 'type': 'str', 'value': ''},
-        {'title': 'Inclus dans la stabilisation :', 'name': 'in_stabilization', 'type': 'bool', 'value': True,
+        {'title': 'Stabilisation :', 'name': 'in_stabilization', 'type': 'bool', 'value': True,
          'tip': 'Démarré / arrêté par les boutons « Activer / Désactiver la stabilisation » (Vue d’ensemble)'},
         {'title': 'Consigne :', 'name': 'setpoint', 'type': 'float', 'value': 0.0,
          'tip': 'Valeur visée du signal (unités du signal)'},
-        {'title': 'Mode de consigne :', 'name': 'setpoint_mode', 'type': 'list', 'limits': ['fixed', 'capture'],
+        {'title': 'Mode consigne :', 'name': 'setpoint_mode', 'type': 'list', 'limits': ['fixed', 'capture'],
          'value': 'fixed', 'tip': 'capture : la consigne prend la valeur actuelle du signal à chaque démarrage'},
         {'title': 'Kp :', 'name': 'kp', 'type': 'float', 'value': 0.1, 'min': 0.0,
          'tip': 'Gain proportionnel (unités moteur par unité de signal). Typique : 0.05 – 1'},
@@ -47,9 +48,9 @@ def pid_params() -> list:
          'tip': '0.5 s = 2 Hz. Une itération est sautée si un moteur bouge encore (pas d’empilement)'},
         {'title': 'Bande morte (erreur) :', 'name': 'deadband', 'type': 'float', 'value': 0.0, 'min': 0.0,
          'tip': '|erreur| inférieure : aucun mouvement, intégrale gelée'},
-        {'title': 'Attente après mouvement (s) :', 'name': 'settle_s', 'type': 'float', 'value': 0.0, 'min': 0.0,
+        {'title': 'Attente après mvt (s) :', 'name': 'settle_s', 'type': 'float', 'value': 0.0, 'min': 0.0,
          'tip': 'N’utilise qu’une mesure reçue au moins ce temps après la fin du dernier mouvement'},
-        {'title': 'Confirmer chaque mouvement :', 'name': 'confirm_moves', 'type': 'bool', 'value': False,
+        {'title': 'Confirmer chaque mvt :', 'name': 'confirm_moves', 'type': 'bool', 'value': False,
          'tip': 'Boîte de dialogue avant chaque déplacement (le PID est en PAUSE pendant la question)'},
     ]
 
@@ -78,12 +79,18 @@ class SinglePIDWidget(QtWidgets.QWidget):
         row.addWidget(self.combo_signal, 1)
         ll.addLayout(row)
         self.table = QtWidgets.QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(['Moteur (rôle)', 'Poids', 'Δ engagement', 'Enveloppe'])
-        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.table.setHorizontalHeaderLabels(['Moteur (rôle)', 'Poids', 'Δ engag.', 'Enveloppe'])
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
+        hh.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
+        self.table.setColumnWidth(1, 90)
+        self.table.horizontalHeaderItem(2).setToolTip('Déplacement depuis l’engagement (centre de l’enveloppe S4)')
         self.table.verticalHeader().setVisible(False)
         self.table.itemChanged.connect(self._on_changed)
         ll.addWidget(self.table)
-        main.addWidget(left, 3)
+        main.addWidget(left, 4)
 
         # 2. settings + actions
         center = QtWidgets.QGroupBox('2. Réglages')
@@ -91,7 +98,11 @@ class SinglePIDWidget(QtWidgets.QWidget):
         self.settings = Parameter.create(name=f'pid_{self.pid_id}', type='group', children=pid_params())
         self.tree = ParameterTree()
         self.tree.setParameters(self.settings, showTop=False)
-        self.tree.setMinimumWidth(260)
+        self.tree.setMinimumWidth(340)
+        header = self.tree.header()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
+        self.tree.setColumnWidth(0, 190)          # the value column must stay visible
         self.settings.sigTreeStateChanged.connect(self._on_changed)
         cl.addWidget(self.tree, 1)
         self.state = StateBadge('', font_pt=11)
@@ -119,7 +130,7 @@ class SinglePIDWidget(QtWidgets.QWidget):
         self.btn_resume.clicked.connect(self._on_resume)
         self.btn_capture.clicked.connect(self._on_capture)
         self.btn_ref.clicked.connect(self._on_reset_ref)
-        main.addWidget(center, 2)
+        main.addWidget(center, 3)
 
         # 3. live
         right = QtWidgets.QGroupBox('3. Suivi')
@@ -158,7 +169,7 @@ class SinglePIDWidget(QtWidgets.QWidget):
         for r in weights:
             if r not in roles:
                 roles.append(r)            # keep a role of the preset missing on this machine
-        self.table.setRowCount(len(roles))
+        reset_rows(self.table, len(roles))
         self._motor_gauges = {}
         self._motor_labels = {}
         for i, role in enumerate(roles):
@@ -254,7 +265,8 @@ class SinglePIDWidget(QtWidgets.QWidget):
     def refresh(self):
         a = self.app.core.get(self.auto_id)
         state = a.state if a is not None else AutoState.OFF
-        self.state.set_state(state, a.reason if a else '', prefix=f'{self.pid_id} : ')
+        label = self.settings.child('label').value() or self.pid_id
+        self.state.set_state(state, a.reason if a else '', prefix=f'{label} : ')
         self.reason.setText(a.reason if a is not None and state in (AutoState.HELD, AutoState.PAUSED,
                                                                      AutoState.ERROR) else '')
         engaged = state in ENGAGED_STATES

@@ -101,8 +101,10 @@ class SignalSource:
         for det, st in self._detectors.items():
             ch = self._heartbeats.get(det)
             if ch != st.heartbeat_channel:
+                # a new counter must be SEEN advancing: start from its last known value
+                last = self.latest(ch) if ch else None
                 st.heartbeat_channel = ch
-                st.heartbeat_value = None
+                st.heartbeat_value = last.value if last is not None and is_finite(last.value) else None
                 st.heartbeat_change_t = None
 
     # ------------------------------------------------------------------ input
@@ -201,9 +203,10 @@ class SignalSource:
             st.state, st.reason = 'unknown', 'aucune trame reçue'
         elif st.age > self.max_age_s:
             st.state, st.reason = 'stale', f'plus de trame depuis {st.age:.1f} s'
-        elif st.heartbeat_channel and (st.heartbeat_age is None or st.heartbeat_age > self.max_age_s):
-            hb_age = '∞' if st.heartbeat_age is None else f'{st.heartbeat_age:.1f}'
-            st.state, st.reason = 'stale', f'compteur de trames figé depuis {hb_age} s'
+        elif st.heartbeat_channel and st.heartbeat_age is None:
+            st.state, st.reason = 'stale', 'compteur de trames pas encore vu avancer'
+        elif st.heartbeat_channel and st.heartbeat_age > self.max_age_s:
+            st.state, st.reason = 'stale', f'compteur de trames figé depuis {st.heartbeat_age:.1f} s'
         elif st.age > self.WARN_FRACTION * self.max_age_s:
             st.state, st.reason = 'warn', f'trame âgée de {st.age:.1f} s'
         else:

@@ -234,6 +234,27 @@ class CheckList(QtWidgets.QListWidget):
                 if self.item(i).checkState() == QtCore.Qt.Checked]
 
 
+def reset_rows(table: QtWidgets.QTableWidget, rows: int):
+    """Resize a table whose cells hold widgets. Emptying it first deletes every cell widget:
+    ``setCellWidget`` on an occupied cell does not delete the previous widget with Qt 5, which then
+    stays visible, orphaned, over the table."""
+    table.setRowCount(0)
+    table.setRowCount(rows)
+
+
+def fit_table_height(table: QtWidgets.QTableWidget, max_rows: int = 14, min_rows: int = 2):
+    """Fixed table height showing all its rows (up to ``max_rows``), for tables inside a scroll area."""
+    rows = min(max(table.rowCount(), min_rows), max_rows)
+    row_h = table.verticalHeader().defaultSectionSize()
+    if table.rowCount():
+        row_h = max(row_h, max(table.rowHeight(r) for r in range(min(table.rowCount(), max_rows))))
+    h = table.horizontalHeader().sizeHint().height() + rows * row_h + 2 * table.frameWidth() + 4
+    if table.horizontalScrollBar().isVisible():
+        h += table.horizontalScrollBar().sizeHint().height()
+    table.setMinimumHeight(h)
+    table.setMaximumHeight(h)
+
+
 def set_combo_items(combo: QtWidgets.QComboBox, items: List[str], current: Optional[str] = None,
                     keep_unknown: bool = True):
     """Refill a combo without losing the current value (unknown values kept, marked with ⚠)."""
