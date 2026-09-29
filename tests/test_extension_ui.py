@@ -130,9 +130,11 @@ def test_03_pid_from_tab_and_stabilisation(ext):
     assert 'measure' in w.values.text()
     # overview table: one row, state and RMS error filled, action button = Stop
     assert pid_tab.overview.rowCount() == 1
-    assert pid_tab.overview.item(0, 1).text() == 'Active'
-    assert pid_tab.overview.item(0, 4).text() not in ('', '—')
-    assert 'Stop' in pid_tab.overview.cellWidget(0, len(pid_tab.COLS) - 1).text()
+    assert pid_tab.overview.item(0, pid_tab.STATE_COL).text() == 'Active'
+    assert pid_tab.overview.item(0, 5).text() not in ('', '—')
+    assert 'Stop' in pid_tab.overview.cellWidget(0, pid_tab.ACTION_COL).text()
+    assert 'frozen' not in w.stats.text()
+    assert w._param('kp').value() == 0.5 and w._param('setpoint').value() == 0.0
     assert 'RMS error' in w.stats.text()
     # one loop sign: inverting it is applied live to the three terms
     w._on_invert()
@@ -222,7 +224,7 @@ def test_05b_alignment_buttons(ext):
     """PID / optimisation buttons of the Alignment tab: one click, no confirmation."""
     e, win, model, data = ext
     a = e.app
-    a.tabs['pid'].widgets['H'].settings.child('show_in_alignment').setValue(True)
+    a.tabs['pid'].widgets['H']._param('show_in_alignment').setValue(True)
     a.tabs['optimizer'].widgets['Jet'].settings.child('show_in_alignment').setValue(True)
     a.tab_widget.setCurrentWidget(a.tabs['alignment'])
     run(0.6)

@@ -57,8 +57,8 @@ In the PID tab, the table at the top shows every PID (state, error, RMS error ov
 used, start / stop). Below, for the selected PID: measurement and setpoint with a marker at each move,
 then the error with the P, I, D contributions, over a chosen window (30 s, 2 min, 10 min, all), with
 the RMS error and the standard deviation of the measurement: use them to compare two settings.
-Only the essential settings are shown; Kd, deadband, settle time, setpoint mode and move confirmation
-are under **Advanced**.
+When the PID is not active (stopped, paused, held), the plots freeze on the last iteration. The
+setpoint and Kp are large fields; every other setting is under **Advanced**.
 
 ## 3. Weights (several motors for one signal)
 
