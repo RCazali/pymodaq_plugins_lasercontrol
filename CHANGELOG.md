@@ -4,6 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 
 ## [Unreleased]
 
+### Added
+- **PID setpoints in the Alignment tab**: each PID setpoint is a virtual axis `SP:<pid id>` that can be
+  assigned to an axis channel (h / v) like a motor, and moved with the keyboard (step mode, 10 steps/s,
+  Slow / Fast = setpoint step). Moving a setpoint does not stop the PID (it is not a motor); the value
+  is applied live and kept in sync with the PID tab. Demo: axis "Beam setpoint" (Beam H / Beam V).
+- Simulator: two coupled benches with known matrices — coupled mount (`Cpl_A/B` → `Cpl_x/y`, moderate
+  coupling) and beam walk (`BW1_H/V`, `BW2_H/V` → `Near_x/y`, `Far_x/y`, strong coupling), driven in the
+  demo preset by independent PIDs. Run `tools.sim_preset --force` to get them.
+- `docs/pid_roadmap.md`: design of the calibration, the loop state indicator and the coupled PID.
+
 ### Changed
 - **PID tab redesigned**: overview table of every PID (state, signal → motors, error, RMS error,
   worst envelope use, start / stop / resume button) with the details of the selected PID below.

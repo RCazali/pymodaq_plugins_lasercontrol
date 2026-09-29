@@ -371,6 +371,7 @@ class SinglePIDWidget(QtWidgets.QWidget):
             a.set_settings(PIDSettings.from_dict(cfg['settings']))   # live gains/setpoint/sign update
             a.label = cfg['label'] or f'PID {self.pid_id}'
             a.in_stabilization = cfg['in_stabilization']
+        self.app.manual.notify_virtual(f'SP:{self.pid_id}')   # setpoint axis of the Alignment tab
         self.changed.emit()
 
     # ------------------------------------------------------------------ actions

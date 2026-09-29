@@ -29,7 +29,7 @@ from ..presets import (LegacyImport, PresetStore, SessionStore, content_hash, de
                        validate_preset)
 from ..recording import EventTriggerWriter, Recorder
 from ..utils import config_get
-from .manual import ManualControl
+from .manual import VIRTUAL_PREFIX, ManualControl, VirtualActuators
 from .widgets import ask_yes_no, info, warn
 
 logger = DedupLogger(module_logger(__file__))
@@ -98,6 +98,49 @@ def git_version() -> str:
         return 'unknown'
 
 
+class PIDSetpoints(VirtualActuators):
+    """The setpoint of every PID, as a virtual actuator ``SP:<pid id>`` of the Alignment / XY tabs.
+    The value shown is the one the PID uses (captured setpoint included); a change goes through the
+    PID tab field, so it is applied live, saved in the preset and the tab stays in sync."""
+
+    def __init__(self, app: 'LaserControlApp'):
+        self.app = app
+
+    def _widget(self, name: str):
+        tab = self.app.tabs.get('pid')
+        return tab.widgets.get(name[len(VIRTUAL_PREFIX):]) if tab is not None else None
+
+    def names(self) -> List[str]:
+        tab = self.app.tabs.get('pid')
+        ids = tab._order if tab is not None else [p['id'] for p in self.app.preset.get('pids', [])]
+        return [VIRTUAL_PREFIX + i for i in ids]
+
+    def value(self, name: str) -> Optional[float]:
+        a = self.app.core.get('PID:' + name[len(VIRTUAL_PREFIX):])
+        if a is not None and a.state in ENGAGED_STATES:
+            return float(a.settings.setpoint)
+        w = self._widget(name)
+        return float(w._param('setpoint').value()) if w is not None else None
+
+    def set_value(self, name: str, value: float) -> Tuple[bool, str]:
+        w = self._widget(name)
+        if w is None:
+            return False, 'PID not found'
+        if not math.isfinite(value):
+            return False, 'invalid value'
+        w._param('setpoint').setValue(float(value))
+        return True, ''
+
+    def units(self, name: str) -> str:
+        w = self._widget(name)
+        sig = self.app.core.roles.signals.get(w.combo_signal.currentText()) if w is not None else None
+        return sig.units if sig is not None else ''
+
+    def label(self, name: str) -> str:
+        w = self._widget(name)
+        return f'setpoint of {w.label()}' if w is not None else 'setpoint'
+
+
 class LaserControlApp(QtCore.QObject):
     shake_done = QtCore.Signal(bool, str)
     preset_applied = QtCore.Signal()
@@ -126,7 +169,8 @@ class LaserControlApp(QtCore.QObject):
         self.core = LaserCore(clock or Clock(), roles)
         self.core.confirm_handler = self._confirm_moves
         self.core.shake_handler = self._fire_shaker
-        self.manual = ManualControl(self.core, feedback=self._manual_feedback)
+        self.manual = ManualControl(self.core, feedback=self._manual_feedback, virtual=PIDSetpoints(self),
+                                    defer=lambda ms, fn: QtCore.QTimer.singleShot(ms, fn))
         self.store = PresetStore(self.paths.presets)
         self.session_store = SessionStore(self.paths.session_file)
         self.preset: dict = default_preset('New preset')
@@ -624,6 +668,10 @@ class LaserControlApp(QtCore.QObject):
         for w in self.tabs.values():
             if hasattr(w, 'load_from_preset'):
                 w.load_from_preset(p)
+        for key in ('alignment', 'xy'):          # PID setpoints (SP:<id>) exist once the PID tab is loaded
+            w = self.tabs.get(key)
+            if w is not None and hasattr(w, 'set_hardware'):
+                w.set_hardware()
         self.preset_dirty = False
         rep = validate_preset(p, self.core.roles, self.core.broker.modules(), self.core.signals.channels())
         self.core.events.publish(EventKind.PRESET, source,

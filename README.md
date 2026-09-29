@@ -72,6 +72,11 @@ Besides the simulated laser, the simulator contains two simple test benches:
 | beam pointing | `Steer_H`, `Steer_V` | `Beam_x`, `Beam_y` (µm, 0 = centered) | PIDs "Beam H" and "Beam V" (setpoint 0, Kp 0.6) |
 | photodiode behind a pinhole | `PD_X`, `PD_Y` | `PD_current` (mA, 2 mA at best) | "Photodiode optim" (one pass), "Photodiode tracking" (periodic) |
 | laser | `OC_H`, `OC_V`… | `Cam1_x`, `Laser_power`… | "Cam1 X ← OC_H", "OC power optim" |
+| coupled mount (moderate coupling) | `Cpl_A`, `Cpl_B` | `Cpl_x` = A + 0.35·B, `Cpl_y` = −0.25·A + B | PIDs "Coupled x" / "Coupled y" |
+| beam walk (strong coupling) | `BW1_H/V`, `BW2_H/V` | `Near_x/y`, `Far_x/y` (see `hardware/sim.py`) | PIDs "BW near / far x / y" (independent: slow, they fight) |
+
+The Alignment axis **Beam setpoint** moves the setpoints of the PIDs "Beam H" / "Beam V" with the
+keyboard (`a`/`d`, `s`/`w`): start both PIDs, then steer the beam through its setpoint.
 
 The optima drift slowly (about one minute). Misalign a bench with the keyboard, then click its button.
 

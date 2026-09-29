@@ -35,7 +35,9 @@ DEFAULT_NAME = 'laser_sim'
 DEFAULT_MOVES: Tuple[Tuple[str, str], ...] = (
     ('Sim OC_H', 'OC_H'), ('Sim OC_V', 'OC_V'), ('Sim EM_H', 'EM_H'), ('Sim EM_V', 'EM_V'),
     ('Sim JET_X', 'JET_X'), ('Sim JET_Y', 'JET_Y'),
-    ('Sim STEER_H', 'STEER_H'), ('Sim STEER_V', 'STEER_V'), ('Sim PD_X', 'PD_X'), ('Sim PD_Y', 'PD_Y'))
+    ('Sim STEER_H', 'STEER_H'), ('Sim STEER_V', 'STEER_V'), ('Sim PD_X', 'PD_X'), ('Sim PD_Y', 'PD_Y'),
+    ('Sim CPL_A', 'CPL_A'), ('Sim CPL_B', 'CPL_B'),
+    ('Sim BW1_H', 'BW1_H'), ('Sim BW1_V', 'BW1_V'), ('Sim BW2_H', 'BW2_H'), ('Sim BW2_V', 'BW2_V'))
 DEFAULT_DETECTORS: Tuple[str, ...] = ('SimB',)
 PLUGIN = 'LaserSim'
 DEMO_PRESET = 'Simulator demo'
@@ -160,9 +162,18 @@ SIM_HEARTBEATS = {'SimB': 'SimB/Stats/frame_counter'}
 DEMO_ACTUATOR_ROLES = {'Steer_H': ('Sim STEER_H', 'Test bench: steering mirror, H (+ = beam towards +x)'),
                        'Steer_V': ('Sim STEER_V', 'Test bench: steering mirror, V (+ = beam towards +y)'),
                        'PD_X': ('Sim PD_X', 'Test bench: lens in front of the photodiode, X'),
-                       'PD_Y': ('Sim PD_Y', 'Test bench: lens in front of the photodiode, Y')}
+                       'PD_Y': ('Sim PD_Y', 'Test bench: lens in front of the photodiode, Y'),
+                       'Cpl_A': ('Sim CPL_A', 'Coupled mount (simple): screw A, moves x (+1) and y (-0.25)'),
+                       'Cpl_B': ('Sim CPL_B', 'Coupled mount (simple): screw B, moves y (+1) and x (+0.35)'),
+                       'BW1_H': ('Sim BW1_H', 'Beam walk (strong coupling): mirror 1, H'),
+                       'BW1_V': ('Sim BW1_V', 'Beam walk (strong coupling): mirror 1, V'),
+                       'BW2_H': ('Sim BW2_H', 'Beam walk (strong coupling): mirror 2, H'),
+                       'BW2_V': ('Sim BW2_V', 'Beam walk (strong coupling): mirror 2, V')}
 DEMO_SIGNAL_ROLES = {'Beam_x': ('SimB/Beam/x', 'µm'), 'Beam_y': ('SimB/Beam/y', 'µm'),
-                     'PD_current': ('SimB/PD/current', 'mA')}
+                     'PD_current': ('SimB/PD/current', 'mA'),
+                     'Cpl_x': ('SimB/Coupled/x', 'µm'), 'Cpl_y': ('SimB/Coupled/y', 'µm'),
+                     'Near_x': ('SimB/Near/x', 'µm'), 'Near_y': ('SimB/Near/y', 'µm'),
+                     'Far_x': ('SimB/Far/x', 'µm'), 'Far_y': ('SimB/Far/y', 'µm')}
 
 
 def _sim_paths():
@@ -216,12 +227,12 @@ def demo_preset() -> dict:
     """Laser Control preset of the simulator: what the Alignment buttons need to be tried."""
     from ..presets import default_optimizer, default_pid, default_preset, normalize
 
-    def pid(pid_id, label, signal, motor, show=True, max_step=2.0):
+    def pid(pid_id, label, signal, motor, show=True, max_step=2.0, kp=0.6, stab=True):
         d = default_pid(pid_id)
-        d.update({'label': label, 'show_in_alignment': show, 'in_stabilization': True, 'signal': signal,
+        d.update({'label': label, 'show_in_alignment': show, 'in_stabilization': stab, 'signal': signal,
                   'motors': {motor: 1.0}})
         # the motor integrates the steps already: P alone removes the error (Ki > 0: slow unwinding after a big error)
-        d['settings'].update({'setpoint': 0.0, 'setpoint_mode': 'fixed', 'kp': 0.6, 'sign_kp': '+', 'ki': 0.0,
+        d['settings'].update({'setpoint': 0.0, 'setpoint_mode': 'fixed', 'kp': kp, 'sign_kp': '+', 'ki': 0.0,
                               'sign_ki': '+', 'kd': 0.0, 'max_step': max_step, 'period_s': 0.5, 'deadband': 0.1})
         return d
 
@@ -238,12 +249,16 @@ def demo_preset() -> dict:
         return d
 
     p = default_preset(DEMO_PRESET)
-    p['description'] = ('Simulator: "pointing" test bench (Steer_H/V → Beam_x/y, stabilized by PID) and '
-                        '"photodiode" test bench (PD_X/Y → PD_current, optimized), plus the simulated laser (OC, EM, jet).')
+    p['description'] = ('Simulator: "pointing" test bench (Steer_H/V → Beam_x/y, stabilized by PID), '
+                        '"photodiode" test bench (PD_X/Y → PD_current, optimized), two coupled benches '
+                        '(coupled mount Cpl_A/B → Cpl_x/y, moderate coupling; beam walk BW1/BW2 → Near/Far x/y, '
+                        'strong coupling) driven here by independent PIDs, plus the simulated laser (OC, EM, jet).')
     lim = {'Steer_H': (3.0, 40.0, 200.0), 'Steer_V': (3.0, 40.0, 200.0), 'PD_X': (5.0, 40.0, 300.0),
            'PD_Y': (5.0, 40.0, 300.0), 'OC_H': (2.0, 30.0, 150.0), 'OC_V': (2.0, 30.0, 150.0),
            'EM_H': (2.0, 30.0, 150.0), 'EM_V': (2.0, 30.0, 150.0), 'Jet_X': (2.0, 30.0, 150.0),
-           'Jet_Y': (2.0, 30.0, 150.0)}
+           'Jet_Y': (2.0, 30.0, 150.0), 'Cpl_A': (3.0, 40.0, 200.0), 'Cpl_B': (3.0, 40.0, 200.0),
+           'BW1_H': (3.0, 40.0, 200.0), 'BW1_V': (3.0, 40.0, 200.0), 'BW2_H': (3.0, 40.0, 200.0),
+           'BW2_V': (3.0, 40.0, 200.0)}
     p['safety']['actuators'] = {r: {'max_step': a, 'max_excursion': b, 'abs_min': None, 'abs_max': None,
                                     'rate_window_s': 60.0, 'rate_max': c, 'resolution': 0.01}
                                 for r, (a, b, c) in lim.items()}
@@ -252,7 +267,14 @@ def demo_preset() -> dict:
     p['pids'] = [pid('Beam_H', 'Beam H', 'Beam_x', 'Steer_H'),
                  pid('Beam_V', 'Beam V', 'Beam_y', 'Steer_V'),
                  pid('Cam1_X_OC', 'Cam1 X ← OC_H', 'Cam1_x', 'OC_H', max_step=1.5),
-                 pid('Cam1_Y_OC', 'Cam1 Y ← OC_V', 'Cam1_y', 'OC_V', show=False, max_step=1.5)]
+                 pid('Cam1_Y_OC', 'Cam1 Y ← OC_V', 'Cam1_y', 'OC_V', show=False, max_step=1.5),
+                 # coupled benches driven by independent PIDs: works (simple) / slow, fighting (beam walk)
+                 pid('Cpl_X', 'Coupled x', 'Cpl_x', 'Cpl_A', stab=False),
+                 pid('Cpl_Y', 'Coupled y', 'Cpl_y', 'Cpl_B', stab=False),
+                 pid('BW_Near_X', 'BW near x', 'Near_x', 'BW1_H', show=False, stab=False),
+                 pid('BW_Far_X', 'BW far x', 'Far_x', 'BW2_H', show=False, kp=0.4, stab=False),
+                 pid('BW_Near_Y', 'BW near y', 'Near_y', 'BW1_V', show=False, stab=False),
+                 pid('BW_Far_Y', 'BW far y', 'Far_y', 'BW2_V', show=False, kp=0.4, stab=False)]
     p['optimizers'] = [opt('Optim_PD', 'Photodiode optim', ['PD_X', 'PD_Y'], 'PD_current'),
                        opt('Track_PD', 'Photodiode tracking', ['PD_X', 'PD_Y'], 'PD_current',
                            action='periodic', interval=0.5),
@@ -261,7 +283,12 @@ def demo_preset() -> dict:
                                _axis('Photodiode', 'PD_X', 'PD_Y', labels=('X', 'Y')),
                                _axis('OC', 'OC_H', 'OC_V', labels=('Horiz', 'Vert')),
                                _axis('End mirror', 'EM_H', 'EM_V', labels=('Horiz', 'Vert')),
-                               _axis('Gas Jet xy', 'Jet_X', 'Jet_Y', labels=('X', 'Y'))],
+                               _axis('Gas Jet xy', 'Jet_X', 'Jet_Y', labels=('X', 'Y')),
+                               _axis('Coupled mount', 'Cpl_A', 'Cpl_B', labels=('A', 'B')),
+                               _axis('Beam walk M1', 'BW1_H', 'BW1_V'),
+                               _axis('Beam walk M2', 'BW2_H', 'BW2_V'),
+                               _axis('Beam setpoint', 'SP:Beam_H', 'SP:Beam_V', slow=0.2, fast=2.0,
+                                     labels=('x', 'y'))],
                       'active': 0, 'hide_unassigned': False}
     p['overview'] = {'plot_roles': ['Beam_x', 'Beam_y', 'PD_current']}
     return normalize(p)

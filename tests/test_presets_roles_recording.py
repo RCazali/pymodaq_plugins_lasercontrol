@@ -292,11 +292,36 @@ def test_simulator_demo_preset(tmp_path, monkeypatch):
     rep = validate_preset(p, rm, modules)
     assert rep.ok, rep.text()
     assert {a for a in rep.automations} == {'PID:Beam_H', 'PID:Beam_V', 'PID:Cam1_X_OC', 'PID:Cam1_Y_OC',
+                                            'PID:Cpl_X', 'PID:Cpl_Y', 'PID:BW_Near_X', 'PID:BW_Far_X',
+                                            'PID:BW_Near_Y', 'PID:BW_Far_Y',
                                             'OPT:Optim_PD', 'OPT:Track_PD', 'OPT:Optim_OC'}
+    assert not rep.warnings, rep.text()           # 'SP:Beam_H' setpoint axes are not taken for motor roles
     assert all(rm.module_for(r) in modules for r in rm.actuators)
     path = sim_preset.write_demo_preset()
     assert path is not None and sim_preset.write_demo_preset() is None
     assert PresetStore(tmp_path / 'presets').load(sim_preset.DEMO_PRESET)['optimizers'][1]['button_action'] == 'periodic'
+
+
+def test_simulator_coupled_benches_follow_their_matrix():
+    """The coupled benches respond exactly with COUPLED_SIMPLE / BEAM_WALK (noise and drift off)."""
+    from pymodaq_plugins_lasercontrol.hardware.sim import BEAM_WALK, COUPLED_SIMPLE, LaserSimModel
+    t = [0.0]
+    sim = LaserSimModel(seed=1, clock=lambda: t[0])
+    sim.noise = 0.0
+    sim.drift_amplitude = 0.0
+    sim.random_walk = 0.0
+    sim.dropout_rate_per_min = 0.0
+    for axis, value in (('CPL_A', 2.0), ('CPL_B', -1.0), ('BW1_H', 1.0), ('BW2_H', 2.0), ('BW1_V', -3.0)):
+        sim.move_to(axis, value)
+    t[0] = 10.0
+    f = sim.frame()
+    pos = {'CPL_A': 2.0, 'CPL_B': -1.0, 'BW1_H': 1.0, 'BW2_H': 2.0, 'BW1_V': -3.0, 'BW2_V': 0.0}
+    for matrix in (COUPLED_SIMPLE, BEAM_WALK):
+        for key, row in matrix.items():
+            data, label = key.split('/')
+            assert f[data][label] == pytest.approx(sum(g * pos[a] for a, g in row.items()), abs=1e-9)
+    assert f['Coupled']['x'] == pytest.approx(2.0 - 0.35)
+    assert f['Far']['x'] == pytest.approx(1.0 + 3.0 + 0.0)
 
 
 def test_schema_v1_single_optimizer_is_migrated():

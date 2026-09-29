@@ -173,11 +173,11 @@ def roles_used(preset: dict) -> Dict[str, List[str]]:
     for ax in (preset.get('alignment', {}) or {}).get('axes', []) or []:
         for k in ('h', 'v'):
             ch = ax.get(k) if isinstance(ax, dict) else None
-            if ch and ch.get('actuator') not in (None, '', 'None'):
-                acts.add(ch['actuator'])
+            if ch and ch.get('actuator') not in (None, '', 'None') and not str(ch['actuator']).startswith('SP:'):
+                acts.add(ch['actuator'])       # 'SP:<pid>' = setpoint of a PID, not a motor role
     for g in preset.get('xy_groups', []) or []:
         for k in ('actuator_x', 'actuator_y'):
-            if g.get(k) not in (None, '', 'None'):
+            if g.get(k) not in (None, '', 'None') and not str(g[k]).startswith('SP:'):
                 acts.add(g[k])
     return {'actuators': sorted(acts), 'signals': sorted(sigs)}
 

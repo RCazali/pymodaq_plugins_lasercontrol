@@ -58,6 +58,11 @@ Under the motors, **one button per chosen automation**: in the PID or Optimizati
   keyboard stops the automation that drives it (§ 5).
 - Two automations on the same motor: the last one started takes over, the other one pauses and
   resumes by itself afterwards (for example a PID during an optimization pass).
+- **PID setpoints as axes**: in Alignment → Configuration, an axis channel can be `SP:<PID id>` (the
+  setpoint of that PID) instead of a motor. Selected with its key (1…9, 0), it moves with `a`/`d` and
+  `s`/`w` like a motor (Slow / Fast = setpoint step; use the `step` or `auto` jog mode). The PID keeps
+  running and moves its motors to follow: once the PIDs are well tuned, optimizing on the setpoints is
+  more reliable than moving the motors by hand.
 - The height of the button area is adjusted with the handle between the motors and the buttons.
 
 ## 5. Activating / deactivating the stabilization (Overview)

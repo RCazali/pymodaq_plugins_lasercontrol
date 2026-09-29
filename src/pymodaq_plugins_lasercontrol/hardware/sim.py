@@ -20,6 +20,16 @@ Two independent test benches, to try the PIDs and the optimiser on something obv
 * **photodiode**: a lens (PD_X / PD_Y) focuses on a photodiode behind a pinhole,
   ``PD/current`` (mA) = 2 · exp(−r² / 2·12²) with r the distance to a drifting optimum (µm).
   The optimiser maximises it (probe step ≈ 1 µm, max step ≈ 3 µm).
+
+Two coupled test benches, to try coupled (MIMO) control (see ``COUPLED_SIMPLE`` / ``BEAM_WALK``):
+
+* **coupled mount** (simple, moderate coupling): a mount whose two screws CPL_A / CPL_B are not aligned
+  with the detector axes, ``Coupled/x`` = 1.0·A + 0.35·B, ``Coupled/y`` = −0.25·A + 1.0·B. Two independent
+  PIDs still work, slower; a coupled PID converges in one step;
+* **beam walk** (complex, strong coupling): two steering mirrors BW1 and BW2 (H and V each) seen by a
+  near-field and a far-field camera. Both mirrors move both cameras (condition number ≈ 6 per plane)
+  and a slightly rotated mount adds an H ↔ V cross-coupling. Independent PIDs pairing one mirror with
+  one camera fight each other (slow, may oscillate): this is the case the coupled PID is made for.
 """
 from __future__ import annotations
 
@@ -31,10 +41,18 @@ from typing import Dict, Optional
 import numpy as np
 
 AXES = ['OC_H', 'OC_V', 'EM_H', 'EM_V', 'AP_X', 'AP_Y', 'JET_X', 'JET_Y', 'JET_Z', 'KERR',
-        'STEER_H', 'STEER_V', 'PD_X', 'PD_Y']
+        'STEER_H', 'STEER_V', 'PD_X', 'PD_Y', 'CPL_A', 'CPL_B', 'BW1_H', 'BW1_V', 'BW2_H', 'BW2_V']
 #: drift amplitude of each axis, relative to ``drift_amplitude`` (0.3 for the axes not listed)
 DRIFT_FACTOR = {'OC_H': 1.0, 'OC_V': 1.0, 'EM_H': 1.0, 'EM_V': 1.0,
-                'STEER_H': 1.3, 'STEER_V': 1.0, 'PD_X': 0.8, 'PD_Y': 0.8}
+                'STEER_H': 1.3, 'STEER_V': 1.0, 'PD_X': 0.8, 'PD_Y': 0.8,
+                'CPL_A': 1.0, 'CPL_B': 0.8, 'BW1_H': 0.8, 'BW1_V': 0.6, 'BW2_H': 0.6, 'BW2_V': 0.8}
+#: sensitivity matrices of the coupled benches: {signal: {axis: gain}} (µm of spot per µm of screw)
+COUPLED_SIMPLE = {'Coupled/x': {'CPL_A': 1.0, 'CPL_B': 0.35},
+                  'Coupled/y': {'CPL_A': -0.25, 'CPL_B': 1.0}}
+BEAM_WALK = {'Near/x': {'BW1_H': 1.0, 'BW2_H': 0.8, 'BW1_V': 0.15},
+             'Far/x': {'BW1_H': 1.0, 'BW2_H': 1.5, 'BW2_V': 0.15},
+             'Near/y': {'BW1_V': 1.0, 'BW2_V': 0.8, 'BW1_H': -0.15},
+             'Far/y': {'BW1_V': 1.0, 'BW2_V': 1.5, 'BW2_H': -0.15}}
 PD_WIDTH = 12.0             # µm
 PD_MAX = 2.0                # mA
 UNITS = 'µm'
@@ -177,5 +195,10 @@ class LaserSimModel:
             out = {'Cam1': cam1, 'Cam2': cam2, 'Laser': {'power': max(power, 0.0)},
                    'XUV': {'flux': max(xuv, 0.0)}, 'Beam': beam, 'PD': {'current': max(pd, 0.0)},
                    'Stats': {'frame_counter': float(self._frame)}}
+            for matrix in (COUPLED_SIMPLE, BEAM_WALK):
+                for key, row in matrix.items():
+                    data, label = key.split('/')
+                    value = sum(g * m[a] for a, g in row.items()) + float(self.rng.normal(0, 0.15 * n))
+                    out.setdefault(data, {})[label] = value
             self._last_frame = out
             return {k: dict(v) for k, v in out.items()}

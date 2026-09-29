@@ -160,6 +160,39 @@ def test_03_pid_from_tab_and_stabilisation(ext):
     pid_tab.select('PID:H')
 
 
+def test_03b_alignment_drives_the_pid_setpoint(ext):
+    """A PID setpoint (SP:<id>) is an axis of the Alignment tab: the keyboard moves the setpoint, the PID
+    keeps running (not a human action on a motor) and follows it."""
+    e, win, model, data = ext
+    a = e.app
+    pid = a.core.get('PID:H')
+    assert pid.state.value == 'ACTIVE'
+    assert 'SP:H' in a.manual.actuator_roles()
+    align = a.tabs['alignment']
+    saved = align.get_config()
+    cfg = align.get_config()
+    cfg['axes'][0]['h'].update(actuator='SP:H', mode='auto', slow=0.5, fast=2.0, invert=False)
+    align.load_config(cfg)
+    a.tab_widget.setCurrentWidget(align)
+    run(0.3)
+    align.select_axis(0)
+    from qtpy import QtGui
+    align.handle_key_press(QtGui.QKeyEvent(QtCore.QEvent.KeyPress, QtCore.Qt.Key_D, QtCore.Qt.NoModifier, 'd'))
+    run(0.45)                                               # held ~4 steps of 0.5 (one step / 100 ms)
+    align.handle_key_release(QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, QtCore.Qt.Key_D, QtCore.Qt.NoModifier, 'd'))
+    run(0.3)
+    sp = pid.settings.setpoint
+    assert 1.0 <= sp <= 3.0, sp
+    assert a.tabs['pid'].widgets['H']._param('setpoint').value() == pytest.approx(sp)
+    assert pid.state.value == 'ACTIVE'                      # moving a setpoint does not stop the PID
+    run(4.0)
+    assert abs(a.core.signals.value('SimB/Cam1/x') - sp) < 1.0     # the PID followed the new setpoint
+    a.manual.move_abs('SP:H', 0.0)
+    run(0.3)
+    assert pid.settings.setpoint == 0.0
+    align.load_config(saved)
+
+
 def test_04_alignment_keyboard_preempts_pid(ext):
     e, win, model, data = ext
     a = e.app
