@@ -84,6 +84,33 @@ class PIDTerms:
     in_deadband: bool = False
 
 
+@dataclass
+class TracePoint:
+    """One PID iteration, for the live plots and the statistics of the PID tab."""
+    t: float                  # wall clock time
+    pv: float
+    setpoint: float
+    error: float
+    p: float
+    i: float
+    d: float
+    output: float
+    moved: float = 0.0        # sum of |step| actually sent at this iteration (0: no move)
+
+
+def error_stats(points: List[TracePoint], since: float) -> Tuple[float, float, int]:
+    """(RMS of the error, standard deviation of the measurement, number of points) over the points
+    with ``t >= since``. NaN when there is no point."""
+    pts = [p for p in points if p.t >= since and math.isfinite(p.error)]
+    if not pts:
+        return math.nan, math.nan, 0
+    n = len(pts)
+    rms = math.sqrt(sum(p.error ** 2 for p in pts) / n)
+    mean = sum(p.pv for p in pts) / n
+    std = math.sqrt(sum((p.pv - mean) ** 2 for p in pts) / n)
+    return rms, std, n
+
+
 class PIDController:
     def __init__(self, settings: PIDSettings):
         self.settings = settings
@@ -143,7 +170,7 @@ class PIDAutomation(Automation):
         self.controller = PIDController(self.settings)
         self.in_stabilization = in_stabilization
         self.period_s = self.settings.period_s
-        self.trace: Deque[Tuple[float, float, float]] = deque(maxlen=4000)   # (wall t, pv, sp)
+        self.trace: Deque[TracePoint] = deque(maxlen=4000)
         self.last_sample_seq = 0
         self.iterations = 0
         self.skipped_busy = 0
@@ -225,7 +252,9 @@ class PIDAutomation(Automation):
         self.last_sample_seq = sample.seq
         terms = self.controller.update(sample.value, self.settings.period_s)
         self.iterations += 1
-        self.trace.append((core.clock.wall(), terms.pv, terms.setpoint))
+        point = TracePoint(core.clock.wall(), terms.pv, terms.setpoint, terms.error, terms.p, terms.i, terms.d,
+                           terms.output)
+        self.trace.append(point)
         moves = self.controller.split(terms.output, {r: self.motors[r] for r in roles})
         if not moves:
             self.last_moves = {}
@@ -240,6 +269,7 @@ class PIDAutomation(Automation):
             core.request_confirmation(self, '\n'.join(lines), moves)
             return
         self.last_moves = core.request_moves(self, moves)
+        point.moved = float(sum(abs(d) for d in self.last_moves.values()))
 
     def variables(self) -> Dict[str, float]:
         t = self.controller.last

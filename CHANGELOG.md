@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 ## [Unreleased]
 
 ### Changed
+- **PID tab redesigned**: overview table of every PID (state, signal → motors, error, RMS error,
+  worst envelope use, start / stop / resume button) with the details of the selected PID below.
+  Only the motors used by the PID are listed ("➕ Add motor", ✕ to remove). Settings in two levels
+  (essential / Advanced) with a single **loop sign** and an "⇄ Invert sign" button. Two linked plots:
+  measurement + setpoint with move markers, error + P / I / D terms; time window and statistics
+  (RMS error, σ of the measurement, iterations, moves).
+- PID engine: the trace keeps every iteration (`TracePoint`: error, P / I / D, output, moves sent);
+  `error_stats()` helper.
 - The whole plugin (user interface, messages, logs, docstrings, documentation) is now in English.
   Documentation files renamed: `docs/user_guide.md`, `docs/incident_sheet.md`, `docs/design.md`,
   `docs/pid_tuning.md`, `docs/examples/`.

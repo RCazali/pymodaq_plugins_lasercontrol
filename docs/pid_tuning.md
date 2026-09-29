@@ -26,10 +26,11 @@ the rate (S5) limit the damage, then hold the PID.
 1. In the **Alignment** tab, make a small `+` step on the motor and watch the signal: does it increase
    or decrease?
 2. If a `+` step **increases** the signal, then to correct a positive error (measurement too low) a
-   positive step is needed: **Kp sign = +** and positive weight.
-3. If a `+` step **decreases** the signal: **Kp sign = −**, or a negative weight. Choose one or the
-   other, not both.
-4. Same signs for Ki and Kd.
+   positive step is needed: **Loop sign = +** and positive weight.
+3. If a `+` step **decreases** the signal: **Loop sign = −** (or **⇄ Invert sign**, applied live), or
+   a negative weight. Choose one or the other, not both.
+4. The loop sign applies to the P, I and D terms together. A preset with different Kp / Ki / Kd signs
+   (older versions) is unified to the Kp sign when loaded, with a warning in the log.
 5. Write the direction in the role note (Configuration → Roles), for example "+ = beam to the right
    on Cam1".
 
@@ -52,7 +53,12 @@ Procedure: P only with confirmation, then P without confirmation. Increase Kp up
 oscillation, and divide it by two (Kp ≈ 1 / sensitivity does the way in one step). If the measurement
 lags behind the drift, add a small Ki, and check that no offset persists after a large misalignment.
 With the simulator, the "Beam H / V" PIDs of the demo (Kp 0.6, Ki 0) show the expected behavior.
-In the PID tab, the measurement / setpoint curve and the P, I, D contributions are shown live.
+In the PID tab, the table at the top shows every PID (state, error, RMS error over 2 min, envelope
+used, start / stop). Below, for the selected PID: measurement and setpoint with a marker at each move,
+then the error with the P, I, D contributions, over a chosen window (30 s, 2 min, 10 min, all), with
+the RMS error and the standard deviation of the measurement: use them to compare two settings.
+Only the essential settings are shown; Kd, deadband, settle time, setpoint mode and move confirmation
+are under **Advanced**.
 
 ## 3. Weights (several motors for one signal)
 

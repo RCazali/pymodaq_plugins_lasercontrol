@@ -72,6 +72,19 @@ def test_pid_closed_loop_converges():
         rig.core.tick()
     assert pid.state == AutoState.ACTIVE
     assert abs(3.0 + gain * rig.acts['mod1'].position()) < 0.05
+    # the trace keeps every iteration with its terms and the moves actually sent
+    pts = list(pid.trace)
+    assert len(pts) == pid.iterations
+    assert pts[0].moved > 0 and pts[0].error == pytest.approx(-3.0)
+    assert all(p.output == pytest.approx(p.p + p.i + p.d) for p in pts)
+
+
+def test_pid_error_stats():
+    from pymodaq_plugins_lasercontrol.engines.pid import TracePoint, error_stats
+    pts = [TracePoint(t, pv, 0.0, -pv, 0, 0, 0, 0) for t, pv in ((0, 3.0), (10, 1.0), (11, -1.0), (12, math.nan))]
+    rms, std, n = error_stats(pts, since=5)
+    assert n == 2 and rms == pytest.approx(1.0) and std == pytest.approx(1.0)
+    assert math.isnan(error_stats(pts, since=100)[0])
 
 
 def test_pid_capture_setpoint_and_confirm_mode():

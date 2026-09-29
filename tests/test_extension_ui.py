@@ -111,12 +111,12 @@ def test_03_pid_from_tab_and_stabilisation(ext):
     e, win, model, data = ext
     a = e.app
     pid_tab = a.tabs['pid']
-    pid_tab._add_widget({'id': 'H', 'label': 'Centroïde H', 'in_stabilization': True, 'signal': 'Cam1_x',
+    pid_tab._add_widget({'id': 'H', 'label': 'Centroid H', 'in_stabilization': True, 'signal': 'Cam1_x',
                          'motors': {'Sim_OC_H': 1.0},
                          'settings': {'setpoint': 0.0, 'kp': 0.5, 'ki': 0.05, 'max_step': 1.0, 'period_s': 0.2}})
     a.tab_widget.setCurrentWidget(a.tabs['overview'])
     run(0.5)
-    assert 'Centroïde H' in a.tabs['overview'].summary.text()
+    assert 'Centroid H' in a.tabs['overview'].summary.text()
     a.activate_stabilization()
     pid = a.core.get('PID:H')
     assert pid is not None and pid.state.value == 'ACTIVE', (pid.state, pid.reason)
@@ -126,7 +126,36 @@ def test_03_pid_from_tab_and_stabilisation(ext):
     assert abs(a.core.signals.value('SimB/Cam1/x')) < 2.0
     a.tab_widget.setCurrentWidget(pid_tab)
     run(0.5)
-    assert 'measure' in pid_tab.widgets['H'].values.text()
+    w = pid_tab.widgets['H']
+    assert 'measure' in w.values.text()
+    # overview table: one row, state and RMS error filled, action button = Stop
+    assert pid_tab.overview.rowCount() == 1
+    assert pid_tab.overview.item(0, 1).text() == 'Active'
+    assert pid_tab.overview.item(0, 4).text() not in ('', '—')
+    assert 'Stop' in pid_tab.overview.cellWidget(0, len(pid_tab.COLS) - 1).text()
+    assert 'RMS error' in w.stats.text()
+    # one loop sign: inverting it is applied live to the three terms
+    w._on_invert()
+    assert pid.settings.gains()[0] < 0 and pid.settings.sign_ki == '-' and pid.settings.sign_kd == '-'
+    w._on_invert()
+    assert pid.settings.gains()[0] > 0
+    # only the used motors are listed; add / remove motors (on a stopped PID)
+    assert list(w.motor_weights()) == ['Sim_OC_H']
+    cfg = dict(w.get_config(), id='V', label='Centroid V')
+    v = pid_tab._add_widget(cfg)
+    v.combo_add.setCurrentText('Sim_OC_V')
+    v._on_add_motor()
+    assert v.get_config()['motors'] == {'Sim_OC_H': 1.0, 'Sim_OC_V': 1.0}
+    v._on_remove_motor('Sim_OC_H')
+    assert v.get_config()['motors'] == {'Sim_OC_V': 1.0}
+    assert 'Sim_OC_H' in [v.combo_add.itemText(i) for i in range(v.combo_add.count())]
+    pid_tab.select('PID:V')
+    run(0.3)
+    assert pid_tab.overview.rowCount() == 2 and pid_tab._current() is v
+    pid_tab.widgets.pop('V')
+    pid_tab._order.remove('V')
+    pid_tab.stack.removeWidget(v)
+    pid_tab.select('PID:H')
 
 
 def test_04_alignment_keyboard_preempts_pid(ext):
@@ -200,7 +229,7 @@ def test_05b_alignment_buttons(ext):
     panel = a.quick_panel
     assert panel.isVisible()
     assert list(panel.cards) == ['PID:H', 'OPT:Jet']
-    assert panel.cards['PID:H'].name.text() == 'Centroïde H'
+    assert panel.cards['PID:H'].name.text() == 'Centroid H'
     panel._on_click('PID:H')
     pid = a.core.get('PID:H')
     assert pid.state.value == 'ACTIVE', pid.reason
