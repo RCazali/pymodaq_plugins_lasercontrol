@@ -14,13 +14,13 @@ from .widgets import ask_yes_no, dspin, fmt, info, reset_rows, set_combo_items, 
 if TYPE_CHECKING:  # pragma: no cover
     from .app import LaserControlApp
 
-LIMIT_COLS = [('max_step', 'Pas max (S3)', 'Plus grand pas relatif d’un ordre automatique'),
-              ('max_excursion', 'Excursion max (S4)', '± autour de la position d’engagement'),
-              ('abs_min', 'Abs min', 'Limite absolue basse (aussi pour les mouvements manuels)'),
-              ('abs_max', 'Abs max', 'Limite absolue haute (aussi pour les mouvements manuels)'),
-              ('rate_window_s', 'Fenêtre (s)', 'Fenêtre glissante de la limite de débit (S5)'),
-              ('rate_max', 'Débit max (S5)', 'Déplacement cumulé max sur la fenêtre'),
-              ('resolution', 'Résolution', 'Plus petit pas significatif (ex. 1 pas de picomoteur)')]
+LIMIT_COLS = [('max_step', 'Max step (S3)', 'Largest relative step of an automatic order'),
+              ('max_excursion', 'Max excursion (S4)', '± around the engagement position'),
+              ('abs_min', 'Abs min', 'Lower absolute limit (also for manual moves)'),
+              ('abs_max', 'Abs max', 'Upper absolute limit (also for manual moves)'),
+              ('rate_window_s', 'Window (s)', 'Sliding window of the rate limit (S5)'),
+              ('rate_max', 'Max rate (S5)', 'Max cumulated displacement over the window'),
+              ('resolution', 'Resolution', 'Smallest meaningful step (e.g. 1 picomotor step)')]
 
 
 def _cell_float(text: str) -> Optional[float]:
@@ -43,10 +43,10 @@ class ConfigTab(QtWidgets.QWidget):
         outer.setContentsMargins(4, 4, 4, 4)
         tabs = QtWidgets.QTabWidget()
         outer.addWidget(tabs)
-        tabs.addTab(self._build_roles(), 'Rôles (machine)')
-        tabs.addTab(self._build_safety(), 'Sécurité (preset)')
-        tabs.addTab(self._build_detectors(), 'Détecteurs')
-        tabs.addTab(self._build_machine(), 'Machine / dossiers')
+        tabs.addTab(self._build_roles(), 'Roles (machine)')
+        tabs.addTab(self._build_safety(), 'Safety (preset)')
+        tabs.addTab(self._build_detectors(), 'Detectors')
+        tabs.addTab(self._build_machine(), 'Machine / folders')
 
     # ================================================================== roles
     def _build_roles(self) -> QtWidgets.QWidget:
@@ -56,33 +56,33 @@ class ConfigTab(QtWidgets.QWidget):
         self.roles_path.setStyleSheet('color: gray;')
         lay.addWidget(self.roles_path)
         self.roles_table = QtWidgets.QTableWidget(0, 5)
-        self.roles_table.setHorizontalHeaderLabels(['Rôle', 'Type', 'Module / canal', 'Unités', 'Note (sens, rôle…)'])
+        self.roles_table.setHorizontalHeaderLabels(['Role', 'Type', 'Module / channel', 'Units', 'Note (direction, purpose…)'])
         self.roles_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.roles_table.verticalHeader().setVisible(False)
         lay.addWidget(self.roles_table, 2)
         row = QtWidgets.QHBoxLayout()
-        b_add_a = styled_button('+ Rôle moteur', None)
-        b_add_s = styled_button('+ Rôle signal', None)
-        b_del = styled_button('Supprimer', None)
-        b_auto = styled_button('Créer les rôles manquants', None,
-                               'Un rôle par module et par canal 0D reçu, nommé d’après le module / canal')
-        b_save = styled_button('💾 Appliquer et enregistrer', '#27ae60')
-        b_reload = styled_button('↻ Recharger le fichier', None)
+        b_add_a = styled_button('+ Motor role', None)
+        b_add_s = styled_button('+ Signal role', None)
+        b_del = styled_button('Remove', None)
+        b_auto = styled_button('Create missing roles', None,
+                               'One role per module and per received 0D channel, named after the module / channel')
+        b_save = styled_button('💾 Apply and save', '#27ae60')
+        b_reload = styled_button('↻ Reload file', None)
         for b in (b_add_a, b_add_s, b_del, b_auto):
             row.addWidget(b)
         row.addStretch()
         row.addWidget(b_reload)
         row.addWidget(b_save)
         lay.addLayout(row)
-        lay.addWidget(QtWidgets.QLabel('<b>Compteurs de trames (heartbeat, O9)</b> : un canal par détecteur, '
-                                       'la donnée est périmée si le compteur n’avance plus.'))
+        lay.addWidget(QtWidgets.QLabel('<b>Frame counters (heartbeat, O9)</b>: one channel per detector, '
+                                       'the data are stale when the counter stops advancing.'))
         self.hb_table = QtWidgets.QTableWidget(0, 2)
-        self.hb_table.setHorizontalHeaderLabels(['Détecteur', 'Canal compteur'])
+        self.hb_table.setHorizontalHeaderLabels(['Detector', 'Counter channel'])
         self.hb_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.hb_table.verticalHeader().setVisible(False)
         self.hb_table.setMaximumHeight(140)
         lay.addWidget(self.hb_table, 1)
-        b_add_a.clicked.connect(lambda: self._add_role_row('actionneur'))
+        b_add_a.clicked.connect(lambda: self._add_role_row('actuator'))
         b_add_s.clicked.connect(lambda: self._add_role_row('signal'))
         b_del.clicked.connect(self._del_role_row)
         b_auto.clicked.connect(self._auto_roles)
@@ -93,7 +93,7 @@ class ConfigTab(QtWidgets.QWidget):
     def _target_combo(self, kind: str, current: str) -> QtWidgets.QComboBox:
         c = QtWidgets.QComboBox()
         c.setEditable(True)
-        items = self.app.core.broker.modules() if kind == 'actionneur' else self.app.core.signals.channels()
+        items = self.app.core.broker.modules() if kind == 'actuator' else self.app.core.signals.channels()
         set_combo_items(c, [''] + sorted(items), current)
         c.setFocusPolicy(QtCore.Qt.ClickFocus)
         return c
@@ -116,10 +116,10 @@ class ConfigTab(QtWidgets.QWidget):
 
     def load_roles(self):
         roles = self.app.core.roles
-        self.roles_path.setText(f'Fichier : {roles.path}  (machine « {self.app.machine} »)')
+        self.roles_path.setText(f"File: {roles.path}  (machine '{self.app.machine}')")
         self.roles_table.setRowCount(0)
         for r in sorted(roles.actuators.values(), key=lambda x: x.name):
-            self._add_role_row('actionneur', r.name, r.module, r.units, r.note)
+            self._add_role_row('actuator', r.name, r.module, r.units, r.note)
         for r in sorted(roles.signals.values(), key=lambda x: x.name):
             self._add_role_row('signal', r.name, r.channel, r.units, r.note)
         dets = sorted(set(self.app.core.broker.detectors) | set(roles.heartbeats) |
@@ -147,12 +147,12 @@ class ConfigTab(QtWidgets.QWidget):
             units = self.roles_table.item(r, 3).text() if self.roles_table.item(r, 3) else ''
             note = self.roles_table.item(r, 4).text() if self.roles_table.item(r, 4) else ''
             if not target:
-                errors.append(f'ligne {r + 1} ({name}) : cible vide')
+                errors.append(f'row {r + 1} ({name}): empty target')
                 continue
             if name in rm.all_roles():
-                errors.append(f'rôle en double : {name}')
+                errors.append(f'duplicate role: {name}')
                 continue
-            if kind == 'actionneur':
+            if kind == 'actuator':
                 rm.set_actuator(name, target, units, note)
             else:
                 rm.set_signal(name, target, units, note)
@@ -166,7 +166,7 @@ class ConfigTab(QtWidgets.QWidget):
     def _save_roles(self):
         rm, errors = self._table_roles()
         if errors:
-            warn(self, 'Rôles', 'Corriger :\n' + '\n'.join(errors))
+            warn(self, 'Roles', 'Fix:\n' + '\n'.join(errors))
             return
         self.app.apply_roles(rm, save=True)          # reloads this tab (set_hardware)
 
@@ -178,57 +178,57 @@ class ConfigTab(QtWidgets.QWidget):
         created = rm.auto_complete(self.app.core.broker.modules(), self.app.core.signals.channels(),
                                    units_of=self.app.core.broker.units)
         if not created:
-            info(self, 'Rôles', 'Aucun rôle manquant (modules et canaux reçus déjà couverts).')
+            info(self, 'Roles', 'No missing role (modules and received channels already covered).')
             return
         self.app.apply_roles(rm, save=False)
-        info(self, 'Rôles', f'{len(created)} rôle(s) créé(s). Vérifier puis « Appliquer et enregistrer ».')
+        info(self, 'Roles', f"{len(created)} role(s) created. Check, then 'Apply and save'.")
 
     # ================================================================== safety
     def _build_safety(self) -> QtWidgets.QWidget:
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
         form = QtWidgets.QFormLayout()
-        self.max_age = dspin(1.0, 0.05, 3600, 2, tip='S1 : au-delà, la donnée est périmée et les automatismes gelés')
-        self.timeout = dspin(20.0, 0.5, 3600, 1, tip='T3.1 : un mouvement automatique plus long gèle l’automatisme')
-        self.manual_limits = QtWidgets.QCheckBox('appliquer abs_min / abs_max aux mouvements manuels')
-        form.addRow('Âge max des données (s) :', self.max_age)
-        form.addRow('Délai max d’un mouvement (s) :', self.timeout)
+        self.max_age = dspin(1.0, 0.05, 3600, 2, tip='S1: beyond it, data are stale and the automations held')
+        self.timeout = dspin(20.0, 0.5, 3600, 1, tip='T3.1: a longer automatic move holds the automation')
+        self.manual_limits = QtWidgets.QCheckBox('apply abs_min / abs_max to manual moves')
+        form.addRow('Max data age (s):', self.max_age)
+        form.addRow('Move timeout (s):', self.timeout)
         form.addRow('', self.manual_limits)
         lay.addLayout(form)
-        g = QtWidgets.QGroupBox('Garde intensité (S2)')
+        g = QtWidgets.QGroupBox('Intensity guard (S2)')
         gf = QtWidgets.QGridLayout(g)
-        self.g_enabled = QtWidgets.QCheckBox('activée')
+        self.g_enabled = QtWidgets.QCheckBox('enabled')
         self.g_role = QtWidgets.QComboBox()
         self.g_mode = QtWidgets.QComboBox()
         self.g_mode.addItems(['relative', 'absolute'])
-        self.g_threshold = dspin(0.5, 0, 1e12, 4, tip='relatif : fraction de la référence ; absolu : valeur')
-        self.g_hyst = dspin(0.1, 0, 1e12, 4, tip='ajouté au seuil pour considérer l’intensité revenue')
-        self.g_fixed = QtWidgets.QCheckBox('référence fixe :')
+        self.g_threshold = dspin(0.5, 0, 1e12, 4, tip='relative: fraction of the reference; absolute: value')
+        self.g_hyst = dspin(0.1, 0, 1e12, 4, tip='added to the threshold to consider the intensity back')
+        self.g_fixed = QtWidgets.QCheckBox('fixed reference:')
         self.g_ref = dspin(1.0, -1e12, 1e12, 6)
-        self.g_capture = styled_button('📍 Capturer la référence', None,
-                                       'Référence = valeur actuelle (mode relatif, référence non fixe). '
-                                       'Sinon elle est prise automatiquement au premier engagement d’un '
-                                       'automatisme, et gardée tant qu’un automatisme reste engagé.')
+        self.g_capture = styled_button('📍 Capture reference', None,
+                                       'Reference = current value (relative mode, non-fixed reference). '
+                                       'Otherwise it is taken automatically at the first engagement of an '
+                                       'automation, and kept while an automation stays engaged.')
         self.g_info = QtWidgets.QLabel('')
         gf.addWidget(self.g_enabled, 0, 0)
-        gf.addWidget(QtWidgets.QLabel('Rôle :'), 0, 1)
+        gf.addWidget(QtWidgets.QLabel('Role:'), 0, 1)
         gf.addWidget(self.g_role, 0, 2)
-        gf.addWidget(QtWidgets.QLabel('Mode :'), 0, 3)
+        gf.addWidget(QtWidgets.QLabel('Mode:'), 0, 3)
         gf.addWidget(self.g_mode, 0, 4)
-        gf.addWidget(QtWidgets.QLabel('Seuil :'), 1, 1)
+        gf.addWidget(QtWidgets.QLabel('Threshold:'), 1, 1)
         gf.addWidget(self.g_threshold, 1, 2)
-        gf.addWidget(QtWidgets.QLabel('Hystérésis :'), 1, 3)
+        gf.addWidget(QtWidgets.QLabel('Hysteresis:'), 1, 3)
         gf.addWidget(self.g_hyst, 1, 4)
         gf.addWidget(self.g_fixed, 2, 1)
         gf.addWidget(self.g_ref, 2, 2)
         gf.addWidget(self.g_capture, 2, 3, 1, 2)
         gf.addWidget(self.g_info, 3, 0, 1, 5)
         lay.addWidget(g)
-        lay.addWidget(QtWidgets.QLabel('<b>Limites par rôle moteur</b> (cellule vide = non définie ; '
-                                       'pas max, excursion max et débit max sont obligatoires pour piloter '
-                                       'automatiquement un moteur)'))
+        lay.addWidget(QtWidgets.QLabel('<b>Limits per motor role</b> (empty cell = not defined; '
+                                       'max step, max excursion and max rate are required to drive '
+                                       'a motor automatically)'))
         self.limits_table = QtWidgets.QTableWidget(0, len(LIMIT_COLS) + 1)
-        self.limits_table.setHorizontalHeaderLabels(['Rôle'] + [c[1] for c in LIMIT_COLS])
+        self.limits_table.setHorizontalHeaderLabels(['Role'] + [c[1] for c in LIMIT_COLS])
         for i, c in enumerate(LIMIT_COLS):
             self.limits_table.horizontalHeaderItem(i + 1).setToolTip(c[2])
         self.limits_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
@@ -323,16 +323,16 @@ class ConfigTab(QtWidgets.QWidget):
     def _capture_reference(self):
         if self.app.core.safety.guard.capture_reference():
             self.app.core.events.publish('safety.info', 'SAFETY',
-                                         f"Référence d'intensité capturée : {self.app.core.safety.guard.reference:.4g}")
+                                         f"Intensity reference captured: {self.app.core.safety.guard.reference:.4g}")
         else:
-            warn(self, 'Garde intensité', 'Capture impossible (mode absolu, signal absent, périmé ou nul).')
+            warn(self, 'Intensity guard', 'Capture impossible (absolute mode, signal missing, stale or zero).')
         self._update_guard_info()
 
     def _update_guard_info(self):
         g = self.app.core.safety.guard
         trip, release = g.thresholds()
-        self.g_info.setText(f'état : {g.evaluate()} · valeur : {fmt(g.value())} · référence : {fmt(g.reference)} · '
-                            f'seuil : {fmt(trip)} · reprise : {fmt(release)}')
+        self.g_info.setText(f'state: {g.evaluate()} · value: {fmt(g.value())} · reference: {fmt(g.reference)} · '
+                            f'threshold: {fmt(trip)} · release: {fmt(release)}')
 
     def write_to_preset(self, preset: dict):
         preset['safety'] = self.safety_config().to_dict()
@@ -342,15 +342,15 @@ class ConfigTab(QtWidgets.QWidget):
         w = QtWidgets.QWidget()
         lay = QtWidgets.QVBoxLayout(w)
         self.det_table = QtWidgets.QTableWidget(0, 5)
-        self.det_table.setHorizontalHeaderLabels(['Détecteur', 'Initialisé', 'Acquisition', 'Fraîcheur', 'Fréquence'])
+        self.det_table.setHorizontalHeaderLabels(['Detector', 'Initialized', 'Acquisition', 'Freshness', 'Rate'])
         self.det_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.det_table.verticalHeader().setVisible(False)
         self.det_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         lay.addWidget(self.det_table)
         row = QtWidgets.QHBoxLayout()
-        b_start = styled_button('▶ Lancer l’acquisition (sélection)', '#2980b9')
-        b_stop = styled_button('⏹ Arrêter l’acquisition (sélection)', None)
-        b_all = styled_button('▶ Tous les détecteurs des rôles', None)
+        b_start = styled_button('▶ Start acquisition (selection)', '#2980b9')
+        b_stop = styled_button('⏹ Stop acquisition (selection)', None)
+        b_all = styled_button('▶ All detectors of the roles', None)
         b_start.clicked.connect(lambda: self.app.core.broker.start_grab(self._selected_dets()))
         b_stop.clicked.connect(lambda: self.app.core.broker.stop_grab(self._selected_dets()))
         b_all.clicked.connect(self.app.start_detectors)
@@ -359,12 +359,12 @@ class ConfigTab(QtWidgets.QWidget):
         row.addWidget(b_all)
         row.addStretch()
         lay.addLayout(row)
-        lay.addWidget(QtWidgets.QLabel('<i>Les automatismes ne déclenchent jamais d’acquisition : ils lisent la '
-                                       'dernière valeur reçue (T3.2). Le viewer LECO de l’ordi B doit être en '
-                                       'acquisition continue.</i>'))
-        lay.addWidget(QtWidgets.QLabel('<b>Canaux 0D reçus</b>'))
+        lay.addWidget(QtWidgets.QLabel('<i>Automations never trigger an acquisition: they read the '
+                                       'last received value (T3.2). The LECO viewer of computer B must be in '
+                                       'continuous acquisition.</i>'))
+        lay.addWidget(QtWidgets.QLabel('<b>Received 0D channels</b>'))
         self.chan_table = QtWidgets.QTableWidget(0, 4)
-        self.chan_table.setHorizontalHeaderLabels(['Canal', 'Rôle', 'Valeur', 'Âge (s)'])
+        self.chan_table.setHorizontalHeaderLabels(['Channel', 'Role', 'Value', 'Age (s)'])
         self.chan_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.chan_table.verticalHeader().setVisible(False)
         self.chan_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -383,7 +383,7 @@ class ConfigTab(QtWidgets.QWidget):
         for i, d in enumerate(dets):
             st = core.signals.detector_status(d)
             port = core.broker.detectors[d]
-            vals = [d, 'oui' if port.is_initialized() else 'non', 'en cours' if core.broker.is_grabbing(d) else 'arrêtée',
+            vals = [d, 'yes' if port.is_initialized() else 'no', 'running' if core.broker.is_grabbing(d) else 'stopped',
                     f'{st.state} {st.reason}', f'{st.rate_hz:.2f} Hz' if st.rate_hz else '—']
             for j, v in enumerate(vals):
                 it = self.det_table.item(i, j)
@@ -409,26 +409,26 @@ class ConfigTab(QtWidgets.QWidget):
         w = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(w)
         p = self.app.paths
-        form.addRow('Version :', QtWidgets.QLabel(f'{self.app.version}  (git {self.app.git_hash})'))
-        form.addRow('Machine :', QtWidgets.QLabel(self.app.machine))
+        form.addRow('Version:', QtWidgets.QLabel(f'{self.app.version}  (git {self.app.git_hash})'))
+        form.addRow('Machine:', QtWidgets.QLabel(self.app.machine))
         self.operator = QtWidgets.QLineEdit(self.app.operator)
         self.operator.editingFinished.connect(lambda: self.app.set_operator(self.operator.text().strip()))
-        form.addRow('Opérateur :', self.operator)
-        for label, path in (('Données :', p.data), ('Rôles :', p.roles_file), ('Presets :', p.presets),
-                            ('Enregistrements :', p.recordings), ('Journal technique :', p.logs),
-                            ('Configuration :', self.app.config_file_path())):
+        form.addRow('Operator:', self.operator)
+        for label, path in (('Data:', p.data), ('Roles:', p.roles_file), ('Presets:', p.presets),
+                            ('Recordings:', p.recordings), ('Technical log:', p.logs),
+                            ('Configuration:', self.app.config_file_path())):
             row = QtWidgets.QHBoxLayout()
             lbl = QtWidgets.QLabel(str(path))
             lbl.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             row.addWidget(lbl, 1)
-            b = styled_button('📂', None, 'ouvrir le dossier', bold=False)
+            b = styled_button('📂', None, 'open the folder', bold=False)
             target = path if path is not None and path.suffix == '' else (path.parent if path else None)
             b.clicked.connect(lambda _=False, t=target: t and QtGui.QDesktopServices.openUrl(
                 QtCore.QUrl.fromLocalFile(str(t))))
             row.addWidget(b)
             form.addRow(label, row)
-        form.addRow(QtWidgets.QLabel('<i>Les dossiers se règlent dans le fichier de configuration du plugin '
-                                     '(config_lasercontrol.toml, un par machine, hors git).</i>'))
+        form.addRow(QtWidgets.QLabel('<i>Folders are set in the configuration file of the plugin '
+                                     '(config_lasercontrol.toml, one per machine, not in git).</i>'))
         return w
 
     # ================================================================== preset / refresh

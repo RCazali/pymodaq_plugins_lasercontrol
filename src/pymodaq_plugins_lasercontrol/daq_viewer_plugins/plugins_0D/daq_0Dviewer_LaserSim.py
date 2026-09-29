@@ -1,4 +1,4 @@
-"""Simulated 0D data of computer B (centroids, power, XUV flux, frame counter), cahier des charges T1.3.
+"""Simulated 0D data of computer B (centroids, power, XUV flux, frame counter), specification T1.3.
 
 Data names / labels: ``Cam1/{x,y,sum}``, ``Cam2/{x,y,sum}``, ``Laser/power``, ``XUV/flux``,
 ``Beam/{x,y}`` and ``PD/current`` (test benches: beam steering, photodiode),

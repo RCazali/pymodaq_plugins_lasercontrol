@@ -126,7 +126,7 @@ def test_03_pid_from_tab_and_stabilisation(ext):
     assert abs(a.core.signals.value('SimB/Cam1/x')) < 2.0
     a.tab_widget.setCurrentWidget(pid_tab)
     run(0.5)
-    assert 'mesure' in pid_tab.widgets['H'].values.text()
+    assert 'measure' in pid_tab.widgets['H'].values.text()
 
 
 def test_04_alignment_keyboard_preempts_pid(ext):
@@ -153,9 +153,9 @@ def test_04_alignment_keyboard_preempts_pid(ext):
     align.handle_key_release(QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, QtCore.Qt.Key_D, QtCore.Qt.NoModifier, 'd'))
     run(1.0)
     assert pid.state.value == 'OFF'                       # D5: stopped by the human action
-    assert 'action manuelle' in pid.reason
+    assert 'manual action' in pid.reason
     assert a.core.broker.position('Sim OC_H') > pos0 + 0.2
-    assert any('action manuelle' in ev.message for ev in a.core.events.history)
+    assert any('manual action' in ev.message for ev in a.core.events.history)
 
 
 def test_05_optimizer_one_pass(ext):
@@ -207,11 +207,11 @@ def test_05b_alignment_buttons(ext):
     panel._on_click('PID:H')                   # debounced: a double click does not stop it
     assert pid.state.value == 'ACTIVE'
     run(0.8)
-    assert 'Actif' in panel.cards['PID:H'].line.text()
+    assert 'Active' in panel.cards['PID:H'].line.text()
     panel._on_click('PID:H')
     assert pid.state.value == 'OFF'
     run(0.6)
-    panel._on_click('OPT:Jet')                 # 'une passe' by default
+    panel._on_click('OPT:Jet')                 # 'one pass' by default
     opt = a.optimizer('Jet')
     assert opt.state.value in ('ACTIVE', 'ARMED'), opt.reason
     t0 = time.time()
@@ -223,7 +223,7 @@ def test_05b_alignment_buttons(ext):
     run(0.6)
     panel._on_click('PID:H')
     assert pid.state.value == 'OFF'
-    assert panel.message.isVisible() and 'URGENCE' in panel.message.text()
+    assert panel.message.isVisible() and 'EMERGENCY' in panel.message.text()
     a.core.reset_estop()
     a.tabs['optimizer'].widgets['Jet'].settings.child('show_in_alignment').setValue(False)
     run(0.4)

@@ -1,4 +1,4 @@
-"""Simulated motor of the LaserSim laser model (office tests, cahier des charges T1.3).
+"""Simulated motor of the LaserSim laser model (office tests, specification T1.3).
 
 Choose the axis (OC_H, OC_V, EM_H, EM_V, AP_X, AP_Y, JET_X, JET_Y, JET_Z, KERR, and the test
 benches STEER_H, STEER_V, PD_X, PD_Y) in the settings;

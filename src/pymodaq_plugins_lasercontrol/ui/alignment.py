@@ -1,4 +1,4 @@
-"""Alignment tab (cahier des charges T2.3 / T5.4), ported from the XY Stage Controller.
+"""Alignment tab (specification T2.3 / T5.4), ported from the XY Stage Controller.
 
 Tk-like keyboard alignment: every logical axis visible at once, one active axis chosen with
 1..9, 0, jog with w/s/a/d (+Shift = fast), live positions, end-of-move history.
@@ -36,12 +36,12 @@ JOG_KEYS = {QtCore.Qt.Key_W: ('v', +1), QtCore.Qt.Key_S: ('v', -1),
             QtCore.Qt.Key_D: ('h', +1), QtCore.Qt.Key_A: ('h', -1)}
 JOG_MODES = ['auto', 'native', 'step', 'limit']
 JOG_MODE_TIPS = {
-    'auto': "native si le plugin implémente jog(), sinon step",
-    'native': "mouvement continu via la commande jog(direction, vitesse) du plugin. Lent/Rapide = vitesse",
-    'step': "mouvements relatifs répétés tant que la touche est tenue. Lent/Rapide = taille du pas "
-            "(recommandé : rien ne continue si PyMoDAQ plante)",
-    'limit': "⚠ move_abs vers Min/Max, arrêt au relâchement. Ce long mouvement PEUT CONTINUER sur le "
-             "contrôleur si PyMoDAQ plante (S10) : préférer step ou native",
+    'auto': "native if the plugin implements jog(), otherwise step",
+    'native': "continuous move through the jog(direction, speed) command of the plugin. Slow/Fast = speed",
+    'step': "repeated relative moves while the key is held. Slow/Fast = step size "
+            "(recommended: nothing keeps moving if PyMoDAQ crashes)",
+    'limit': "⚠ move_abs towards Min/Max, stopped on key release. This long move MAY CONTINUE on the "
+             "controller if PyMoDAQ crashes (S10): prefer step or native",
 }
 AXIS_COLORS = ['#1f77b4', '#d95f02', '#2ca02c', '#d62728', '#7b52ab', '#8c564b',
                '#c2185b', '#00838f', '#9e7a00', '#546e7a', '#3949ab', '#6d4c41']
@@ -166,7 +166,7 @@ class AxisHistoryPlot(QtWidgets.QWidget):
         v.setSpacing(2)
         bar = QtWidgets.QHBoxLayout()
         bar.setContentsMargins(2, 0, 2, 0)
-        self.title = QtWidgets.QLabel('Historique')
+        self.title = QtWidgets.QLabel('History')
         self.title.setStyleSheet('font-weight: bold;')
         bar.addWidget(self.title)
         self.count = QtWidgets.QLabel('')
@@ -175,10 +175,10 @@ class AxisHistoryPlot(QtWidgets.QWidget):
         bar.addStretch()
         self.btn_fit = QtWidgets.QToolButton()
         self.btn_fit.setText('⤢')
-        self.btn_fit.setToolTip('Recentrer sur tout l’historique')
+        self.btn_fit.setToolTip('Fit the whole history')
         self.btn_clear = QtWidgets.QToolButton()
         self.btn_clear.setText('🗑')
-        self.btn_clear.setToolTip('Effacer l’historique de cet axe')
+        self.btn_clear.setToolTip('Clear the history of this axis')
         for b in (self.btn_fit, self.btn_clear):
             b.setFocusPolicy(QtCore.Qt.NoFocus)
             b.setAutoRaise(True)
@@ -223,7 +223,7 @@ class AxisHistoryPlot(QtWidgets.QWidget):
         self._orient = orient
         self._dims = len(labels) if orient else 0
         self._decimals = list(decimals) + [4, 4]
-        self.title.setText(f"<span style='color:{color};'>■</span> Historique · {name}")
+        self.title.setText(f"<span style='color:{color};'>■</span> History · {name}")
         pi = self.plot.getPlotItem()
         show_x = orient in ('2d', 'h')
         show_y = orient in ('2d', 'v')
@@ -241,12 +241,12 @@ class AxisHistoryPlot(QtWidgets.QWidget):
     def set_points(self, points, live):
         self._points = points
         n = len(points)
-        self.count.setText(f"{n} mouvement{'s' if n != 1 else ''}" if self._dims else '')
+        self.count.setText(f"{n} move{'s' if n != 1 else ''}" if self._dims else '')
         if self._dims == 0 or n == 0:
             self._line.setData([], [])
             self._scatter.setData([], [])
             self._last.setData([], [])
-            self._empty.setText('aucun actionneur' if self._dims == 0 else 'aucun mouvement enregistré')
+            self._empty.setText('no actuator' if self._dims == 0 else 'no move recorded')
             x0 = y0 = 0.0
             if live and self._dims and all(v is not None for v in live):
                 xs, ys = self._xy([live])
@@ -332,7 +332,7 @@ class AxisHistoryPlot(QtWidgets.QWidget):
             return ''
         vals = '  '.join(f'{v:.{d}f}' for v, d in zip(p[1:], self._decimals))
         when = time.strftime('%d/%m %H:%M:%S', time.localtime(p[0])) if p[0] else ''
-        return f'#{int(data)}   {vals}\n{when}\nclic = revenir ici'
+        return f'#{int(data)}   {vals}\n{when}\nclick = go back here'
 
     def _on_points_clicked(self, _item, pts, *args):
         if len(pts):
@@ -404,25 +404,25 @@ class AlignmentWidget(QtWidgets.QWidget):
         status.addWidget(self.kb_label)
         self.speed_label = QtWidgets.QLabel()
         status.addWidget(self.speed_label)
-        self.key_label = QtWidgets.QLabel('touche : –')
+        self.key_label = QtWidgets.QLabel('key: –')
         self.key_label.setStyleSheet('color: gray;')
         self.key_label.setMinimumWidth(80)
         status.addWidget(self.key_label)
-        help_lbl = QtWidgets.QLabel('w/s ↕ · a/d ↔ · Maj rapide · 1…9,0 axe · Espace shaker')
+        help_lbl = QtWidgets.QLabel('w/s ↕ · a/d ↔ · Shift fast · 1…9,0 axis · Space shaker')
         help_lbl.setStyleSheet('color: gray; font-style: italic;')
         status.addWidget(help_lbl)
         status.addStretch()
-        self.chk_hide = QtWidgets.QCheckBox('Masquer non assignés')
+        self.chk_hide = QtWidgets.QCheckBox('Hide unassigned')
         self.chk_hide.setFocusPolicy(QtCore.Qt.NoFocus)
         self.chk_hide.toggled.connect(self._on_hide_toggled)
         status.addWidget(self.chk_hide)
-        btn_read = QtWidgets.QPushButton('⟳ Lire')
-        btn_read.setToolTip('Lire la position de tous les actionneurs assignés')
+        btn_read = QtWidgets.QPushButton('⟳ Read')
+        btn_read.setToolTip('Read the position of every assigned actuator')
         btn_read.setFocusPolicy(QtCore.Qt.NoFocus)
         btn_read.clicked.connect(self.read_all_positions)
         status.addWidget(btn_read)
-        btn_stop = QtWidgets.QPushButton('■ STOP ALIGNEMENT')
-        btn_stop.setToolTip('Arrête tous les actionneurs de l’onglet Alignement (souris uniquement)')
+        btn_stop = QtWidgets.QPushButton('■ STOP ALIGNMENT')
+        btn_stop.setToolTip('Stops every actuator of the Alignment tab (mouse only)')
         btn_stop.setFocusPolicy(QtCore.Qt.NoFocus)
         btn_stop.setStyleSheet('background-color: #c0392b; color: white; font-weight: bold; padding: 1px 10px;')
         btn_stop.clicked.connect(self.stop_all)
@@ -467,12 +467,12 @@ class AlignmentWidget(QtWidgets.QWidget):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         splitter.setSizes([600, 500])
-        self.inner_tabs.addTab(self.page, '🕹️ Alignement')
+        self.inner_tabs.addTab(self.page, '🕹️ Alignment')
 
         cfg = QtWidgets.QWidget()
         cfg_l = QtWidgets.QHBoxLayout(cfg)
         left = QtWidgets.QVBoxLayout()
-        left.addWidget(QtWidgets.QLabel('Axes (ordre = touches 1…9, 0) :'))
+        left.addWidget(QtWidgets.QLabel('Axes (order = keys 1…9, 0):'))
         self.axis_list = QtWidgets.QListWidget()
         self.axis_list.currentRowChanged.connect(self._load_axis_form)
         left.addWidget(self.axis_list)
@@ -484,24 +484,24 @@ class AlignmentWidget(QtWidgets.QWidget):
             b.clicked.connect(slot)
             row.addWidget(b)
         left.addLayout(row)
-        b_reset = QtWidgets.QPushButton('Disposition labo (Tk)')
+        b_reset = QtWidgets.QPushButton('Lab layout (Tk)')
         b_reset.clicked.connect(self._reset_layout)
         left.addWidget(b_reset)
         cfg_l.addLayout(left, stretch=1)
         form_w = QtWidgets.QWidget()
         form_l = QtWidgets.QVBoxLayout(form_w)
         name_row = QtWidgets.QHBoxLayout()
-        name_row.addWidget(QtWidgets.QLabel('Nom :'))
+        name_row.addWidget(QtWidgets.QLabel('Name:'))
         self.f_name = QtWidgets.QLineEdit()
         self.f_name.textEdited.connect(self._on_form_edited)
         name_row.addWidget(self.f_name)
-        self.f_color = QtWidgets.QPushButton('Couleur…')
+        self.f_color = QtWidgets.QPushButton('Color…')
         self.f_color.clicked.connect(self._pick_color)
         name_row.addWidget(self.f_color)
         form_l.addLayout(name_row)
         self.f_ch = {}
         ch_row = QtWidgets.QHBoxLayout()
-        for key, title in (('h', '↔ Canal horizontal (a − / d +)'), ('v', '↕ Canal vertical (s − / w +)')):
+        for key, title in (('h', '↔ Horizontal channel (a − / d +)'), ('v', '↕ Vertical channel (s − / w +)')):
             box = QtWidgets.QGroupBox(title)
             box.setCheckable(True)
             box.toggled.connect(self._on_form_edited)
@@ -509,7 +509,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             w = {'box': box}
             w['actuator'] = QtWidgets.QComboBox()
             w['actuator'].currentTextChanged.connect(self._on_form_edited)
-            w['invert'] = QtWidgets.QCheckBox('inverser le sens')
+            w['invert'] = QtWidgets.QCheckBox('invert direction')
             w['invert'].toggled.connect(self._on_form_edited)
             w['mode'] = QtWidgets.QComboBox()
             w['mode'].addItems(JOG_MODES)
@@ -522,32 +522,32 @@ class AlignmentWidget(QtWidgets.QWidget):
                 w[k].setDecimals(4)
                 w[k].valueChanged.connect(self._on_form_edited)
             w['label'] = QtWidgets.QLineEdit()
-            w['label'].setPlaceholderText('nom court affiché : X, Y, Horiz, Z…')
+            w['label'].setPlaceholderText('short displayed name: X, Y, Horiz, Z…')
             w['label'].textEdited.connect(self._on_form_edited)
             w['decimals'] = QtWidgets.QSpinBox()
             w['decimals'].setRange(0, 6)
             w['decimals'].valueChanged.connect(self._on_form_edited)
             w['speed_param'] = QtWidgets.QLineEdit()
-            w['speed_param'].setPlaceholderText('ex. velocity  ou  group/velocity (mode limit)')
+            w['speed_param'].setPlaceholderText('e.g. velocity  or  group/velocity (limit mode)')
             w['speed_param'].textEdited.connect(self._on_form_edited)
             w['warn'] = QtWidgets.QLabel('')
             w['warn'].setWordWrap(True)
             w['warn'].setStyleSheet('color: #c0392b;')
-            fl.addRow('Actionneur (rôle) :', w['actuator'])
-            fl.addRow('Libellé :', w['label'])
-            fl.addRow('Décimales :', w['decimals'])
+            fl.addRow('Actuator (role):', w['actuator'])
+            fl.addRow('Label:', w['label'])
+            fl.addRow('Decimals:', w['decimals'])
             fl.addRow('', w['invert'])
-            fl.addRow('Mode de jog :', w['mode'])
-            fl.addRow('Lent :', w['slow'])
-            fl.addRow('Rapide (Maj) :', w['fast'])
-            fl.addRow('Min (mode limit) :', w['min'])
-            fl.addRow('Max (mode limit) :', w['max'])
-            fl.addRow('Paramètre vitesse :', w['speed_param'])
+            fl.addRow('Jog mode:', w['mode'])
+            fl.addRow('Slow:', w['slow'])
+            fl.addRow('Fast (Shift):', w['fast'])
+            fl.addRow('Min (limit mode):', w['min'])
+            fl.addRow('Max (limit mode):', w['max'])
+            fl.addRow('Speed parameter:', w['speed_param'])
             fl.addRow(w['warn'])
             ch_row.addWidget(box)
             self.f_ch[key] = w
         form_l.addLayout(ch_row)
-        modes_help = QtWidgets.QLabel('<br>'.join(f'<b>{m}</b> : {t}' for m, t in JOG_MODE_TIPS.items()))
+        modes_help = QtWidgets.QLabel('<br>'.join(f'<b>{m}</b>: {t}' for m, t in JOG_MODE_TIPS.items()))
         modes_help.setWordWrap(True)
         modes_help.setStyleSheet('color: gray;')
         form_l.addWidget(modes_help)
@@ -593,10 +593,10 @@ class AlignmentWidget(QtWidgets.QWidget):
 
     def set_keyboard_active(self, active: bool):
         if active:
-            self.kb_label.setText('⌨ Clavier : ACTIF')
+            self.kb_label.setText('⌨ Keyboard: ACTIVE')
             self.kb_label.setStyleSheet('background-color: #27ae60; color: white; font-weight: bold; padding: 2px 8px;')
         else:
-            self.kb_label.setText('⌨ Clavier : inactif — cliquer')
+            self.kb_label.setText('⌨ Keyboard: inactive — click')
             self.kb_label.setStyleSheet('background-color: #7f8c8d; color: white; font-weight: bold; padding: 2px 8px;')
 
     def _spin(self, val: float) -> QtWidgets.QDoubleSpinBox:
@@ -701,13 +701,13 @@ class AlignmentWidget(QtWidgets.QWidget):
             unit.setStyleSheet('color: gray; font-size: 11px;')
             unit.setFixedWidth(26)
             grid.addWidget(unit, r, 3, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            state = 'non assigné' if act == 'None' else (act if known else f'{act} (absent !)')
-            tips.append(f"{channel_label(ch, ch_key)} : {state}   ({KEY_HINT[ch_key]})")
+            state = 'unassigned' if act == 'None' else (act if known else f'{act} (missing!)')
+            tips.append(f"{channel_label(ch, ch_key)}: {state}   ({KEY_HINT[ch_key]})")
             if act != 'None':
                 self._pos_labels.setdefault(act, []).append((val, int(ch.get('decimals', 4))))
             r += 1
         if r == 0:
-            grid.addWidget(QtWidgets.QLabel('<i>aucun canal</i>'), 0, 1, 1, 3)
+            grid.addWidget(QtWidgets.QLabel('<i>no channel</i>'), 0, 1, 1, 3)
         h.addLayout(grid, stretch=1)
         card.setToolTip('\n'.join(tips))
         if not self._axis_assigned(ax):
@@ -767,11 +767,11 @@ class AlignmentWidget(QtWidgets.QWidget):
         title_lbl = QtWidgets.QLabel(
             f"<span style='font-size:15px; font-weight:bold;'>&nbsp;{key}&nbsp;</span>"
             f"<span style='font-size:13px; font-weight:bold;'>&nbsp;{ax['name']}</span>"
-            f"<span style='font-size:10px;'>&nbsp;&nbsp;axe actif</span>")
+            f"<span style='font-size:10px;'>&nbsp;&nbsp;active axis</span>")
         title_lbl.setStyleSheet('color: white;')
         hl.addWidget(title_lbl)
         hl.addStretch()
-        btn_reset = QtWidgets.QPushButton('Remise à zéro Δ')
+        btn_reset = QtWidgets.QPushButton('Reset Δ')
         btn_reset.setFocusPolicy(QtCore.Qt.NoFocus)
         btn_reset.setStyleSheet('QPushButton { color: white; border: 1px solid rgba(255,255,255,140); '
                                 'border-radius: 3px; padding: 0px 6px; font-size: 11px; }')
@@ -795,9 +795,9 @@ class AlignmentWidget(QtWidgets.QWidget):
             owner = self.manual.owner_label(act) if known else ''
             title = QtWidgets.QLabel(
                 f"<span style='color:{color}; font-size:13px; font-weight:bold;'>{channel_label(ch, ch_key)}</span>"
-                f"<br><span style='color:gray; font-size:10px;'>{act if act != 'None' else 'non assigné'}"
-                f"{' · ' + owner if owner and owner != 'Libre' else ''}</span>")
-            title.setToolTip(f'touches {KEY_HINT[ch_key]} · mode {self._effective_mode(ch)}')
+                f"<br><span style='color:gray; font-size:10px;'>{act if act != 'None' else 'unassigned'}"
+                f"{' · ' + owner if owner and owner != 'Free' else ''}</span>")
+            title.setToolTip(f'keys {KEY_HINT[ch_key]} · mode {self._effective_mode(ch)}')
             body.addWidget(title, r, 0, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             val = QtWidgets.QLabel('—')
             val.setProperty('detail', True)
@@ -811,7 +811,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             delta.setFont(mono_font(10, bold=False))
             delta.setMinimumWidth(88)
             delta.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            delta.setToolTip('Déplacement depuis la sélection de l’axe (Remise à zéro Δ pour recommencer)')
+            delta.setToolTip('Displacement since the axis was selected (Reset Δ to start again)')
             body.addWidget(delta, r, 3, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
             r += 1
             if act != 'None':
@@ -821,7 +821,7 @@ class AlignmentWidget(QtWidgets.QWidget):
                 ctrl = QtWidgets.QHBoxLayout()
                 target = self._spin(self._positions.get(act, 0.0) or 0.0)
                 target.setDecimals(max(dec, 1))
-                target.setToolTip('Cible absolue')
+                target.setToolTip('Absolute target')
                 btn_go = QtWidgets.QPushButton('Go')
                 btn_go.setFocusPolicy(QtCore.Qt.NoFocus)
                 btn_go.setMaximumWidth(60)
@@ -829,7 +829,7 @@ class AlignmentWidget(QtWidgets.QWidget):
                 btn_go.clicked.connect(lambda _, a=act, t=target: self.move_abs(a, t.value()))
                 step = self._spin(ch.get('rel_step', 5.0 if ch_key == 'h' else 1.0))
                 step.setMinimum(0)
-                step.setToolTip('Pas relatif pour − / +')
+                step.setToolTip('Relative step for − / +')
                 step.valueChanged.connect(lambda v, c=ch: c.__setitem__('rel_step', v))
                 b_m = QtWidgets.QPushButton('−')
                 b_p = QtWidgets.QPushButton('+')
@@ -838,9 +838,9 @@ class AlignmentWidget(QtWidgets.QWidget):
                     b.setFixedWidth(28)
                 b_m.clicked.connect(lambda _, a=act, s=step: self.move_rel(a, -s.value()))
                 b_p.clicked.connect(lambda _, a=act, s=step: self.move_rel(a, +s.value()))
-                lt = QtWidgets.QLabel('aller à')
+                lt = QtWidgets.QLabel('go to')
                 lt.setStyleSheet('color: gray;')
-                ls = QtWidgets.QLabel('pas')
+                ls = QtWidgets.QLabel('step')
                 ls.setStyleSheet('color: gray;')
                 ctrl.setSpacing(4)
                 for w in (lt, target, btn_go):
@@ -892,7 +892,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         row = self.axis_list.currentRow()
         if not 0 <= row < len(self._axes):
             return
-        c = QtWidgets.QColorDialog.getColor(QtGui.QColor(axis_color(self._axes[row], row)), self, 'Couleur de l’axe')
+        c = QtWidgets.QColorDialog.getColor(QtGui.QColor(axis_color(self._axes[row], row)), self, 'Axis color')
         if c.isValid():
             self._axes[row]['color'] = c.name()
             self._apply_config_edit()
@@ -922,7 +922,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             self._record_history(role, value)
         if role in self._stepping:                     # step mode: chain while the key is held
             ch, sgn = self._stepping[role]
-            if self.manual.move_rel(role, sgn * (ch['fast'] if self._fast else ch['slow']), 'alignement'):
+            if self.manual.move_rel(role, sgn * (ch['fast'] if self._fast else ch['slow']), 'alignment'):
                 self._set_busy(role, True)
             else:
                 self._stepping.pop(role, None)
@@ -948,7 +948,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             lbl.setStyleSheet(style)
 
     def _update_speed_label(self):
-        self.speed_label.setText('⏩ RAPIDE' if self._fast else 'vitesse lente')
+        self.speed_label.setText('⏩ FAST' if self._fast else 'slow speed')
         self.speed_label.setStyleSheet('color: #e67e22; font-weight: bold;' if self._fast else 'color: gray;')
 
     def activate_keyboard(self):
@@ -1054,8 +1054,8 @@ class AlignmentWidget(QtWidgets.QWidget):
         txt = '\n'.join(f'{a} → {v:.{d}f}' for a, v, d in zip(acts, p[1:], decs))
         when = time.strftime('%d/%m %H:%M:%S', time.localtime(p[0])) if p[0] else '?'
         self.release_all_jogs()
-        if QtWidgets.QMessageBox.question(self, 'Revenir dans l’historique',
-                                          f"Ramener {ax['name']} au point #{i} ({when}) ?\n\n{txt}") == \
+        if QtWidgets.QMessageBox.question(self, 'Go back in history',
+                                          f"Move {ax['name']} back to point #{i} ({when})?\n\n{txt}") == \
                 QtWidgets.QMessageBox.Yes:
             for a, v in zip(acts, p[1:]):
                 self.move_abs(a, v)
@@ -1069,8 +1069,8 @@ class AlignmentWidget(QtWidgets.QWidget):
             self.activate_keyboard()
             return
         name = self._axes[self._active]['name']
-        if QtWidgets.QMessageBox.question(self, 'Effacer l’historique',
-                                          f'Effacer les {n} positions enregistrées de {name} ?') == \
+        if QtWidgets.QMessageBox.question(self, 'Clear history',
+                                          f'Clear the {n} recorded positions of {name}?') == \
                 QtWidgets.QMessageBox.Yes:
             self._history.pop(key, None)
             self._save_history()
@@ -1118,7 +1118,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             return key in JOG_KEYS or key in AXIS_KEYS or key == QtCore.Qt.Key_Space
         if e.modifiers() & (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier | QtCore.Qt.MetaModifier):
             return False
-        self.key_label.setText(f'touche : {e.text() or QtGui.QKeySequence(key).toString()}')
+        self.key_label.setText(f'key: {e.text() or QtGui.QKeySequence(key).toString()}')
         if key in AXIS_KEYS:
             idx = AXIS_KEYS.index(key)
             if idx < len(self._axes):
@@ -1179,23 +1179,23 @@ class AlignmentWidget(QtWidgets.QWidget):
             return
         act = ch.get('actuator', 'None')
         if act == 'None' or not self.manual.exists(act):
-            self.key_label.setText(f"⚠ aucun actionneur sur {self._axes[axis_idx]['name']} {ch_key.upper()}")
+            self.key_label.setText(f"⚠ no actuator on {self._axes[axis_idx]['name']} {ch_key.upper()}")
             return
         sgn = -direction if ch.get('invert') else direction
         speed = abs(ch['fast'] if self._fast else ch['slow'])
         mode = self._effective_mode(ch)
         ok = False
         if mode == 'native':
-            ok = self.manual.jog_native(act, sgn, speed, 'alignement')
+            ok = self.manual.jog_native(act, sgn, speed, 'alignment')
         elif mode == 'limit':
             path = [p for p in str(ch.get('speed_param', '')).replace('.', '/').split('/') if p]
-            ok = self.manual.jog_limit(act, ch['max'] if sgn > 0 else ch['min'], path, speed, 'alignement')
+            ok = self.manual.jog_limit(act, ch['max'] if sgn > 0 else ch['min'], path, speed, 'alignment')
         else:
             first = act not in self._stepping
             self._stepping[act] = (ch, sgn)
             ok = True
             if first and act not in self._busy:
-                ok = self.manual.move_rel(act, sgn * speed, 'alignement')
+                ok = self.manual.move_rel(act, sgn * speed, 'alignment')
                 if not ok:
                     self._stepping.pop(act, None)
         if ok:
@@ -1213,7 +1213,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         if act in self._stepping:
             self._stepping.pop(act, None)      # the current step finishes, no new one
         else:
-            self.manual.stop(act, 'alignement')
+            self.manual.stop(act, 'alignment')
 
     def release_all_jogs(self):
         held = list(self._held.values())
@@ -1232,17 +1232,17 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.release_all_jogs()
         for act in self._all_actuators():
             if self.manual.exists(act):
-                self.manual.stop(act, 'stop alignement')
+                self.manual.stop(act, 'stop alignment')
         self.activate_keyboard()
 
     # ================================================================ abs/rel moves
     def move_abs(self, act: str, value: float):
-        if self.manual.move_abs(act, value, 'alignement'):
+        if self.manual.move_abs(act, value, 'alignment'):
             self._set_busy(act, True)
         self.activate_keyboard()
 
     def move_rel(self, act: str, delta: float):
-        if self.manual.move_rel(act, delta, 'alignement'):
+        if self.manual.move_rel(act, delta, 'alignment'):
             self._set_busy(act, True)
         self.activate_keyboard()
 
@@ -1256,7 +1256,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.axis_list.blockSignals(True)
         self.axis_list.clear()
         for i, ax in enumerate(self._axes):
-            key = f'{AXIS_KEY_LABELS[i]})' if i < len(AXIS_KEY_LABELS) else '(pas de touche)'
+            key = f'{AXIS_KEY_LABELS[i]})' if i < len(AXIS_KEY_LABELS) else '(no key)'
             self.axis_list.addItem(f"{key} {ax['name']}")
             self.axis_list.item(i).setForeground(QtGui.QBrush(QtGui.QColor(axis_color(ax, i))))
         self.axis_list.blockSignals(False)
@@ -1315,7 +1315,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             w['warn'].setText(JOG_MODE_TIPS['limit'] if ch['mode'] == 'limit' else '')
         item = self.axis_list.item(row)
         if item is not None:
-            key = f'{AXIS_KEY_LABELS[row]})' if row < len(AXIS_KEY_LABELS) else '(pas de touche)'
+            key = f'{AXIS_KEY_LABELS[row]})' if row < len(AXIS_KEY_LABELS) else '(no key)'
             item.setText(f"{key} {ax['name']}")
         self._save_timer.start()
 
@@ -1336,7 +1336,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             self.axis_list.setCurrentRow(new)
 
     def _add_axis(self):
-        self._axes.append({'name': f'Axe {len(self._axes) + 1}', 'h': _channel(), 'v': None})
+        self._axes.append({'name': f'Axis {len(self._axes) + 1}', 'h': _channel(), 'v': None})
         self._apply_config_edit()
         self.axis_list.setCurrentRow(len(self._axes) - 1)
 
@@ -1344,7 +1344,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         row = self.axis_list.currentRow()
         if 0 <= row < len(self._axes):
             name = self._axes[row]['name']
-            if QtWidgets.QMessageBox.question(self, 'Supprimer l’axe', f'Supprimer « {name} » ?') == \
+            if QtWidgets.QMessageBox.question(self, 'Remove axis', f"Remove '{name}'?") == \
                     QtWidgets.QMessageBox.Yes:
                 self._axes.pop(row)
                 self._active = min(self._active, max(len(self._axes) - 1, 0))
@@ -1352,9 +1352,9 @@ class AlignmentWidget(QtWidgets.QWidget):
 
     def _reset_layout(self):
         if QtWidgets.QMessageBox.question(
-                self, 'Disposition labo',
-                'Remplacer la liste des axes par la disposition du labo (Tk) ?\n'
-                'Les actionneurs assignés sont conservés pour les axes de même nom.') != QtWidgets.QMessageBox.Yes:
+                self, 'Lab layout',
+                'Replace the axis list with the lab layout (Tk)?\n'
+                'Assigned actuators are kept for the axes with the same name.') != QtWidgets.QMessageBox.Yes:
             return
         old = {ax['name']: ax for ax in self._axes}
         new = lab_default_axes()

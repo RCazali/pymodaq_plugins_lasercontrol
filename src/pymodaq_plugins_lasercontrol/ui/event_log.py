@@ -13,8 +13,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 LEVEL_COLORS = {Level.DEBUG: '#95a5a6', Level.INFO: None, Level.WARNING: '#e67e22', Level.ALARM: '#e74c3c',
                 Level.ERROR: '#8e44ad'}
-LEVEL_NAMES = {Level.DEBUG: 'debug', Level.INFO: 'info', Level.WARNING: 'attention', Level.ALARM: 'ALARME',
-               Level.ERROR: 'ERREUR'}
+LEVEL_NAMES = {Level.DEBUG: 'debug', Level.INFO: 'info', Level.WARNING: 'warning', Level.ALARM: 'ALARM',
+               Level.ERROR: 'ERROR'}
 
 
 class EventLogWidget(QtWidgets.QWidget):
@@ -26,7 +26,7 @@ class EventLogWidget(QtWidgets.QWidget):
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(2, 2, 2, 2)
         bar = QtWidgets.QHBoxLayout()
-        bar.addWidget(QtWidgets.QLabel('Niveau min. :'))
+        bar.addWidget(QtWidgets.QLabel('Min. level:'))
         self.level = QtWidgets.QComboBox()
         for lvl in (Level.DEBUG, Level.INFO, Level.WARNING, Level.ALARM):
             self.level.addItem(LEVEL_NAMES[lvl], int(lvl))
@@ -34,15 +34,15 @@ class EventLogWidget(QtWidgets.QWidget):
         self.level.currentIndexChanged.connect(self._reload)
         bar.addWidget(self.level)
         self.filter = QtWidgets.QLineEdit()
-        self.filter.setPlaceholderText('filtrer (texte, source)…')
+        self.filter.setPlaceholderText('filter (text, source)…')
         self.filter.textChanged.connect(self._reload)
         bar.addWidget(self.filter, 1)
-        self.autoscroll = QtWidgets.QCheckBox('défilement auto')
+        self.autoscroll = QtWidgets.QCheckBox('auto-scroll')
         self.autoscroll.setChecked(True)
         bar.addWidget(self.autoscroll)
         lay.addLayout(bar)
         self.table = QtWidgets.QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(['Heure', 'Niveau', 'Source', 'Message'])
+        self.table.setHorizontalHeaderLabels(['Time', 'Level', 'Source', 'Message'])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -55,7 +55,7 @@ class EventLogWidget(QtWidgets.QWidget):
         fm = QtGui.QFontMetrics(bold)
         adv = getattr(fm, 'horizontalAdvance', None) or fm.width
         # fixed widths, wide enough for the bold alarm rows; the message takes the rest
-        self._col_widths = [adv('00:00:00') + 18, adv('attention') + 18, adv('RECORDER:') + 18]
+        self._col_widths = [adv('00:00:00') + 18, adv('warning') + 18, adv('RECORDER:') + 18]
         self._pending: List[Event] = []
         self._token = events.subscribe(self._on_event)
         self._timer = QtCore.QTimer(self)

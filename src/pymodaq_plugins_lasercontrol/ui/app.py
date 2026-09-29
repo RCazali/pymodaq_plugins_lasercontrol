@@ -89,13 +89,13 @@ def git_version() -> str:
         out = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=here, capture_output=True, text=True,
                              timeout=3, creationflags=no_window)
         if out.returncode != 0:
-            return 'inconnu'
+            return 'unknown'
         h = out.stdout.strip()
         dirty = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=here,
                                capture_output=True, text=True, timeout=3, creationflags=no_window)
-        return h + ('-modifié' if dirty.stdout.strip() else '')
+        return h + ('-modified' if dirty.stdout.strip() else '')
     except Exception:
-        return 'inconnu'
+        return 'unknown'
 
 
 class LaserControlApp(QtCore.QObject):
@@ -129,7 +129,7 @@ class LaserControlApp(QtCore.QObject):
         self.manual = ManualControl(self.core, feedback=self._manual_feedback)
         self.store = PresetStore(self.paths.presets)
         self.session_store = SessionStore(self.paths.session_file)
-        self.preset: dict = default_preset('Nouveau preset')
+        self.preset: dict = default_preset('New preset')
         self.recorder = Recorder(self.core, self.paths.recordings, self.preset['recording'], self.metadata,
                                  max_mb=float(config_get(config, 'recording', 'max_file_mb', default=500)),
                                  max_hours=float(config_get(config, 'recording', 'max_file_hours', default=12)))
@@ -159,7 +159,7 @@ class LaserControlApp(QtCore.QObject):
         self.session_timer.timeout.connect(self.save_session)
         self._start_timers = start_timers
         self.core.events.publish(EventKind.INFO, 'UI', f"Laser Control {self.version} (git {self.git_hash}) "
-                                                        f"sur « {self.machine} »")
+                                                        f"on '{self.machine}'")
 
     # ================================================================== hardware
     def attach_hardware(self):
@@ -167,12 +167,12 @@ class LaserControlApp(QtCore.QObject):
         self.core.broker.attach(acts, dets)
         self.core.broker.request_positions()
         self.core.events.publish(EventKind.INFO, 'BROKER',
-                                 f"{len(acts)} actionneur(s), {len(dets)} détecteur(s) du dashboard")
+                                 f"{len(acts)} actuator(s), {len(dets)} detector(s) from the dashboard")
 
     def refresh_hardware(self):
         """Modules list changed (PyMoDAQ 5.2 experiment manager...): rebind the ports."""
         if any(a.state in ENGAGED_STATES for a in self.core.automations.values()):
-            warn(self.window, 'Matériel', 'Arrêter les automatismes avant de relier à nouveau le matériel.')
+            warn(self.window, 'Hardware', 'Stop the automations before re-attaching the hardware.')
             return
         self.attach_hardware()
         self._on_roles_or_hardware_changed()
@@ -208,7 +208,7 @@ class LaserControlApp(QtCore.QObject):
         self.status_bar.automation_clicked.connect(self.select_automation_tab)
         self.tab_widget = QtWidgets.QTabWidget()
         self.tabs['overview'] = OverviewTab(self)
-        self.tabs['alignment'] = AlignmentWidget(self.manual, shake_callback=lambda: self.shake('clavier'),
+        self.tabs['alignment'] = AlignmentWidget(self.manual, shake_callback=lambda: self.shake('keyboard'),
                                                  history_path=self.paths.history_file)
         self.tabs['alignment'].config_changed.connect(self._mark_dirty)
         from .quick_panel import QuickPanel
@@ -221,8 +221,8 @@ class LaserControlApp(QtCore.QObject):
         self.tabs['recording'] = RecordingTab(self)
         self.tabs['presets'] = PresetsTab(self)
         self.tabs['config'] = ConfigTab(self)
-        titles = {'overview': '🏠 Vue d’ensemble', 'alignment': '🎯 Alignement', 'xy': '✥ XY', 'pid': '⚙️ PID',
-                  'optimizer': '📈 Optimisation', 'scan': '📊 Scan 1D', 'recording': '⏺ Enregistrement',
+        titles = {'overview': '🏠 Overview', 'alignment': '🎯 Alignment', 'xy': '✥ XY', 'pid': '⚙️ PID',
+                  'optimizer': '📈 Optimization', 'scan': '📊 1D Scan', 'recording': '⏺ Recording',
                   'presets': '📂 Presets', 'config': '🔧 Configuration'}
         for key, w in self.tabs.items():
             self.tab_widget.addTab(w, titles[key])
@@ -230,9 +230,9 @@ class LaserControlApp(QtCore.QObject):
         self.event_log = EventLogWidget(self.core.events)
 
         if dockarea is not None:
-            self.docks = {'status': Dock('État', size=(1000, 60), hideTitle=True),
+            self.docks = {'status': Dock('Status', size=(1000, 60), hideTitle=True),
                           'main': Dock('Laser Control', size=(1000, 700)),
-                          'journal': Dock('Journal', size=(1000, 160))}
+                          'journal': Dock('Log', size=(1000, 160))}
             dockarea.addDock(self.docks['status'], 'top')
             dockarea.addDock(self.docks['main'], 'bottom', self.docks['status'])
             dockarea.addDock(self.docks['journal'], 'bottom', self.docks['main'])
@@ -261,7 +261,7 @@ class LaserControlApp(QtCore.QObject):
         for k in keys:
             sc = QtWidgets.QShortcut(QtGui.QKeySequence(k), host)
             sc.setContext(QtCore.Qt.WindowShortcut)
-            sc.activated.connect(lambda: self.emergency_stop('raccourci clavier'))
+            sc.activated.connect(lambda: self.emergency_stop('keyboard shortcut'))
             self._shortcuts.append(sc)
 
     # ================================================================== timers
@@ -369,13 +369,13 @@ class LaserControlApp(QtCore.QObject):
             opt = new
             self.core.add_automation(opt)
         opt.single_shot = single_shot
-        opt.label = label + (' (complète)' if cfg['config'].get('full_optimization') else '')
+        opt.label = label + (' (full)' if cfg['config'].get('full_optimization') else '')
         return self.core.start(opt.id)
 
     # ================================================================== Alignment buttons
     def quick_items(self) -> List[dict]:
-        """Automations shown as buttons in the Alignment tab ('Bouton dans Alignement' ticked), in the
-        order of the PID then Optimisation tabs: [{'id', 'kind', 'key', 'label', 'action'}]."""
+        """Automations shown as buttons in the Alignment tab ('Button in Alignment' ticked), in the
+        order of the PID then Optimization tabs: [{'id', 'kind', 'key', 'label', 'action'}]."""
         out = []
         pid_tab = self.tabs.get('pid')
         if pid_tab is not None:
@@ -393,35 +393,35 @@ class LaserControlApp(QtCore.QObject):
         if action == 'toggle':
             action = 'resume' if state == AutoState.HELD else ('stop' if state in ENGAGED_STATES else 'start')
         if action == 'stop':
-            self.core.stop(auto_id, 'arrêt depuis Alignement')
+            self.core.stop(auto_id, 'stopped from Alignment')
             return True, ''
         if action == 'resume':
             ok, msg = self.core.resume(auto_id)
             if not ok:
-                self.core.events.publish(EventKind.AUTOMATION_START, auto_id, f'Reprise refusée : {msg}', Level.WARNING)
+                self.core.events.publish(EventKind.AUTOMATION_START, auto_id, f'Resume refused: {msg}', Level.WARNING)
             return ok, msg
         if auto_id.startswith('PID:'):
             cfg = self.tabs['pid'].config_of(auto_id)
             if cfg is None:
-                return False, 'PID introuvable'
+                return False, 'PID not found'
             if state in ENGAGED_STATES:
-                self.core.stop(auto_id, 'redémarrage depuis Alignement')
+                self.core.stop(auto_id, 'restart from Alignment')
             return self.start_pid(cfg)
         if auto_id.startswith('OPT:'):
             cfg = self.tabs['optimizer'].config_of(auto_id)
             if cfg is None:
-                return False, 'optimisation introuvable'
+                return False, 'optimization not found'
             if not cfg['motors'] or not cfg['signals']:
-                msg = 'cocher au moins un moteur et un signal objectif (onglet Optimisation)'
-                self.core.events.publish(EventKind.AUTOMATION_START, auto_id, f'Démarrage refusé : {msg}',
+                msg = 'tick at least one motor and one objective signal (Optimization tab)'
+                self.core.events.publish(EventKind.AUTOMATION_START, auto_id, f'Start refused: {msg}',
                                          Level.WARNING)
                 return False, msg
             if state in ENGAGED_STATES:
-                self.core.stop(auto_id, 'redémarrage depuis Alignement')
+                self.core.stop(auto_id, 'restart from Alignment')
             how = cfg.get('button_action', 'single')
             cfg['config']['full_optimization'] = how == 'full'
             return self.start_optimizer(cfg, single_shot=how != 'periodic')
-        return False, f'automatisme inconnu : {auto_id}'
+        return False, f'unknown automation: {auto_id}'
 
     def stabilization_pids(self) -> List[dict]:
         pid_tab = self.tabs.get('pid')
@@ -440,24 +440,24 @@ class LaserControlApp(QtCore.QObject):
                 continue
             errs = self.core.validate(a)
             if errs:
-                problems.append(f"{a.label} : " + ' ; '.join(errs))
+                problems.append(f"{a.label}: " + ' ; '.join(errs))
         return '\n'.join(problems)
 
     def activate_stabilization(self, parent=None):
         """T5.3: summary of what will move, confirmation, then start every stabilisation PID."""
         cfgs = self.stabilization_pids()
         if not cfgs:
-            info(parent, 'Stabilisation', 'Aucun PID marqué « stabilisation » dans le preset.')
+            info(parent, 'Stabilization', 'No PID marked "stabilization" in the preset.')
             return
         autos = [self.ensure_pid(c) for c in cfgs]
         todo = [a for a in autos if a.state not in ENGAGED_STATES]
         errors = {a.label: self.core.validate(a) for a in todo}
         errors = {k: v for k, v in errors.items() if v}
         if errors:
-            self.core.events.publish(EventKind.AUTOMATION_START, 'UI', 'Stabilisation refusée (rien n’a été démarré) : ' +
-                                     ' | '.join(f"{k} : {' ; '.join(v)}" for k, v in errors.items()), Level.WARNING)
-            warn(parent, 'Stabilisation impossible',
-                 'Rien n’a été démarré :\n\n' + '\n\n'.join(f'{k} :\n  ' + '\n  '.join(v) for k, v in errors.items()))
+            self.core.events.publish(EventKind.AUTOMATION_START, 'UI', 'Stabilization refused (nothing was started): ' +
+                                     ' | '.join(f"{k}: {' ; '.join(v)}" for k, v in errors.items()), Level.WARNING)
+            warn(parent, 'Stabilization impossible',
+                 'Nothing was started:\n\n' + '\n\n'.join(f'{k}:\n  ' + '\n  '.join(v) for k, v in errors.items()))
             return
         lines = []
         for a in todo:
@@ -465,26 +465,26 @@ class LaserControlApp(QtCore.QObject):
             for r in a.motor_roles():
                 lim = self.core.safety.limits(r)
                 if lim:
-                    lines.append(f'     {r} : pas ≤ {lim.max_step:g}, excursion ± {lim.max_excursion:g}, '
-                                 f'débit ≤ {lim.rate_max:g} / {lim.rate_window_s:g} s')
-        draft = '' if self.preset.get('status') == 'validated' else '\n\n⚠ Ce preset n’est PAS validé.'
-        if not ask_yes_no(parent, 'Activer la stabilisation',
-                          'Ce qui va bouger :\n\n' + '\n'.join(lines) + draft + '\n\nActiver ?'):
+                    lines.append(f'     {r}: step ≤ {lim.max_step:g}, excursion ± {lim.max_excursion:g}, '
+                                 f'rate ≤ {lim.rate_max:g} / {lim.rate_window_s:g} s')
+        draft = '' if self.preset.get('status') == 'validated' else '\n\n⚠ This preset is NOT validated.'
+        if not ask_yes_no(parent, 'Activate stabilization',
+                          'What will move:\n\n' + '\n'.join(lines) + draft + '\n\nActivate?'):
             return
         failed = []
         for a in todo:
             ok, msg = self.core.start(a.id)
             if not ok:
-                failed.append(f'{a.label} : {msg}')
+                failed.append(f'{a.label}: {msg}')
         if failed:
             for a in todo:
-                self.core.stop(a.id, 'activation incomplète')
+                self.core.stop(a.id, 'incomplete activation')
             self.core.events.publish(EventKind.AUTOMATION_START, 'UI',
-                                     'Stabilisation annulée (tout ou rien) : ' + ' | '.join(failed), Level.WARNING)
-            warn(parent, 'Stabilisation', 'Activation annulée :\n\n' + '\n'.join(failed))
+                                     'Stabilization cancelled (all or nothing): ' + ' | '.join(failed), Level.WARNING)
+            warn(parent, 'Stabilization', 'Activation cancelled:\n\n' + '\n'.join(failed))
         else:
             self.core.events.publish(EventKind.AUTOMATION_START, 'UI',
-                                     f"Stabilisation activée ({', '.join(a.label for a in todo)})")
+                                     f"Stabilization activated ({', '.join(a.label for a in todo)})")
 
     def held_stabilization(self) -> list:
         """Stabilisation PIDs frozen by the safety supervisor (HELD, waiting for a manual resume, O10-A)."""
@@ -501,17 +501,17 @@ class LaserControlApp(QtCore.QObject):
         for a in self.held_stabilization():
             ok, msg = self.core.resume(a.id)
             if not ok:
-                failed.append(f'{a.label} : {msg}')
+                failed.append(f'{a.label}: {msg}')
         if failed:
-            warn(parent, 'Reprise', 'Reprise refusée :\n\n' + '\n'.join(failed))
+            warn(parent, 'Resume', 'Resume refused:\n\n' + '\n'.join(failed))
 
     def deactivate_stabilization(self):
         names = []
         for cfg in self.stabilization_pids():
-            if self.core.stop(f"PID:{cfg['id']}", 'stabilisation désactivée'):
+            if self.core.stop(f"PID:{cfg['id']}", 'stabilization deactivated'):
                 names.append(cfg.get('label') or cfg['id'])
         if names:
-            self.core.events.publish(EventKind.AUTOMATION_STOP, 'UI', f"Stabilisation désactivée ({', '.join(names)})")
+            self.core.events.publish(EventKind.AUTOMATION_STOP, 'UI', f"Stabilization deactivated ({', '.join(names)})")
 
     def emergency_stop(self, source: str = 'UI'):
         for key in ('alignment',):
@@ -528,7 +528,7 @@ class LaserControlApp(QtCore.QObject):
     # ================================================================== shaker
     def shake(self, source: str = 'UI'):
         if not bool(config_get(self.config, 'shaker', 'enabled', default=True)):
-            self.core.events.publish(EventKind.SHAKE, source, 'Shaker désactivé dans la configuration', Level.WARNING)
+            self.core.events.publish(EventKind.SHAKE, source, 'Shaker disabled in the configuration', Level.WARNING)
             return
         self.core.shake(source)
 
@@ -537,13 +537,13 @@ class LaserControlApp(QtCore.QObject):
 
     def _on_shake_done(self, ok: bool, msg: str):
         if not ok:
-            self.core.events.publish(EventKind.ERROR, 'SHAKER', f'Shake échoué : {msg}', Level.ERROR)
+            self.core.events.publish(EventKind.ERROR, 'SHAKER', f'Shake failed: {msg}', Level.ERROR)
 
     def _confirm_moves(self, a, text: str, answer):
         """'Confirm moves' dialog: shown asynchronously; the automation is PAUSED meanwhile."""
         def ask():
             box = QtWidgets.QMessageBox(self.window)
-            box.setWindowTitle(f'{a.label} – confirmer le déplacement')
+            box.setWindowTitle(f'{a.label} – confirm the move')
             box.setText(text)
             box.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             box.setDefaultButton(QtWidgets.QMessageBox.No)
@@ -573,7 +573,7 @@ class LaserControlApp(QtCore.QObject):
         roles.machine = self.machine
         if save:
             roles.save(self.paths.roles_file)
-            self.core.events.publish(EventKind.INFO, 'UI', f'Rôles enregistrés : {self.paths.roles_file.name}')
+            self.core.events.publish(EventKind.INFO, 'UI', f'Roles saved: {self.paths.roles_file.name}')
         self.core.set_roles(roles)
         self.core.set_safety_config(self.core.safety.config)
         self._on_roles_or_hardware_changed()
@@ -608,7 +608,7 @@ class LaserControlApp(QtCore.QObject):
     def apply_preset(self, preset: dict, source: str = 'UI') -> Tuple[bool, str]:
         engaged = self._any_engaged()
         if engaged:
-            return False, 'automatismes engagés : ' + ', '.join(engaged)
+            return False, 'engaged automations: ' + ', '.join(engaged)
         p = normalize(preset)
         self.preset = p
         self.core.set_safety_config(SafetyConfig.from_dict(p['safety']))
@@ -627,29 +627,29 @@ class LaserControlApp(QtCore.QObject):
         self.preset_dirty = False
         rep = validate_preset(p, self.core.roles, self.core.broker.modules(), self.core.signals.channels())
         self.core.events.publish(EventKind.PRESET, source,
-                                 f"Preset chargé : {p.get('name')} ({p.get('status')}, {self.core.preset_hash}) "
-                                 f"— rien n’est démarré", Level.INFO,
+                                 f"Preset loaded: {p.get('name')} ({p.get('status')}, {self.core.preset_hash}) "
+                                 f"— nothing is started", Level.INFO,
                                  name=p.get('name'), hash=self.core.preset_hash, problems=rep.text())
         self.preset_applied.emit()
         return True, ''
 
     def load_preset_interactive(self, name: str, parent=None):
-        if self.preset_dirty and not ask_yes_no(parent, 'Modifications non enregistrées',
-                                                f"Le preset « {self.preset.get('name')} » a des modifications non "
-                                                f"enregistrées.\nLes abandonner et charger « {name} » ?"):
+        if self.preset_dirty and not ask_yes_no(parent, 'Unsaved changes',
+                                                f"The preset '{self.preset.get('name')}' has unsaved "
+                                                f"changes.\nDiscard them and load '{name}'?"):
             return
         try:
             p = self.store.load(name)
         except Exception as e:
-            warn(parent, 'Preset', f'Lecture impossible : {e}')
+            warn(parent, 'Preset', f'Cannot read: {e}')
             return
         ok, msg = self.apply_preset(p)
         if not ok:
-            warn(parent, 'Preset', f'Chargement refusé ({msg}). Arrêter d’abord les automatismes.')
+            warn(parent, 'Preset', f'Loading refused ({msg}). Stop the automations first.')
 
     def new_preset(self, name: str, parent=None):
         if self._any_engaged():
-            warn(parent, 'Preset', 'Arrêter d’abord les automatismes.')
+            warn(parent, 'Preset', 'Stop the automations first.')
             return
         p = self.collect_preset()           # start from the current configuration
         p.update({k: v for k, v in default_preset(name).items()
@@ -667,7 +667,7 @@ class LaserControlApp(QtCore.QObject):
         self.core.preset_name = p['name']
         self.core.preset_hash = content_hash(p)
         self.preset_dirty = False
-        self.core.events.publish(EventKind.PRESET, 'UI', f"Preset enregistré : {p['name']} ({self.core.preset_hash})")
+        self.core.events.publish(EventKind.PRESET, 'UI', f"Preset saved: {p['name']} ({self.core.preset_hash})")
         if 'presets' in self.tabs:
             self.tabs['presets'].load_from_preset(p)
         self.recorder.update_metadata()
@@ -676,21 +676,21 @@ class LaserControlApp(QtCore.QObject):
     def validate_current_preset(self, by: str, notes: str):
         p = self.collect_preset()
         rep = validate_preset(p, self.core.roles, self.core.broker.modules(), self.core.signals.channels())
-        if not rep.ok and not ask_yes_no(self.window, 'Valider', 'Le preset a des problèmes sur cette machine :\n\n'
-                                         + rep.text() + '\n\nLe marquer validé quand même ?'):
+        if not rep.ok and not ask_yes_no(self.window, 'Validate', 'The preset has problems on this machine:\n\n'
+                                         + rep.text() + '\n\nMark it as validated anyway?'):
             return
         self.store.mark_validated(p, by, notes)
         self.preset = p
         self.store.save(p)
         self.preset = p
         self.preset_dirty = False
-        self.core.events.publish(EventKind.PRESET, 'UI', f"Preset « {p['name']} » marqué validé par {by or '?'}")
+        self.core.events.publish(EventKind.PRESET, 'UI', f"Preset '{p['name']}' marked as validated by {by or '?'}")
         if 'presets' in self.tabs:
             self.tabs['presets'].load_from_preset(p)
 
     def import_legacy(self, paths: List[str], parent=None):
         if self._any_engaged():
-            warn(parent, 'Import', 'Arrêter d’abord les automatismes.')
+            warn(parent, 'Import', 'Stop the automations first.')
             return
         roles = self.core.roles.copy()
         imp = LegacyImport(roles)
@@ -699,13 +699,13 @@ class LaserControlApp(QtCore.QObject):
             for path in paths:
                 p = imp.import_file(Path(path), into=p)
         except Exception as e:
-            warn(parent, 'Import', f'Import impossible : {e}')
+            warn(parent, 'Import', f'Import failed: {e}')
             return
         if imp.created_roles:
             self.apply_roles(roles, save=True)
         self.apply_preset(p, 'import')
         self.preset_dirty = True
-        info(parent, 'Import', '\n'.join(imp.report) + '\n\nVérifier puis enregistrer le preset.')
+        info(parent, 'Import', '\n'.join(imp.report) + '\n\nCheck, then save the preset.')
 
     # ================================================================== session
     def save_session(self):
@@ -730,7 +730,7 @@ class LaserControlApp(QtCore.QObject):
                 logger.warning(f'last preset unreadable: {e}')
         if preset is None:
             names = self.store.names()
-            preset = self.store.load(names[0]) if names else default_preset('Nouveau preset')
+            preset = self.store.load(names[0]) if names else default_preset('New preset')
         self.apply_preset(preset, 'session')
         self.preset_dirty = bool(s.get('unsaved_preset'))
         if s.get('operator'):
@@ -742,8 +742,8 @@ class LaserControlApp(QtCore.QObject):
         if bool(config_get(self.config, 'recording', 'autostart', default=False)):
             QtCore.QTimer.singleShot(1000, lambda: self.toggle_recording(True))
         if not self.core.roles.all_roles():
-            self.core.events.publish(EventKind.INFO, 'UI', "Aucun rôle déclaré sur cette machine : onglet "
-                                                            "Configuration → « Créer les rôles manquants »",
+            self.core.events.publish(EventKind.INFO, 'UI', "No role declared on this machine: Configuration "
+                                                            "tab → 'Create missing roles'",
                                      Level.WARNING)
 
     # ================================================================== shutdown
@@ -768,7 +768,7 @@ class LaserControlApp(QtCore.QObject):
                     w.shutdown()
                 except Exception:  # pragma: no cover
                     pass
-        self.core.stop_all_automations('fermeture de l’extension')
+        self.core.stop_all_automations('extension closed')
         try:
             self.recorder.stop()
         except Exception as e:  # pragma: no cover

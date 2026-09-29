@@ -1,176 +1,176 @@
-# Laser Control — extension PyMoDAQ
+# Laser Control — PyMoDAQ extension
 
-Extension de dashboard PyMoDAQ pour stabiliser un laser thin-disk à verrouillage de modes avec
-génération d'XUV intracavité. Elle remplace les anciennes extensions (LaserController, XY Stage
-Controller…) par **une seule extension** (décision D2 du cahier des charges), organisée en couches :
-un cœur qui arbitre tout accès au matériel, des engines en logique pure, et une interface explicite.
+PyMoDAQ dashboard extension to stabilize a mode-locked thin-disk laser with intracavity XUV
+generation. It replaces the former extensions (LaserController, XY Stage Controller…) with **a single
+extension** (decision D2 of the specification), organized in layers: a core that arbitrates every
+access to the hardware, engines in pure logic, and an explicit user interface.
 
-- **Barre d'état toujours visible** : état global, un bouton par automatisme, fraîcheur des données
-  de l'ordi B, intensité par rapport au seuil, ML ON / OFF / Instable, Note, Shake, REC, ARRÊT D'URGENCE.
-- **Onglet Alignement = poste de travail** : jog clavier, historique, et sous les moteurs un bouton par
-  PID ou optimisation choisi (« Bouton dans Alignement ») : un clic démarre, un autre arrête.
-- **Autres onglets** : Vue d'ensemble (stabilisation en un clic, une carte par moteur avec propriétaire
-  et enveloppe), XY, PID (plusieurs PID), Optimisation (plusieurs optimisations nommées), Scan 1D,
-  Enregistrement, Presets, Configuration.
-- **Sécurité** : les invariants S1–S12 sont appliqués par le cœur, pas par l'interface, et chacun a
-  son test automatique.
-- **Enregistrement** HDF5 (snapshots périodiques, rafales autour du shake, notes, état ML).
-- **Presets** versionnés, écrits avec des **rôles** (OC_H, Cam1_x…) : un même preset se charge au
-  bureau et au labo, seul le fichier de rôles de la machine change.
-- **Simulateur LaserSim** (plugins moteur et détecteur 0D) pour travailler au bureau.
+- **Always-visible status bar**: global state, one button per automation, freshness of the data of
+  computer B, intensity versus threshold, ML ON / OFF / Unstable, Note, Shake, REC, EMERGENCY STOP.
+- **Alignment tab = workstation**: keyboard jog, history, and under the motors one button per chosen
+  PID or optimization ("Button in Alignment"): one click starts, another one stops.
+- **Other tabs**: Overview (one-click stabilization, one card per motor with owner and envelope), XY,
+  PID (several PIDs), Optimization (several named optimizations), 1D Scan, Recording, Presets,
+  Configuration.
+- **Safety**: the invariants S1–S12 are enforced by the core, not by the user interface, and each one
+  has its automatic test.
+- **HDF5 recording** (periodic snapshots, bursts around the shake, notes, ML state).
+- Versioned **presets**, written with **roles** (OC_H, Cam1_x…): the same preset loads at the office
+  and in the lab, only the roles file of the machine changes.
+- **LaserSim simulator** (motor and 0D detector plugins) to work at the office.
 
-![Onglet Alignement avec le simulateur : deux PID et une optimisation lancés depuis leurs boutons](docs/images/alignment.png)
+![Alignment tab with the simulator: two PIDs and one optimization started from their buttons](docs/images/alignment.png)
 
-## Compatibilité
+## Compatibility
 
-- PyMoDAQ **5.1.x** (développé sur 5.1.10) et **5.2.x**. Testé avec pymodaq 5.1.10 (pymodaq_gui 5.0.32
-  et 5.1.12), pymodaq 5.2.11, Python 3.11, PyQt5. L'interface passe par qtpy (PyQt6 et PySide6
-  devraient fonctionner, non testés).
-- ⚠ pymodaq 5.1.10 ne démarre pas avec pymodaq_gui / pymodaq_data / pymodaq_utils 5.2
-  (ImportError). Ne mettez pas ces paquets à jour séparément de pymodaq.
+- PyMoDAQ **5.1.x** (developed on 5.1.10) and **5.2.x**. Tested with pymodaq 5.1.10 (pymodaq_gui 5.0.32
+  and 5.1.12), pymodaq 5.2.11, Python 3.11, PyQt5. The user interface goes through qtpy (PyQt6 and
+  PySide6 should work, not tested).
+- ⚠ pymodaq 5.1.10 does not start with pymodaq_gui / pymodaq_data / pymodaq_utils 5.2
+  (ImportError). Do not upgrade these packages separately from pymodaq.
 
 ## Installation
 
-Dans l'environnement PyMoDAQ :
+In the PyMoDAQ environment:
 
 ```bash
 cd pymodaq_plugins_lasercontrol
 pip install -e .
 ```
 
-La version vient des tags git (`hatch-vcs`, 0.2.0 sans dépôt git). L'extension apparaît dans le
-menu *Extensions* du dashboard sous le nom **Laser Control**. Les plugins `LaserSim` (moteur et
-détecteur 0D) apparaissent dans les listes de plugins.
+The version comes from the git tags (`hatch-vcs`, 0.2.0 without a git repository). The extension
+appears in the *Extensions* menu of the dashboard as **Laser Control**. The `LaserSim` plugins (motor
+and 0D detector) appear in the plugin lists.
 
-Tests (≈ 1 min, Qt hors écran) : `pip install pytest` puis `pytest`. Les tests du dashboard écrivent
-puis suppriment un preset `lc_pytest_dashboard.xml` dans le dossier de presets de PyMoDAQ.
+Tests (≈ 1 min, off-screen Qt): `pip install pytest`, then `pytest`. The dashboard tests write, then
+delete, a preset `lc_pytest_dashboard.xml` in the PyMoDAQ presets folder.
 
-## Démarrage au bureau (simulateur)
+## Getting started at the office (simulator)
 
 ```bash
 python -m pymodaq_plugins_lasercontrol.tools.sim_preset
 python -m pymodaq_plugins_lasercontrol.extensions.laser_control laser_sim
 ```
 
-La première commande écrit :
+The first command writes:
 
-- le preset de dashboard `laser_sim` (une *experiment* en PyMoDAQ 5.2) : dix moteurs simulés et le
-  détecteur `SimB`, qui joue l'ordi B. S'il existe déjà, `--force` le remplace (nécessaire pour avoir
-  les moteurs des bancs de test) ;
-- les rôles du simulateur, ajoutés au fichier de rôles de la machine sans toucher aux rôles présents,
-  avec les mêmes noms que le modèle du labo (`docs/exemples/roles_lab.toml`) ;
-- le preset Laser Control **« Démo simulateur »**.
+- the dashboard preset `laser_sim` (an *experiment* in PyMoDAQ 5.2): ten simulated motors and the
+  `SimB` detector, which plays computer B. If it already exists, `--force` replaces it (needed to get
+  the motors of the test benches);
+- the simulator roles, added to the roles file of the machine without touching the existing roles,
+  with the same names as the lab template (`docs/examples/roles_lab.toml`);
+- the Laser Control preset **"Simulator demo"**.
 
-La seconde ouvre le dashboard avec ce preset et l'extension (ou : dashboard habituel, charger
-`laser_sim`, puis *Extensions → Laser Control*). Ensuite : **Presets → Démo simulateur → Charger**,
-puis **▶ Acquisition** dans la barre d'état, et l'onglet **Alignement**.
+The second one opens the dashboard with this preset and the extension (or: usual dashboard, load
+`laser_sim`, then *Extensions → Laser Control*). Then: **Presets → Simulator demo → Load**, then
+**▶ Acquisition** in the status bar, and the **Alignment** tab.
 
-Le simulateur contient deux bancs de test simples, en plus du laser simulé :
+Besides the simulated laser, the simulator contains two simple test benches:
 
-| Banc | Moteurs | Signal | Automatisme de la démo |
+| Bench | Motors | Signal | Demo automation |
 |---|---|---|---|
-| pointé de faisceau | `Steer_H`, `Steer_V` | `Beam_x`, `Beam_y` (µm, 0 = centré) | PID « Faisceau H » et « Faisceau V » (consigne 0, Kp 0.6) |
-| photodiode derrière un trou | `PD_X`, `PD_Y` | `PD_current` (mA, 2 mA au mieux) | « Optim photodiode » (une passe), « Suivi photodiode » (périodique) |
-| laser | `OC_H`, `OC_V`… | `Cam1_x`, `Laser_power`… | « Cam1 X ← OC_H », « Optim puissance OC » |
+| beam pointing | `Steer_H`, `Steer_V` | `Beam_x`, `Beam_y` (µm, 0 = centered) | PIDs "Beam H" and "Beam V" (setpoint 0, Kp 0.6) |
+| photodiode behind a pinhole | `PD_X`, `PD_Y` | `PD_current` (mA, 2 mA at best) | "Photodiode optim" (one pass), "Photodiode tracking" (periodic) |
+| laser | `OC_H`, `OC_V`… | `Cam1_x`, `Laser_power`… | "Cam1 X ← OC_H", "OC power optim" |
 
-Les optima dérivent lentement (environ une minute). Déréglez un banc au clavier, puis cliquez son bouton.
+The optima drift slowly (about one minute). Misalign a bench with the keyboard, then click its button.
 
-Pour simuler des pannes, utilisez les réglages du viewer `SimB` dans le dashboard : bruit, dérive,
-chutes d'intensité (désactivées par défaut), *muted* (ordi B muet) et *frozen* (valeurs figées).
+To simulate failures, use the settings of the `SimB` viewer in the dashboard: noise, drift,
+intensity drops (disabled by default), *muted* (computer B silent) and *frozen* (frozen values).
 
-## Mise en service au labo (ordi A)
+## Commissioning in the lab (computer A)
 
-Ordre de démarrage (T2.4) : coordinateur LECO → ordi B (caméras + extension 0D) → dashboard unique de
-l'ordi A → extension Laser Control.
+Start-up order (T2.4): LECO coordinator → computer B (cameras + 0D extension) → single dashboard of
+computer A → Laser Control extension.
 
-1. **`config_lasercontrol.toml`** : il est créé au premier lancement, à côté de `config_pymodaq.toml`,
-   et reste propre à chaque machine, hors git. Y régler `[machine] name = "lab"`, les dossiers,
-   l'adresse du Red Pitaya (`[shaker]`) et le dossier partagé avec l'ordi B (`event_trigger_folder`, O8).
-2. **Rôles** : dans **Configuration → Rôles**, cliquer « Créer les rôles manquants », puis donner aux
-   rôles les mêmes noms qu'au bureau (modèle : `docs/exemples/roles_lab.toml`), avec l'unité et le sens
-   de chaque moteur. Sous « Compteurs de trames », choisir pour l'ordi B son canal compteur de trames (O9).
-3. **Anciens profils** : **Presets → Importer un ancien profil…** accepte les sessions LaserController,
-   les profils PID et optimiseur (chacun devient une optimisation nommée), et les profils XY. Les moteurs et canaux deviennent des rôles. Les
-   limites `max_step`, `max_excursion` et débit ne sont pas inventées : elles restent à renseigner.
-4. **PID / Optimisation** : donner à chaque automatisme utile un nom court (« Optim HA »,
-   « Stab. OC_X »…) et cocher **Bouton dans Alignement**.
-5. **Presets → Vérifier sur cette machine**, essai en CW, puis **Marquer comme validé…**
+1. **`config_lasercontrol.toml`**: it is created at the first launch, next to `config_pymodaq.toml`,
+   and stays specific to each machine, outside git. Set `[machine] name = "lab"`, the folders, the
+   address of the Red Pitaya (`[shaker]`) and the folder shared with computer B (`event_trigger_folder`, O8).
+2. **Roles**: in **Configuration → Roles**, click "Create missing roles", then give the roles the same
+   names as at the office (template: `docs/examples/roles_lab.toml`), with the unit and the direction of
+   each motor. Under "Frame counters", choose the frame counter channel of computer B (O9).
+3. **Legacy profiles**: **Presets → Import a legacy profile…** accepts LaserController sessions, PID
+   and optimizer profiles (each one becomes a named optimization), and XY profiles. Motors and channels
+   become roles. The `max_step`, `max_excursion` and rate limits are not invented: they must be filled in.
+4. **PID / Optimization**: give each useful automation a short name ("Optim HA", "Stab. OC_X"…) and
+   tick **Button in Alignment**.
+5. **Presets → Check on this machine**, test in CW, then **Mark as validated…**
 
-Script de lancement unique : `python -m pymodaq_plugins_lasercontrol.extensions.laser_control <preset>`.
+Single launch script: `python -m pymodaq_plugins_lasercontrol.extensions.laser_control <preset>`.
 
-## Où sont les fichiers
+## Where the files are
 
-| Fichier | Emplacement par défaut | Contenu |
+| File | Default location | Content |
 |---|---|---|
-| `config_lasercontrol.toml` | dossier de configuration PyMoDAQ | réglages de la machine (nom, dossiers, shaker…) |
-| `roles_<machine>.toml` | `~/.pymodaq/laser_control/` | rôles ↔ modules / canaux de cette machine |
-| `presets/*.json` | `~/.pymodaq/laser_control/presets/` | presets (PID, optimiseur, sécurité, alignement, XY, scan, enregistrement) |
-| `recordings/AAAA-MM-JJ/session_*.h5` | `~/.pymodaq/laser_control/recordings/` | enregistrements HDF5 |
-| `session_<machine>.json` | `~/.pymodaq/laser_control/` | dernier état de l'interface, restauré sans rien démarrer (T6.6) |
-| `alignment_history_<machine>.json` | `~/.pymodaq/laser_control/` | historique des positions de l'onglet Alignement |
-| `logs/laser_control.log` | `~/.pymodaq/laser_control/logs/` | journal technique (rotatif, messages dédoublonnés) |
+| `config_lasercontrol.toml` | PyMoDAQ configuration folder | machine settings (name, folders, shaker…) |
+| `roles_<machine>.toml` | `~/.pymodaq/laser_control/` | roles ↔ modules / channels of this machine |
+| `presets/*.json` | `~/.pymodaq/laser_control/presets/` | presets (PID, optimizer, safety, alignment, XY, scan, recording) |
+| `recordings/YYYY-MM-DD/session_*.h5` | `~/.pymodaq/laser_control/recordings/` | HDF5 recordings |
+| `session_<machine>.json` | `~/.pymodaq/laser_control/` | last state of the user interface, restored without starting anything (T6.6) |
+| `alignment_history_<machine>.json` | `~/.pymodaq/laser_control/` | position history of the Alignment tab |
+| `logs/laser_control.log` | `~/.pymodaq/laser_control/logs/` | technical log (rotating, de-duplicated messages) |
 
-Le dossier `presets` peut pointer vers un dossier partagé ou versionné, pour utiliser les mêmes
-presets sur les deux machines (`[paths] presets_folder`). Lecture d'une session :
+The `presets` folder can point to a shared or versioned folder, to use the same presets on both
+machines (`[paths] presets_folder`). Reading a session:
 `from pymodaq_plugins_lasercontrol.recording import load_session`.
 
-## Organisation du code
+## Code organization
 
 ```
 src/pymodaq_plugins_lasercontrol/
-├── core/          broker (seul accès au matériel), ownership, signals (fraîcheur, heartbeat),
+├── core/          broker (only access to the hardware), ownership, signals (freshness, heartbeat),
 │                  safety (S1–S5), states, roles, events, coordinator (LaserCore), automation
-├── engines/       pid, scan (1D, serpentin XY), optimizer (interface enfichable + 4 algorithmes)
-├── hardware/      ports PyMoDAQ (DAQ_Move / DAQ_Viewer), simulateur, shaker Red Pitaya
-├── recording/     snapshots, écriture HDF5 dans un thread, rafales, fichiers déclencheurs (O8), lecture
-├── presets/       schéma versionné, stockage, validation, import des anciens profils
-├── ui/            barre d'état, onglets, boutons d'automatismes de l'Alignement (quick_panel), journal
-├── extensions/    laser_control.py : la classe d'extension PyMoDAQ
-├── daq_move_plugins/, daq_viewer_plugins/plugins_0D/   plugins LaserSim
-└── tools/         sim_preset.py : preset du simulateur, ses rôles et le preset « Démo simulateur »
+├── engines/       pid, scan (1D, XY snake), optimizer (pluggable interface + 4 algorithms)
+├── hardware/      PyMoDAQ ports (DAQ_Move / DAQ_Viewer), simulator, Red Pitaya shaker
+├── recording/     snapshots, HDF5 writing in a thread, bursts, trigger files (O8), reading
+├── presets/       versioned schema, storage, validation, import of the legacy profiles
+├── ui/            status bar, tabs, automation buttons of the Alignment tab (quick_panel), log
+├── extensions/    laser_control.py: the PyMoDAQ extension class
+├── daq_move_plugins/, daq_viewer_plugins/plugins_0D/   LaserSim plugins
+└── tools/         sim_preset.py: simulator preset, its roles and the "Simulator demo" preset
 ```
 
-Le cœur et les engines ne dépendent ni de Qt ni de PyMoDAQ. Ils sont testés avec une horloge et du
-matériel simulés (`core/fakes.py`), et l'interface ne passe jamais par `modules_manager`. Détails
-dans `docs/conception.md`.
+The core and the engines depend neither on Qt nor on PyMoDAQ. They are tested with a simulated clock
+and simulated hardware (`core/fakes.py`), and the user interface never goes through `modules_manager`.
+Details in `docs/design.md`.
 
 ## Documentation
 
-- `docs/guide_utilisateur.md` : démarrer, charger un preset, activer la stabilisation, que faire si c'est rouge (T11.1).
-- `docs/fiche_incident.md` : plantage, ordi B muet, intensité à 0, arrêt d'urgence (T11.2).
-- `docs/conception.md` : architecture, invariants et tests associés, ajouter un moteur, un détecteur ou un engine (T11.3).
-- `docs/reglage_pid.md` : signes, gains, poids, enveloppes (T11.4).
+- `docs/user_guide.md`: start, load a preset, activate the stabilization, what to do when it is red (T11.1).
+- `docs/incident_sheet.md`: crash, computer B silent, intensity at 0, emergency stop (T11.2).
+- `docs/design.md`: architecture, invariants and their tests, adding a motor, a detector or an engine (T11.3).
+- `docs/pid_tuning.md`: signs, gains, weights, envelopes (T11.4).
 - `CHANGELOG.md`.
 
-## Avancement par rapport au cahier des charges
+## Progress with respect to the specification
 
-| Lot | État |
+| Work package | Status |
 |---|---|
-| L0 | Remplacé par la refonte : chaque correctif est couvert par le nouveau cœur (arrêt d'urgence par `stop_motion`, pause et reprise des PID, NaN au lieu de 0.0, garde intensité, plus de reconnexion des détecteurs, rien de bloquant). |
-| L1 | Fait : structure, rôles, simulateur, 71 tests, version et hash git dans l'UI et dans les enregistrements, journal rotatif. À faire de votre côté : branches et tags (T1.5), NTP (T1.7). Le simulateur est à recaler sur des mesures réelles (T9.1). |
-| L2 | Alignement et XY sont dans l'extension, derrière la propriété des moteurs (T2.3). L'inventaire du matériel, le preset unique du labo et le retrait de l'ancien dashboard restent à faire au labo. |
-| L3, L4 | Faits : broker, fraîcheur et heartbeat, propriété (D4 / D5 / O3-A), superviseur S1–S5, machine d'états, bus d'événements, arrêt d'urgence ; PID multiples, moniteur passif, scan 1D, interface optimiseur avec les 4 modes historiques. |
-| L5 | Fait. La lisibilité à distance et sur un petit écran reste à vérifier sur place (T5.9, T8.2). |
-| L6 | Fait, sauf les différences entre presets (T6.5, P3). |
-| L7 | Fait côté ordi A. Côté ordi B (T7.6) : lire les fichiers déclencheurs et sauvegarder les images. |
-| L9 | Chargeur de sessions (T9.2). Le reste est à faire. |
-| L10 | Seule l'interface est prête (`register_algorithm`). |
-| L11 | Guide, fiche incident, conception, réglage PID. |
-| L12 | Invariants, arbitrages et une partie des pannes testés en simulation. Endurance, CW, ML et test « utilisateur non-dev » : au labo. |
+| L0 | Replaced by the redesign: each fix is covered by the new core (emergency stop through `stop_motion`, pause and resume of the PIDs, NaN instead of 0.0, intensity guard, no more reconnection of the detectors, nothing blocking). |
+| L1 | Done: structure, roles, simulator, 71 tests, version and git hash in the UI and in the recordings, rotating log. To do on your side: branches and tags (T1.5), NTP (T1.7). The simulator must be calibrated against real measurements (T9.1). |
+| L2 | Alignment and XY are in the extension, behind the motor ownership (T2.3). The hardware inventory, the single lab preset and the removal of the old dashboard remain to be done in the lab. |
+| L3, L4 | Done: broker, freshness and heartbeat, ownership (D4 / D5 / O3-A), S1–S5 supervisor, state machine, event bus, emergency stop; multiple PIDs, passive monitor, 1D scan, optimizer interface with the 4 historical modes. |
+| L5 | Done. Readability from a remote access and on a small screen remains to be checked on site (T5.9, T8.2). |
+| L6 | Done, except the differences between presets (T6.5, P3). |
+| L7 | Done on computer A. On computer B (T7.6): read the trigger files and save the images. |
+| L9 | Session loader (T9.2). The rest is to be done. |
+| L10 | Only the interface is ready (`register_algorithm`). |
+| L11 | User guide, incident sheet, design, PID tuning. |
+| L12 | Invariants, arbitrations and some of the failures tested in simulation. Endurance, CW, ML and "non-developer user" test: in the lab. |
 
-## Points à vérifier au labo
+## Points to check in the lab
 
-- **Heartbeat (O9)** : sans canal compteur de trames, la fraîcheur repose sur l'heure de réception
-  (option O9-B). Une valeur figée mais toujours émise n'est alors pas détectée. Il faut ajouter le
-  compteur côté ordi B.
-- **Unités des moteurs** : les limites de sécurité sont dans l'unité du module PyMoDAQ (pas de
-  picomoteur, mm…). Renseigner aussi la *Résolution* (plus petit pas significatif).
-- **Mode de jog `limit`** (Alignement) : un `move_abs` vers Min/Max peut continuer sur le contrôleur si
-  PyMoDAQ plante (S10). Préférez `step`, ou `native` si le plugin du moteur implémente `jog()`.
-- **Pics isolés** : aucun filtre de valeurs aberrantes. Un pic produit au plus un pas borné (S3), dans
-  l'enveloppe (S4). Une bande morte et une période de 0.5 s en limitent l'effet.
-- **Shake** : le script Red Pitaya `redpitaya_scpi.py` doit être importable, ou copié dans
+- **Heartbeat (O9)**: without a frame counter channel, the freshness relies on the reception time
+  (option O9-B). A value that is frozen but still sent is then not detected. The counter must be added
+  on computer B.
+- **Motor units**: the safety limits are in the unit of the PyMoDAQ module (picomotor steps, mm…).
+  Also fill in the *Resolution* (smallest meaningful step).
+- **`limit` jog mode** (Alignment): a `move_abs` towards Min/Max may continue on the controller if
+  PyMoDAQ crashes (S10). Prefer `step`, or `native` if the motor plugin implements `jog()`.
+- **Isolated spikes**: no outlier filter. A spike produces at most one bounded step (S3), inside the
+  envelope (S4). A deadband and a 0.5 s period limit its effect.
+- **Shake**: the Red Pitaya script `redpitaya_scpi.py` must be importable, or copied into
   `~/.pymodaq/laser_control/`.
-- **PyMoDAQ 5.2** : la liste des modules se relit quand l'expérience change. Arrêtez les automatismes avant.
+- **PyMoDAQ 5.2**: the module list is read again when the experiment changes. Stop the automations first.
 
-Licence : MIT (voir `LICENSE`).
+License: MIT (see `LICENSE`).

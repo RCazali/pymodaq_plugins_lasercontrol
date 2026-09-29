@@ -1,4 +1,4 @@
-"""Global status bar, always visible (cahier des charges T5.1, T3.7, T8.2).
+"""Global status bar, always visible (specification T5.1, T3.7, T8.2).
 
 Global state, one light per automation, freshness of the detectors used by the roles, intensity
 versus threshold, mode-lock annotation (O6-A), recording, note, shake and the emergency stop.
@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Dict
 from qtpy import QtCore, QtGui, QtWidgets
 
 from ..core.coordinator import ML_LABELS
-from ..core.states import STATE_COLORS, STATE_LABELS_FR, AutoState, GlobalState
+from ..core.states import STATE_COLORS, STATE_LABELS, AutoState, GlobalState
 from .widgets import Badge, DET_COLORS, Led, StateBadge, fmt, run_dialog, styled_button
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -48,13 +48,13 @@ class StatusBar(QtWidgets.QFrame):
         lay.addLayout(self.det_box)
         self._det_leds: Dict[str, Led] = {}
         self.btn_grab = styled_button('▶ Acquisition', '#2980b9',
-                                      'Lancer l’acquisition continue des détecteurs utilisés par les rôles')
+                                      'Start the continuous acquisition of the detectors used by the roles')
         self.btn_grab.clicked.connect(self.app.start_detectors)
         lay.addWidget(self.btn_grab)
 
         lay.addWidget(self._vline())
         self.intensity = QtWidgets.QLabel('I —')
-        self.intensity.setToolTip('Garde intensité (S2)')
+        self.intensity.setToolTip('Intensity guard (S2)')
         self.intensity.setStyleSheet('font-size: 12pt; font-weight: bold;')
         lay.addWidget(self.intensity)
 
@@ -64,36 +64,36 @@ class StatusBar(QtWidgets.QFrame):
             b = QtWidgets.QPushButton(ML_LABELS[state])
             b.setCheckable(True)
             b.setFocusPolicy(QtCore.Qt.NoFocus)
-            b.setToolTip('Annotation manuelle de l’état du mode-lock (horodatée dans le journal, O6-A)')
+            b.setToolTip('Manual annotation of the mode-lock state (timestamped in the log, O6-A)')
             b.clicked.connect(lambda _=False, s=state: self._on_ml(s))
             self.ml_buttons[state] = b
             lay.addWidget(b)
 
         lay.addStretch()
-        self.btn_note = styled_button('📝 Note', None, 'Ajouter une note horodatée au journal (T7.5)')
+        self.btn_note = styled_button('📝 Note', None, 'Add a timestamped note to the log (T7.5)')
         self.btn_note.clicked.connect(self._on_note)
         lay.addWidget(self.btn_note)
-        self.btn_shake = styled_button('🎢 Shake', '#9b59b6', 'Shake piézo (Espace dans Alignement/XY)')
-        self.btn_shake.clicked.connect(lambda: self.app.shake('bouton'))
+        self.btn_shake = styled_button('🎢 Shake', '#9b59b6', 'Piezo shake (Space in Alignment/XY)')
+        self.btn_shake.clicked.connect(lambda: self.app.shake('button'))
         lay.addWidget(self.btn_shake)
-        self.btn_rec = styled_button('● REC', '#7f8c8d', 'Démarrer / arrêter l’enregistrement HDF5', checkable=True)
+        self.btn_rec = styled_button('● REC', '#7f8c8d', 'Start / stop the HDF5 recording', checkable=True)
         self.btn_rec.clicked.connect(self._on_rec)
         lay.addWidget(self.btn_rec)
 
-        self.btn_reset = styled_button('Réarmer', '#e67e22',
-                                       'Quitter l’état ARRÊT D’URGENCE (après vérification)')
+        self.btn_reset = styled_button('Re-arm', '#e67e22',
+                                       'Leave the EMERGENCY STOP state (after checking)')
         self.btn_reset.clicked.connect(self._on_reset)
         self.btn_reset.setVisible(False)
         lay.addWidget(self.btn_reset)
-        self.btn_estop = QtWidgets.QPushButton('🛑 ARRÊT D’URGENCE')
+        self.btn_estop = QtWidgets.QPushButton('🛑 EMERGENCY STOP')
         self.btn_estop.setFocusPolicy(QtCore.Qt.NoFocus)
         self.btn_estop.setMinimumHeight(40)
         self.btn_estop.setStyleSheet('QPushButton { background-color: #c0392b; color: white; font-weight: bold; '
                                      'font-size: 13pt; padding: 4px 14px; border-radius: 5px; }'
                                      'QPushButton:pressed { background-color: #7b241c; }')
-        self.btn_estop.setToolTip('Arrête TOUS les automatismes puis TOUS les moteurs du dashboard '
-                                  f'(raccourci : {self.app.estop_shortcut_text()}).')
-        self.btn_estop.clicked.connect(lambda: self.app.emergency_stop('bouton'))
+        self.btn_estop.setToolTip('Stops ALL automations, then ALL motors of the dashboard '
+                                  f'(shortcut: {self.app.estop_shortcut_text()}).')
+        self.btn_estop.clicked.connect(lambda: self.app.emergency_stop('button'))
         lay.addWidget(self.btn_estop)
 
     @staticmethod
@@ -109,7 +109,7 @@ class StatusBar(QtWidgets.QFrame):
         self.refresh()
 
     def _on_note(self):
-        text, ok = QtWidgets.QInputDialog.getMultiLineText(self, 'Note', 'Note horodatée (journal + enregistrement) :')
+        text, ok = QtWidgets.QInputDialog.getMultiLineText(self, 'Note', 'Timestamped note (log + recording):')
         if ok and text.strip():
             self.app.core.add_note(text.strip(), self.app.operator or 'UI')
 
@@ -119,8 +119,8 @@ class StatusBar(QtWidgets.QFrame):
 
     def _on_reset(self):
         if QtWidgets.QMessageBox.question(
-                self, 'Réarmer', 'Quitter l’état ARRÊT D’URGENCE ?\n\nVérifier d’abord l’état du laser '
-                                 'et des moteurs. Aucun automatisme ne redémarre seul.') == QtWidgets.QMessageBox.Yes:
+                self, 'Re-arm', 'Leave the EMERGENCY STOP state?\n\nFirst check the state of the laser '
+                                'and of the motors. No automation restarts by itself.') == QtWidgets.QMessageBox.Yes:
             self.app.core.reset_estop('UI')
             self.refresh()
 
@@ -152,7 +152,7 @@ class StatusBar(QtWidgets.QFrame):
             b.setText(f'{a.label}')
             b.setStyleSheet(f'QPushButton {{ background-color: {color}; color: white; font-weight: bold; '
                             f'border-radius: 4px; padding: 2px 6px; }}')
-            b.setToolTip(f'{a.label} : {STATE_LABELS_FR.get(a.state, a.state)}' + (f'\n{a.reason}' if a.reason else ''))
+            b.setToolTip(f'{a.label}: {STATE_LABELS.get(a.state, a.state)}' + (f'\n{a.reason}' if a.reason else ''))
         # detectors used by roles
         dets = self.app.role_detectors()
         for d in list(self._det_leds):
@@ -172,9 +172,9 @@ class StatusBar(QtWidgets.QFrame):
             grabbing = core.broker.is_grabbing(d)
             any_idle = any_idle or (d in core.broker.detectors and not grabbing)
             age = '—' if not math.isfinite(st.age) else f'{st.age:.1f} s'
-            tip = f'{d} : {st.state} {st.reason}\nacquisition : {"en cours" if grabbing else "arrêtée"}'
+            tip = f'{d}: {st.state} {st.reason}\nacquisition: {"running" if grabbing else "stopped"}'
             if st.heartbeat_channel:
-                tip += f'\ncompteur de trames : {st.heartbeat_channel} = {fmt(st.heartbeat_value, 8)}'
+                tip += f'\nframe counter: {st.heartbeat_channel} = {fmt(st.heartbeat_value, 8)}'
             led.set_color(DET_COLORS.get(st.state, '#7f8c8d'), f'{d} {age}', tip)
         self.btn_grab.setVisible(any_idle)
         # intensity
@@ -182,7 +182,7 @@ class StatusBar(QtWidgets.QFrame):
         state = guard.evaluate()
         v = guard.value()
         if state == 'disabled':
-            self.intensity.setText('I : garde DÉSACTIVÉE')
+            self.intensity.setText('I: guard DISABLED')
             self.intensity.setStyleSheet('font-size: 11pt; font-weight: bold; color: #e67e22;')
         else:
             trip, release = guard.thresholds()
@@ -193,8 +193,8 @@ class StatusBar(QtWidgets.QFrame):
             color = {'ok': '#27ae60', 'low': '#e74c3c', 'unknown': '#7f8c8d'}.get(state, '#7f8c8d')
             self.intensity.setText(txt)
             self.intensity.setStyleSheet(f'font-size: 12pt; font-weight: bold; color: {color};')
-            self.intensity.setToolTip(f'Garde intensité (S2) : {state}\nrôle : {guard.cfg.role}\n'
-                                      f'seuil : {fmt(trip)}  reprise : {fmt(release)}  référence : {fmt(guard.reference)}')
+            self.intensity.setToolTip(f'Intensity guard (S2): {state}\nrole: {guard.cfg.role}\n'
+                                      f'threshold: {fmt(trip)}  release: {fmt(release)}  reference: {fmt(guard.reference)}')
         # ML
         for s, b in self.ml_buttons.items():
             on = core.ml_state == s
@@ -209,5 +209,5 @@ class StatusBar(QtWidgets.QFrame):
                                    'padding: 3px 8px; }' % ('#c0392b' if rec.active else '#7f8c8d'))
         self.btn_rec.setText('● REC' if rec.active else '○ REC')
         if rec.active and rec.current_path is not None:
-            self.btn_rec.setToolTip(f'Enregistrement en cours : {rec.current_path}')
+            self.btn_rec.setToolTip(f'Recording: {rec.current_path}')
         self.btn_shake.setEnabled(not core.estop and not self.app.shaker.busy)

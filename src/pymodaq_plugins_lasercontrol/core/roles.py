@@ -1,4 +1,4 @@
-"""Logical roles <-> real module/channel names, one TOML file per machine (cahier des charges T1.2).
+"""Logical roles <-> real module/channel names, one TOML file per machine (specification T1.2).
 
 Presets only reference roles (``OC_H``, ``Cam1_x``, ``Intensity_main`` ...). Each machine maps the
 roles to its own DAQ_Move titles and detector channels, so that the same preset loads on the office
@@ -8,7 +8,7 @@ File example (``roles_lab.toml``)::
 
     [meta]
     machine = "lab"
-    description = "Ordi A, labo"
+    description = "Computer A, lab"
 
     [actuators.OC_H]
     module = "Pico_OC_H"        # title of the DAQ_Move in the dashboard
@@ -230,7 +230,7 @@ class RoleMap:
         if path is None:
             raise ValueError('No path for the roles file')
         path.parent.mkdir(parents=True, exist_ok=True)
-        header = ('# Laser Control - logical roles of this machine (cahier des charges T1.2)\n'
+        header = ('# Laser Control - logical roles of this machine (specification T1.2)\n'
                   '# Presets reference the role names; only this file differs between machines.\n\n')
         tmp = path.with_suffix(path.suffix + '.tmp')
         tmp.write_text(header + _toml.dumps(self.to_dict()), encoding='utf-8')

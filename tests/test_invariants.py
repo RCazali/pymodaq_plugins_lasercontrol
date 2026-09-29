@@ -54,7 +54,7 @@ def test_S1_stale_data_freezes(rig):
     n = len(rig.moves())
     rig.run(2.0, frame=False)                  # computer B silent for 2 s (> max age 1 s)
     assert pid.state == AutoState.HELD
-    assert 'périmé' in pid.reason
+    assert 'stale' in pid.reason
     assert len(rig.moves()) == n
     rig.run(1.0, s=3.0)                        # data come back: stays frozen (O10-A manual resume)
     assert pid.state == AutoState.HELD
@@ -76,7 +76,7 @@ def test_S1_frozen_heartbeat_is_stale(rig):
         rig.det.emit({'det/data/s': 1.0, 'det/data/s2': 0.0, 'det/data/i': 1.0, 'det/stats/hb': 42})
         rig.core.tick()
     assert pid.state == AutoState.HELD
-    assert 'compteur' in pid.reason
+    assert 'counter' in pid.reason
 
 
 # --------------------------------------------------------------------------- S2
@@ -88,11 +88,11 @@ def test_S2_low_intensity_freezes_with_hysteresis(rig):
     rig.step(0.1, s=2.0)
     n = len(rig.moves())
     rig.run(0.6, i=0.3)                        # below 0.5 * ref
-    assert pid.state == AutoState.HELD and 'intensité' in pid.reason
+    assert pid.state == AutoState.HELD and 'intensity' in pid.reason
     assert len(rig.moves()) == n
     rig.run(0.5, i=0.55)                       # above the threshold but below threshold + hysteresis
     ok, why = rig.core.resume(pid.id)
-    assert not ok and 'seuil' in why
+    assert not ok and 'threshold' in why
     rig.run(0.5, i=0.7)
     ok, why = rig.core.resume(pid.id)
     assert ok, why
@@ -117,7 +117,7 @@ def test_S2_reference_is_the_intensity_at_engagement(rig):
     rig.core.stop(a.id)
     rig.run(0.3, s=0.0, i=0.0)                            # laser off: no reference, no start
     ok, msg = rig.core.start(a.id)
-    assert not ok and 'intensité nulle' in msg
+    assert not ok and 'zero or invalid intensity' in msg
     assert a.state == AutoState.OFF
 
 
@@ -127,7 +127,7 @@ def test_S2_guard_must_be_configured():
     rig.frame(s=1.0)
     pid = make_pid(rig)
     ok, msg = rig.core.start(pid.id)
-    assert not ok and 'garde intensité' in msg
+    assert not ok and 'intensity guard' in msg
 
 
 def test_S2_guard_can_be_explicitly_disabled():
@@ -158,7 +158,7 @@ def test_S4_envelope_clamps_and_freezes():
     assert rig.core.start(pid.id)[0]
     rig.run(5.0, s=10.0)                       # error never decreases (signal does not follow)
     assert pid.state == AutoState.HELD
-    assert 'enveloppe' in pid.reason
+    assert 'envelope' in pid.reason
     pos = rig.acts['mod1'].position()
     assert pos == pytest.approx(-2.5)          # clamped exactly at ref - max_excursion
     n = len(rig.moves())
@@ -185,7 +185,7 @@ def test_S5_rate_limit_freezes():
     assert rig.core.start(pid.id)[0]
     rig.run(10.0, s=10.0)
     assert pid.state == AutoState.HELD
-    assert 'débit' in pid.reason
+    assert 'rate' in pid.reason
     travelled = sum(abs(m[2]) for m in rig.moves())
     assert travelled <= 3.5 + 1e-9
 
@@ -236,7 +236,7 @@ def test_S7_human_action_stops_automation_before_order(rig):
     stop_idx = next(i for i, e in enumerate(events) if e.source == b.id and e.data.get('new') == 'OFF')
     assert stop_idx >= 0
     assert rig.log[-1] == ('move_rel', 'mod1', 0.2)   # the manual order is sent after the stops
-    assert any('action manuelle' in e.message for e in events)
+    assert any('manual action' in e.message for e in events)
 
 
 def test_D5_external_move_detected(rig):
@@ -291,7 +291,7 @@ def test_move_timeout_holds(rig):
     assert rig.core.start(pid.id)[0]
     for _ in range(80):
         rig.step(0.1, s=2.0, finish=False)
-    assert pid.state == AutoState.HELD and 'délai' in pid.reason
+    assert pid.state == AutoState.HELD and 'timeout' in pid.reason
 
 
 # --------------------------------------------------------------------------- S11

@@ -53,5 +53,5 @@ class EventTriggerWriter:
         except Exception as e:
             self.error = str(e)
             if ev.kind != EventKind.ERROR:
-                self.events.publish(EventKind.ERROR, 'TRIGGER', f"Fichier déclencheur non écrit : {e}",
+                self.events.publish(EventKind.ERROR, 'TRIGGER', f"Trigger file not written: {e}",
                                     Level.WARNING)

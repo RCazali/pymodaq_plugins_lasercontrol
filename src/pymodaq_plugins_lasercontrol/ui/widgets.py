@@ -6,9 +6,9 @@ from typing import Iterable, List, Optional
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from ..core.states import STATE_COLORS, STATE_LABELS_FR, AutoState, GlobalState
+from ..core.states import STATE_COLORS, STATE_LABELS, AutoState, GlobalState
 
-OWNER_COLORS = {'Libre': '#7f8c8d', 'Humain': '#e67e22'}
+OWNER_COLORS = {'Free': '#7f8c8d', 'Human': '#e67e22'}
 PALETTE = ['#2980b9', '#27ae60', '#8e44ad', '#d35400', '#16a085', '#c0392b', '#2c3e50', '#f39c12']
 DET_COLORS = {'ok': '#27ae60', 'warn': '#f39c12', 'stale': '#e74c3c', 'unknown': '#7f8c8d'}
 
@@ -133,7 +133,7 @@ class Badge(QtWidgets.QLabel):
 
 class StateBadge(Badge):
     def set_state(self, state, reason: str = '', prefix: str = ''):
-        label = STATE_LABELS_FR.get(state, str(state))
+        label = STATE_LABELS.get(state, str(state))
         color = STATE_COLORS.get(state, '#7f8c8d')
         self.set(f'{prefix}{label}', color, reason or label)
 
@@ -168,10 +168,10 @@ class EnvelopeGauge(QtWidgets.QWidget):
         self._lo, self._hi, self._pos, self._ref = lo, hi, pos, ref
         if lo is not None and hi is not None and pos is not None and hi > lo:
             used = max(abs(pos - ref) / ((hi - lo) / 2), 0) if ref is not None else None
-            self.setToolTip(f'enveloppe [{lo:.6g}, {hi:.6g}]  position {pos:.6g}' +
-                            (f'  ({100 * used:.0f} % utilisé)' if used is not None else ''))
+            self.setToolTip(f'envelope [{lo:.6g}, {hi:.6g}]  position {pos:.6g}' +
+                            (f'  ({100 * used:.0f} % used)' if used is not None else ''))
         else:
-            self.setToolTip('pas d’enveloppe active (moteur non piloté automatiquement)')
+            self.setToolTip('no active envelope (motor not driven automatically)')
         self.update()
 
     def paintEvent(self, e):

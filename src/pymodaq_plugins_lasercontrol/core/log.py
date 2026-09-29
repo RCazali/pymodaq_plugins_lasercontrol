@@ -1,4 +1,4 @@
-"""Logging helpers: PyMoDAQ logger + de-duplication (cahier des charges T1.6, invariant S8).
+"""Logging helpers: PyMoDAQ logger + de-duplication (specification T1.6, invariant S8).
 
 A loop that fails every tick must not flood the log: identical messages emitted within
 ``window_s`` are counted instead of written, and the count is reported with the next occurrence.
@@ -62,7 +62,7 @@ class DedupLogger:
                 for k in list(self._seen)[:1000]:
                     self._seen.pop(k, None)
         if repeated:
-            msg = f'{msg}  (répété {repeated}x)'
+            msg = f'{msg}  (repeated {repeated}x)'
         self._logger.log(level, msg, exc_info=exc_info)
 
     def debug(self, msg: str):

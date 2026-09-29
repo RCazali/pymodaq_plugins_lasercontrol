@@ -3,7 +3,7 @@
 Per-machine configuration of the Laser Control plugin (PyMoDAQ plugin-template convention).
 
 The user file lives in the PyMoDAQ local folder (``~/.pymodaq/config_lasercontrol.toml``) and is
-therefore outside git, one per machine (cahier des charges T1.5). Missing entries are completed
+therefore outside git, one per machine (specification T1.5). Missing entries are completed
 from ``resources/config_template.toml``.
 """
 from pathlib import Path

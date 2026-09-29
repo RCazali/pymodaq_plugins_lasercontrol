@@ -1,4 +1,4 @@
-"""Overview tab (cahier des charges T5.2, T5.3).
+"""Overview tab (specification T5.2, T5.3).
 
 * one-click stabilisation: summary of what will move, Activate / Deactivate,
 * one card per motor role: position, owner (Human / PID_x / Optimiser / Free), S4 envelope gauge,
@@ -38,9 +38,9 @@ class MotorCard(QtWidgets.QFrame):
         g.setHorizontalSpacing(6)
         g.setVerticalSpacing(1)
         name = QtWidgets.QLabel(f'<b>{role}</b>')
-        name.setToolTip(f'module : {module}')
+        name.setToolTip(f'module: {module}')
         g.addWidget(name, 0, 0)
-        self.owner = Badge('Libre', owner_color('Libre'), font_pt=9)
+        self.owner = Badge('Free', owner_color('Free'), font_pt=9)
         g.addWidget(self.owner, 0, 1, 1, 2, QtCore.Qt.AlignRight)
         self.pos = QtWidgets.QLabel('—')
         self.pos.setFont(mono_font(13))
@@ -68,7 +68,7 @@ class MotorCard(QtWidgets.QFrame):
         self.units.setText(core.broker.units(m))
         label = core.owner_label(m)
         owner = core.ownership.owner_of(m)
-        self.owner.set(label, owner_color(label), f'propriétaire : {label}')
+        self.owner.set(label, owner_color(label), f'owner: {label}')
         lim = core.safety.limits(self.role)
         a = core.automations.get(owner) if owner else None
         if a is not None:
@@ -78,14 +78,14 @@ class MotorCard(QtWidgets.QFrame):
             if not (math.isfinite(lo) and math.isfinite(hi)):
                 lo = hi = None
             self.gauge.set_values(lo, hi, pos, ref)
-            exc = f'Δ engagement {pos - ref:+.4g}' if (ref is not None and pos is not None) else ''
+            exc = f'Δ from engagement {pos - ref:+.4g}' if (ref is not None and pos is not None) else ''
             self.detail.setText(f'{a.label} · {exc}')
         elif lim is not None and lim.abs_min is not None and lim.abs_max is not None:
             self.gauge.set_values(lim.abs_min, lim.abs_max, pos, None)
-            self.detail.setText(f'limites abs [{lim.abs_min:g}, {lim.abs_max:g}]')
+            self.detail.setText(f'abs limits [{lim.abs_min:g}, {lim.abs_max:g}]')
         else:
             self.gauge.set_values(None, None, pos, None)
-            self.detail.setText('' if lim else 'limites de sécurité non définies')
+            self.detail.setText('' if lim else 'safety limits not defined')
 
 
 class OverviewTab(QtWidgets.QWidget):
@@ -103,19 +103,19 @@ class OverviewTab(QtWidgets.QWidget):
         outer.setContentsMargins(4, 4, 4, 4)
 
         # ---------------------------------------------------------- stabilisation
-        stab = QtWidgets.QGroupBox('Stabilisation')
+        stab = QtWidgets.QGroupBox('Stabilization')
         sl = QtWidgets.QGridLayout(stab)
         self.preset_label = QtWidgets.QLabel('—')
         self.preset_label.setStyleSheet('font-size: 12pt; font-weight: bold;')
         sl.addWidget(self.preset_label, 0, 0)
-        self.preset_badge = Badge('brouillon', '#e67e22')
+        self.preset_badge = Badge('draft', '#e67e22')
         sl.addWidget(self.preset_badge, 0, 1)
-        self.btn_on = styled_button('▶ Activer la stabilisation', '#27ae60',
-                                    'Démarre les PID du preset marqués « stabilisation » (après confirmation)')
-        self.btn_off = styled_button('⏹ Désactiver', '#7f8c8d', 'Arrête les PID de stabilisation (aucun mouvement)')
-        self.btn_resume = styled_button('⏯ Reprendre', '#2980b9',
-                                        'Reprise manuelle des PID de stabilisation gelés par la sécurité (O10-A) : '
-                                        'données fraîches et intensité revenue exigées')
+        self.btn_on = styled_button('▶ Activate stabilization', '#27ae60',
+                                    'Starts the PIDs of the preset marked "stabilization" (after confirmation)')
+        self.btn_off = styled_button('⏹ Deactivate', '#7f8c8d', 'Stops the stabilization PIDs (no move)')
+        self.btn_resume = styled_button('⏯ Resume', '#2980b9',
+                                        'Manual resume of the stabilization PIDs held by the safety (O10-A): '
+                                        'fresh data and intensity back are required')
         for b in (self.btn_on, self.btn_resume, self.btn_off):
             b.setMinimumHeight(34)
         self.btn_on.clicked.connect(self._on_activate)
@@ -144,7 +144,7 @@ class OverviewTab(QtWidgets.QWidget):
         cards_w = QtWidgets.QWidget()
         cl = QtWidgets.QVBoxLayout(cards_w)
         cl.setContentsMargins(0, 0, 0, 0)
-        cl.addWidget(section_label('Moteurs (position · propriétaire · enveloppe S4)'))
+        cl.addWidget(section_label('Motors (position · owner · S4 envelope)'))
         self.cards_scroll = QtWidgets.QScrollArea()
         self.cards_scroll.setWidgetResizable(True)
         self.cards_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
@@ -161,13 +161,13 @@ class OverviewTab(QtWidgets.QWidget):
         pl = QtWidgets.QHBoxLayout(plots_w)
         pl.setContentsMargins(0, 0, 0, 0)
         left = QtWidgets.QVBoxLayout()
-        left.addWidget(section_label('Courbes récentes'))
+        left.addWidget(section_label('Recent curves'))
         self.signal_list = CheckList()
         self.signal_list.setMaximumWidth(220)
         self.signal_list.changed.connect(self._rebuild_plots)
         left.addWidget(self.signal_list)
         row = QtWidgets.QHBoxLayout()
-        row.addWidget(QtWidgets.QLabel('Durée :'))
+        row.addWidget(QtWidgets.QLabel('Span:'))
         self.span = QtWidgets.QComboBox()
         for label, s in (('1 min', 60), ('5 min', 300), ('10 min', 600), ('30 min', 1800)):
             self.span.addItem(label, s)
@@ -253,7 +253,7 @@ class OverviewTab(QtWidgets.QWidget):
             if i < len(roles) - 1:
                 p.getAxis('bottom').setStyle(showValues=False)
             else:
-                p.setLabel('bottom', 'temps (s)')
+                p.setLabel('bottom', 'time (s)')
             if first is None:
                 first = p
             else:
@@ -284,11 +284,11 @@ class OverviewTab(QtWidgets.QWidget):
         app = self.app
         p = app.preset
         dirty = ' *' if app.preset_dirty else ''
-        self.preset_label.setText(f"Preset : {p.get('name', '—')}{dirty}  ·  {p.get('conditions', {}).get('regime', '')}")
+        self.preset_label.setText(f"Preset: {p.get('name', '—')}{dirty}  ·  {p.get('conditions', {}).get('regime', '')}")
         if p.get('status') == 'validated':
-            self.preset_badge.set('✔ validé', '#27ae60', f"validé le {p.get('validated_on')} par {p.get('validated_by')}")
+            self.preset_badge.set('✔ validated', '#27ae60', f"validated on {p.get('validated_on')} by {p.get('validated_by')}")
         else:
-            self.preset_badge.set('brouillon', '#e67e22', 'preset non validé')
+            self.preset_badge.set('draft', '#e67e22', 'preset not validated')
         pids = app.stabilization_pids()
         lines = []
         for cfg in pids:
@@ -297,9 +297,9 @@ class OverviewTab(QtWidgets.QWidget):
             mot = ', '.join(f"{r}×{w:+g}" for r, w in cfg.get('motors', {}).items() if w)
             reason = f" — <i>{a.reason}</i>" if a is not None and a.state in (AutoState.HELD, AutoState.PAUSED,
                                                                              AutoState.ERROR) and a.reason else ''
-            lines.append(f"• <b>{cfg.get('label') or cfg['id']}</b> [{state}] : {cfg.get('signal')} → {mot}{reason}")
+            lines.append(f"• <b>{cfg.get('label') or cfg['id']}</b> [{state}]: {cfg.get('signal')} → {mot}{reason}")
         self.summary.setText('<br>'.join(lines) if lines else
-                             '<i>Aucun PID marqué « stabilisation » dans le preset.</i>')
+                             '<i>No PID marked "stabilization" in the preset.</i>')
         running = any(app.core.get(f"PID:{c['id']}") is not None and
                       app.core.get(f"PID:{c['id']}").state != AutoState.OFF for c in pids)
         self.btn_on.setEnabled(bool(pids) and not app.core.estop)

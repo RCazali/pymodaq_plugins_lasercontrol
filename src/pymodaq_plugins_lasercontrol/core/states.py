@@ -1,4 +1,4 @@
-"""State machine vocabulary (cahier des charges T3.5)."""
+"""State machine vocabulary (specification T3.5)."""
 from __future__ import annotations
 
 from enum import Enum
@@ -46,18 +46,18 @@ STATE_COLORS = {
     GlobalState.ERROR: '#8e44ad',
 }
 
-STATE_LABELS_FR = {
-    AutoState.OFF: 'Arrêté',
-    AutoState.ARMED: 'Armement',
-    AutoState.ACTIVE: 'Actif',
-    AutoState.PAUSED: 'En pause',
-    AutoState.HELD: 'Gelé (sécurité)',
-    AutoState.ERROR: 'Erreur',
-    GlobalState.IDLE: 'Repos',
-    GlobalState.RUNNING: 'En marche',
-    GlobalState.SAFETY_HOLD: 'Gel sécurité',
-    GlobalState.ESTOP: 'ARRÊT D’URGENCE',
-    GlobalState.ERROR: 'Erreur',
+STATE_LABELS = {
+    AutoState.OFF: 'Stopped',
+    AutoState.ARMED: 'Arming',
+    AutoState.ACTIVE: 'Active',
+    AutoState.PAUSED: 'Paused',
+    AutoState.HELD: 'Held (safety)',
+    AutoState.ERROR: 'Error',
+    GlobalState.IDLE: 'Idle',
+    GlobalState.RUNNING: 'Running',
+    GlobalState.SAFETY_HOLD: 'Safety hold',
+    GlobalState.ESTOP: 'EMERGENCY STOP',
+    GlobalState.ERROR: 'Error',
 }
 
 

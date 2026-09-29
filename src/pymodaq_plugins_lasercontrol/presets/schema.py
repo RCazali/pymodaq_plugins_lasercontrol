@@ -1,4 +1,4 @@
-"""Unified, versioned preset schema (cahier des charges T6.1, T6.2).
+"""Unified, versioned preset schema (specification T6.1, T6.2).
 
 One JSON file replaces the four historical formats (session, PID profiles, optimiser profiles,
 XY profiles). A preset only references **roles** (T1.2) so it loads unchanged on the office
@@ -49,7 +49,7 @@ def default_recording() -> dict:
 
 #: action of an optimisation button of the Alignment tab
 OPT_BUTTON_ACTIONS = ('single', 'periodic', 'full')
-OPT_BUTTON_ACTION_LABELS = {'single': 'une passe', 'periodic': 'périodique', 'full': 'optimisation complète'}
+OPT_BUTTON_ACTION_LABELS = {'single': 'one pass', 'periodic': 'periodic', 'full': 'full optimization'}
 
 
 def default_pid(pid_id: str = 'PID_1') -> dict:
@@ -62,7 +62,7 @@ def default_optimizer(opt_id: str = 'Optim_1') -> dict:
             'config': dict(DEFAULT_OPT_CONFIG), 'motors': [], 'signals': []}
 
 
-def default_preset(name: str = 'Nouveau preset') -> dict:
+def default_preset(name: str = 'New preset') -> dict:
     t = now_iso()
     return {
         'schema_version': SCHEMA_VERSION,
@@ -132,14 +132,14 @@ def migrate(p: dict) -> dict:
     """Upgrade older schema versions in place. Version 1 is the first one."""
     version = int(p.get('schema_version', SCHEMA_VERSION) or SCHEMA_VERSION)
     if version > SCHEMA_VERSION:
-        raise ValueError(f"preset créé par une version plus récente (schéma {version})")
+        raise ValueError(f"preset created by a newer version (schema {version})")
     if version < 2:
         # v1 had a single optimiser ('optimizer'); v2 has named optimisations ('optimizers')
         old = p.pop('optimizer', None) or {}
         if 'optimizers' not in p:
             p['optimizers'] = []
             if old.get('motors') or old.get('signals'):
-                d = default_optimizer('Optimiseur')
+                d = default_optimizer('Optimizer')
                 d.update({k: old[k] for k in ('config', 'motors', 'signals') if k in old})
                 p['optimizers'].append(d)
     p.pop('optimizer', None)
@@ -201,10 +201,10 @@ class PresetReport:
             lines.append(f"✖ {e}")
         for a, errs in self.automations.items():
             for e in errs:
-                lines.append(f"✖ {a} : {e}")
+                lines.append(f"✖ {a}: {e}")
         for w in self.warnings:
             lines.append(f"⚠ {w}")
-        return '\n'.join(lines) if lines else '✔ preset cohérent avec cette machine'
+        return '\n'.join(lines) if lines else '✔ preset consistent with this machine'
 
 
 def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
@@ -220,50 +220,50 @@ def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
         if not role:
             return out
         if not roles.is_actuator(role):
-            out.append(f"rôle moteur '{role}' absent du fichier de rôles de cette machine")
+            out.append(f"motor role '{role}' missing from the roles file of this machine")
         elif modules and roles.module_for(role) not in modules:
-            out.append(f"{role} → module '{roles.module_for(role)}' absent du dashboard")
+            out.append(f"{role} → module '{roles.module_for(role)}' missing from the dashboard")
         return out
 
     def limits_problems(role: str, explicit=False, rate=True) -> List[str]:
         lim = safety.limits(role)
         if lim is None:
-            return [f"{role} : limites de sécurité non définies"]
+            return [f"{role}: safety limits not defined"]
         miss = [m for m in lim.missing() if not (explicit and m == 'max_excursion') and not (not rate and m == 'rate_max')]
-        return [f"{role} : limite(s) {', '.join(miss)} non définie(s)"] if miss else []
+        return [f"{role}: limit(s) {', '.join(miss)} not defined"] if miss else []
 
     def signal_problems(role: str) -> List[str]:
         if not role:
             return []
         if not roles.is_signal(role):
-            return [f"rôle signal '{role}' absent du fichier de rôles de cette machine"]
+            return [f"signal role '{role}' missing from the roles file of this machine"]
         ch = roles.channel_for(role)
         if channels and ch not in channels and not any(c.startswith(ch + '/') for c in channels):
-            rep.warnings.append(f"{role} → canal '{ch}' pas encore reçu (acquisition arrêtée ?)")
+            rep.warnings.append(f"{role} → channel '{ch}' not received yet (acquisition stopped?)")
         return []
 
     guard_problems = []
     if safety.intensity.enabled:
         if not safety.intensity.role:
-            guard_problems.append("garde intensité (S2) activée sans rôle d'intensité")
+            guard_problems.append("intensity guard (S2) enabled without an intensity role")
         else:
             guard_problems += signal_problems(safety.intensity.role)
     else:
-        rep.warnings.append("garde intensité (S2) DÉSACTIVÉE dans ce preset")
+        rep.warnings.append("intensity guard (S2) DISABLED in this preset")
 
     ids = set()
     for pid in preset.get('pids', []):
         aid = f"PID:{pid.get('id')}"
         if aid in ids:
-            rep.errors.append(f"identifiant PID en double : {pid.get('id')}")
+            rep.errors.append(f"duplicate PID identifier: {pid.get('id')}")
         ids.add(aid)
         probs = []
         if not pid.get('signal'):
-            probs.append("aucun signal choisi")
+            probs.append("no signal selected")
         probs += signal_problems(pid.get('signal', ''))
         motors = [r for r, w in (pid.get('motors') or {}).items() if w]
         if not motors:
-            probs.append("aucun moteur (poids non nul)")
+            probs.append("no motor (non-zero weight)")
         for r in motors:
             probs += actuator_problems(r) + limits_problems(r)
         probs += guard_problems
@@ -272,7 +272,7 @@ def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
     for opt in preset.get('optimizers', []) or []:
         aid = f"OPT:{opt.get('id')}"
         if aid in ids:
-            rep.errors.append(f"identifiant d'optimisation en double : {opt.get('id')}")
+            rep.errors.append(f"duplicate optimization identifier: {opt.get('id')}")
         ids.add(aid)
         probs = []
         for m in opt.get('motors', []):
@@ -280,19 +280,19 @@ def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
         for s in opt.get('signals', []):
             probs += signal_problems(s.get('role', ''))
         if not opt.get('motors'):
-            probs.append("aucun moteur")
+            probs.append("no motor")
         if not [s for s in opt.get('signals', []) if float(s.get('weight', 0) or 0) != 0]:
-            probs.append("aucun signal objectif")
+            probs.append("no objective signal")
         probs += guard_problems
         rep.automations[aid] = probs
 
     dup = roles.duplicate_modules()
     for module, rs in dup.items():
-        rep.warnings.append(f"module {module} déclaré par plusieurs rôles : {', '.join(rs)}")
+        rep.warnings.append(f"module {module} declared by several roles: {', '.join(rs)}")
     used = roles_used(preset)
     for r in used['actuators']:
         if not roles.is_actuator(r):
-            msg = f"rôle moteur '{r}' utilisé par le preset mais absent de cette machine"
+            msg = f"motor role '{r}' used by the preset but missing on this machine"
             if msg not in rep.warnings:
                 rep.warnings.append(msg)
     return rep

@@ -1,4 +1,4 @@
-"""Timestamped event bus (cahier des charges T3.6).
+"""Timestamped event bus (specification T3.6).
 
 Every noteworthy thing (start/stop, preemption, safety trigger, shake, ML annotation, error...)
 is published here once. Consumers (UI journal, HDF5 recorder, B trigger files, future

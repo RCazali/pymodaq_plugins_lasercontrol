@@ -5,7 +5,7 @@ Pure math in :class:`PIDController` (testable without Qt/hardware), adapter in
 
 Kept from the historical PIDEngine: signed gains, anti-windup (|ki * integral| <= max_step),
 per motor clamp *after* weighting, "confirm moves" mode.
-New (cahier des charges): skip the iteration while a motor is still moving (no stacking),
+New (specification): skip the iteration while a motor is still moving (no stacking),
 one fresh sample per iteration (never re-use a value), integral reset on resume, no derivative
 kick at start, optional error deadband and settle time after a move.
 """
@@ -161,20 +161,20 @@ class PIDAutomation(Automation):
 
     def summary(self) -> str:
         mot = ', '.join(f"{r}×{w:+g}" for r, w in self.motors.items() if w)
-        sp = 'valeur au démarrage' if self.settings.setpoint_mode == 'capture' else f"{self.settings.setpoint:.6g}"
-        return (f"{self.label} : {self.signal_role} → consigne {sp} ; moteurs {mot} ; "
-                f"pas max {self.settings.max_step:g}/itération ; période {self.settings.period_s:g} s")
+        sp = 'value at start' if self.settings.setpoint_mode == 'capture' else f"{self.settings.setpoint:.6g}"
+        return (f"{self.label}: {self.signal_role} → setpoint {sp} ; motors {mot} ; "
+                f"max step {self.settings.max_step:g}/iteration ; period {self.settings.period_s:g} s")
 
     def validate(self, core: 'LaserCore') -> List[str]:
         errors = []
         if not self.signal_role:
-            errors.append(f"{self.label} : aucun signal choisi")
+            errors.append(f"{self.label}: no signal selected")
         if not self.motor_roles():
-            errors.append(f"{self.label} : aucun moteur coché (poids non nul)")
+            errors.append(f"{self.label}: no motor ticked (non-zero weight)")
         if self.settings.max_step <= 0:
-            errors.append(f"{self.label} : pas max doit être > 0")
+            errors.append(f"{self.label}: max step must be > 0")
         if self.settings.period_s <= 0:
-            errors.append(f"{self.label} : période doit être > 0")
+            errors.append(f"{self.label}: period must be > 0")
         return errors
 
     # ------------------------------------------------------------------ lifecycle
@@ -191,7 +191,7 @@ class PIDAutomation(Automation):
         if self.settings.setpoint_mode == 'capture':
             v = core.signals.value(core.roles.channel_for(self.signal_role))
             if not is_finite(v):
-                return "impossible de capturer la consigne (signal invalide)"
+                return "cannot capture the setpoint (invalid signal)"
             self.settings.setpoint = float(v)
         self.last_sample_seq = 0          # first iteration may use the current (fresh) sample
         return None
@@ -231,12 +231,12 @@ class PIDAutomation(Automation):
             self.last_moves = {}
             return
         if self.settings.confirm_moves:
-            lines = [f"PV = {terms.pv:.6g}   Consigne = {terms.setpoint:.6g}   Erreur = {terms.error:.6g}", '']
+            lines = [f"PV = {terms.pv:.6g}   Setpoint = {terms.setpoint:.6g}   Error = {terms.error:.6g}", '']
             for r, d in moves.items():
                 pos = core.position(r)
                 pos_s = f"{pos:.6g}" if pos is not None else '?'
                 new_s = f"{pos + d:.6g}" if pos is not None else '?'
-                lines.append(f"  {r} : {pos_s} → {new_s}  (Δ = {d:+.6g})")
+                lines.append(f"  {r}: {pos_s} → {new_s}  (Δ = {d:+.6g})")
             core.request_confirmation(self, '\n'.join(lines), moves)
             return
         self.last_moves = core.request_moves(self, moves)

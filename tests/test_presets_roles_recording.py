@@ -272,13 +272,13 @@ def test_simulator_roles_file(tmp_path, monkeypatch):
     rm = RoleMap.load(path)
     assert rm.module_for('OC_H') == 'Mon moteur'             # existing role kept as is
     assert rm.module_for('PD_X') == 'Sim PD_X'               # missing role added
-    lab = RoleMap.load(Path(__file__).resolve().parents[1] / 'docs' / 'exemples' / 'roles_lab.toml')
+    lab = RoleMap.load(Path(__file__).resolve().parents[1] / 'docs' / 'examples' / 'roles_lab.toml')
     assert set(lab.actuators) == set(sim_preset.SIM_ACTUATOR_ROLES)   # same role names as the lab
     assert set(lab.signals) == set(sim_preset.SIM_SIGNAL_ROLES)
 
 
 def test_simulator_demo_preset(tmp_path, monkeypatch):
-    """« Démo simulateur » is consistent with the simulator roles and modules: every automation can start."""
+    """"Simulator demo" is consistent with the simulator roles and modules: every automation can start."""
     pytest.importorskip('pymodaq')
     import pymodaq_plugins_lasercontrol.ui.app as app_mod
     from pymodaq_plugins_lasercontrol.core.roles import RoleMap
@@ -292,7 +292,7 @@ def test_simulator_demo_preset(tmp_path, monkeypatch):
     rep = validate_preset(p, rm, modules)
     assert rep.ok, rep.text()
     assert {a for a in rep.automations} == {'PID:Beam_H', 'PID:Beam_V', 'PID:Cam1_X_OC', 'PID:Cam1_Y_OC',
-                                            'OPT:Optim_PD', 'OPT:Suivi_PD', 'OPT:Optim_OC'}
+                                            'OPT:Optim_PD', 'OPT:Track_PD', 'OPT:Optim_OC'}
     assert all(rm.module_for(r) in modules for r in rm.actuators)
     path = sim_preset.write_demo_preset()
     assert path is not None and sim_preset.write_demo_preset() is None
@@ -307,7 +307,7 @@ def test_schema_v1_single_optimizer_is_migrated():
                         'signals': [{'role': 'XUV_flux', 'mode': 'Maximize', 'weight': 1}]}}
     p = normalize(v1)
     assert p['schema_version'] == 2 and 'optimizer' not in p
-    assert p['optimizers'][0]['id'] == 'Optimiseur' and p['optimizers'][0]['show_in_alignment'] is False
+    assert p['optimizers'][0]['id'] == 'Optimizer' and p['optimizers'][0]['show_in_alignment'] is False
     assert p['optimizers'][0]['config']['run_mode'] == 'Nelder-Mead (simplex)'
     assert p['pids'][0]['show_in_alignment'] is False
     empty = normalize({'schema_version': 1, 'optimizer': {'config': {}, 'motors': [], 'signals': []}})

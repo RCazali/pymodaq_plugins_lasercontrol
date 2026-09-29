@@ -36,8 +36,8 @@ def _import_scpi_module(extra_folders: List[Path]):
             sys.modules['redpitaya_scpi'] = module
             spec.loader.exec_module(module)
             return module
-    raise FileNotFoundError('redpitaya_scpi.py introuvable (copier le script Red Pitaya dans : '
-                            + ' ou '.join(str(c.parent) for c in candidates) + ')')
+    raise FileNotFoundError('redpitaya_scpi.py not found (copy the Red Pitaya script into: '
+                            + ' or '.join(str(c.parent) for c in candidates) + ')')
 
 
 class PiezoShaker:
@@ -81,7 +81,7 @@ class PiezoShaker:
     def shake_async(self, on_done: Callable[[bool, str], None]):
         """Run the SCPI sequence in a thread; ``on_done(ok, message)`` is called from that thread."""
         if self.busy:
-            on_done(False, 'shake déjà en cours')
+            on_done(False, 'shake already running')
             return
 
         def run():

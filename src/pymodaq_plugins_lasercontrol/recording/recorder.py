@@ -22,10 +22,10 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..core.coordinator import LaserCore
 
 BURST_TRIGGERS = {
-    'shake': 'Shake piézo',
-    'ml_off': 'Perte de mode-lock (ML OFF / Instable)',
-    'safety': 'Gel sécurité / arrêt d’urgence',
-    'intensity': 'Intensité sous le seuil',
+    'shake': 'Piezo shake',
+    'ml_off': 'Mode-lock lost (ML OFF / Unstable)',
+    'safety': 'Safety hold / emergency stop',
+    'intensity': 'Intensity below threshold',
 }
 
 
@@ -92,14 +92,14 @@ class Recorder:
         self._next_pre = now
         self._next_periodic = now
         self._bursts = []
-        self.core.events.publish(EventKind.RECORDING, 'RECORDER', f"Enregistrement démarré ({base})")
+        self.core.events.publish(EventKind.RECORDING, 'RECORDER', f"Recording started ({base})")
         self.snapshot_now(KIND_MANUAL)
         return self.folder / day / f'{base}.h5'
 
     def stop(self):
         if self.writer is None:
             return
-        self.core.events.publish(EventKind.RECORDING, 'RECORDER', "Enregistrement arrêté")
+        self.core.events.publish(EventKind.RECORDING, 'RECORDER', "Recording stopped")
         if self._token is not None:
             self.core.events.unsubscribe(self._token)
             self._token = None

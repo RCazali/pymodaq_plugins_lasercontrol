@@ -74,13 +74,13 @@ class ManualControl:
     def _report(self, res: Tuple[bool, str], what: str) -> bool:
         ok, msg = res
         if not ok and msg:
-            self.feedback(f'{what} refusé : {msg}')
+            self.feedback(f'{what} refused: {msg}')
         return ok
 
-    def move_abs(self, role: str, value: float, source: str = 'manuel') -> bool:
+    def move_abs(self, role: str, value: float, source: str = 'manual') -> bool:
         return self._report(self.core.broker.manual_move_abs(role, value, source), f'{role} → {value:.6g}')
 
-    def move_rel(self, role: str, delta: float, source: str = 'manuel') -> bool:
+    def move_rel(self, role: str, delta: float, source: str = 'manual') -> bool:
         return self._report(self.core.broker.manual_move_rel(role, delta, source), f'{role} Δ {delta:+.6g}')
 
     def jog_native(self, role: str, direction: int, speed: float, source: str = 'jog') -> bool:

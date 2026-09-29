@@ -1,8 +1,8 @@
 """PyMoDAQ implementation of the broker ports.
 
 **This is the only module of the extension that touches DAQ_Move / DAQ_Viewer objects or the
-modules manager** (cahier des charges T3.1, acceptance: "plus aucun appel direct à
-modules_manager hors du broker"). It only reads ``actuators_all`` / ``detectors_all``; it never
+modules manager** (specification T3.1, acceptance: "no direct call to
+modules_manager outside the broker anymore"). It only reads ``actuators_all`` / ``detectors_all``; it never
 changes ``selected_*_name`` nor calls ``connect_*``.
 
 Compatible with PyMoDAQ 5.1.x and 5.2.x (checked: move_abs to the current position emits no

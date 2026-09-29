@@ -1,4 +1,4 @@
-"""Realistic-enough simulator of the laser for office tests (cahier des charges T1.3).
+"""Realistic-enough simulator of the laser for office tests (specification T1.3).
 
 Shared by the ``LaserSim`` DAQ_Move plugin (one axis per module) and the ``LaserSim`` 0D
 detector plugin: both run in the same dashboard process, so a thread-safe singleton is enough.

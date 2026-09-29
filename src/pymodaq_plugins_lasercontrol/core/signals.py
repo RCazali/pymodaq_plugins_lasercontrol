@@ -1,4 +1,4 @@
-"""Latest 0D values with freshness and validity (cahier des charges T3.2, options O9-A, S1, S12).
+"""Latest 0D values with freshness and validity (specification T3.2, options O9-A, S1, S12).
 
 Detectors keep grabbing continuously; every frame they deliver is pushed here. Automations
 never trigger grabs: they read the latest value and its age. A value is *fresh* when:
@@ -194,35 +194,35 @@ class SignalSource:
         st = self._detectors.get(name)
         if st is None:
             st = DetectorStatus(name, heartbeat_channel=self._heartbeats.get(name))
-            st.state, st.reason = 'unknown', 'aucune trame reçue'
+            st.state, st.reason = 'unknown', 'no frame received'
             return st
         now = self.clock.now()
         st.age = now - st.last_frame_t if st.last_frame_t is not None else math.inf
         st.heartbeat_age = (now - st.heartbeat_change_t) if st.heartbeat_change_t is not None else None
         if st.last_frame_t is None:
-            st.state, st.reason = 'unknown', 'aucune trame reçue'
+            st.state, st.reason = 'unknown', 'no frame received'
         elif st.age > self.max_age_s:
-            st.state, st.reason = 'stale', f'plus de trame depuis {st.age:.1f} s'
+            st.state, st.reason = 'stale', f'no frame for {st.age:.1f} s'
         elif st.heartbeat_channel and st.heartbeat_age is None:
-            st.state, st.reason = 'stale', 'compteur de trames pas encore vu avancer'
+            st.state, st.reason = 'stale', 'frame counter not yet seen advancing'
         elif st.heartbeat_channel and st.heartbeat_age > self.max_age_s:
-            st.state, st.reason = 'stale', f'compteur de trames figé depuis {st.heartbeat_age:.1f} s'
+            st.state, st.reason = 'stale', f'frame counter frozen for {st.heartbeat_age:.1f} s'
         elif st.age > self.WARN_FRACTION * self.max_age_s:
-            st.state, st.reason = 'warn', f'trame âgée de {st.age:.1f} s'
+            st.state, st.reason = 'warn', f'frame is {st.age:.1f} s old'
         else:
             st.state, st.reason = 'ok', ''
         return st
 
     def freshness(self, key: Optional[str]) -> Tuple[bool, str]:
-        """(fresh, reason). Reason is a short French text for the UI / events."""
+        """(fresh, reason). Reason is a short text for the UI / events."""
         s = self.latest(key)
         if s is None:
-            return False, f'{key}: jamais reçu'
+            return False, f'{key}: never received'
         if not is_finite(s.value):
-            return False, f'{key}: valeur invalide (NaN)'
+            return False, f'{key}: invalid value (NaN)'
         age = self.clock.now() - s.t
         if age > self.max_age_s:
-            return False, f'{key}: périmé ({age:.1f} s)'
+            return False, f'{key}: stale ({age:.1f} s)'
         st = self.detector_status(s.detector)
         if st.state == 'stale':
             return False, f'{key}: {st.reason}'

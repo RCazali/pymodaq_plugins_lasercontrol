@@ -33,37 +33,37 @@ class ScanTab(QtWidgets.QWidget):
         form = QtWidgets.QFormLayout()
         self.combo_role = QtWidgets.QComboBox()
         self.combo_role.setFocusPolicy(QtCore.Qt.ClickFocus)
-        form.addRow('Moteur (rôle) :', self.combo_role)
-        self.relative = QtWidgets.QCheckBox('relatif à la position actuelle')
+        form.addRow('Motor (role):', self.combo_role)
+        self.relative = QtWidgets.QCheckBox('relative to the current position')
         self.relative.setChecked(True)
-        self.relative.setToolTip('Recommandé : le scan se fait autour de la position de départ')
+        self.relative.setToolTip('Recommended: the scan is done around the start position')
         form.addRow('', self.relative)
-        self.start = dspin(-10.0, tip='début du scan')
-        self.stop = dspin(10.0, tip='fin du scan')
-        self.step = dspin(1.0, 1e-9, 1e9, tip='pas du scan (> 0)')
-        self.dwell = dspin(0.2, 0, 3600, 3, tip='attente après chaque mouvement (s)')
-        self.samples = ispin(1, 1, 1000, 'trames moyennées par point')
-        form.addRow('Début :', self.start)
-        form.addRow('Fin :', self.stop)
-        form.addRow('Pas :', self.step)
-        form.addRow('Attente (s) :', self.dwell)
-        form.addRow('Trames / point :', self.samples)
-        self.ret = QtWidgets.QCheckBox('retour à la position initiale à la fin')
+        self.start = dspin(-10.0, tip='scan start')
+        self.stop = dspin(10.0, tip='scan end')
+        self.step = dspin(1.0, 1e-9, 1e9, tip='scan step (> 0)')
+        self.dwell = dspin(0.2, 0, 3600, 3, tip='wait after each move (s)')
+        self.samples = ispin(1, 1, 1000, 'frames averaged per point')
+        form.addRow('Start:', self.start)
+        form.addRow('End:', self.stop)
+        form.addRow('Step:', self.step)
+        form.addRow('Dwell (s):', self.dwell)
+        form.addRow('Frames / point:', self.samples)
+        self.ret = QtWidgets.QCheckBox('return to the initial position at the end')
         self.ret.setChecked(True)
         form.addRow('', self.ret)
-        self.check_int = QtWidgets.QCheckBox('geler si intensité sous le seuil (S2)')
+        self.check_int = QtWidgets.QCheckBox('hold if intensity below threshold (S2)')
         form.addRow('', self.check_int)
         left.addLayout(form)
-        left.addWidget(QtWidgets.QLabel('<b>Signaux enregistrés</b>'))
+        left.addWidget(QtWidgets.QLabel('<b>Recorded signals</b>'))
         self.channels = CheckList()
         left.addWidget(self.channels, 1)
         self.info = QtWidgets.QLabel('')
         self.info.setWordWrap(True)
         left.addWidget(self.info)
         row = QtWidgets.QHBoxLayout()
-        self.btn_start = styled_button('▶ Démarrer le scan', '#27ae60')
-        self.btn_stop = styled_button('⏹ Arrêter', '#7f8c8d', 'Arrête le scan sur place (aucun retour)')
-        self.btn_save = styled_button('💾 CSV', None, 'Enregistrer les données du dernier scan')
+        self.btn_start = styled_button('▶ Start scan', '#27ae60')
+        self.btn_stop = styled_button('⏹ Stop', '#7f8c8d', 'Stops the scan where it is (no return)')
+        self.btn_save = styled_button('💾 CSV', None, 'Save the data of the last scan')
         row.addWidget(self.btn_start)
         row.addWidget(self.btn_stop)
         row.addWidget(self.btn_save)
@@ -71,14 +71,14 @@ class ScanTab(QtWidgets.QWidget):
         self.state = StateBadge('', font_pt=10)
         left.addWidget(self.state)
         main.addLayout(left, 1)
-        self.plot = pg.PlotWidget(title='Scan 1D')
+        self.plot = pg.PlotWidget(title='1D Scan')
         self.plot.setFocusPolicy(QtCore.Qt.NoFocus)
         self.plot.showGrid(x=True, y=True, alpha=0.25)
         self.plot.setLabel('bottom', 'position')
         self.legend = self.plot.addLegend()
         main.addWidget(self.plot, 2)
         self.btn_start.clicked.connect(self._on_start)
-        self.btn_stop.clicked.connect(lambda: self.app.core.stop('SCAN', 'arrêt manuel'))
+        self.btn_stop.clicked.connect(lambda: self.app.core.stop('SCAN', 'manual stop'))
         self.btn_save.clicked.connect(self._on_save)
         for w in (self.start, self.stop, self.step):
             w.valueChanged.connect(self._update_info)
@@ -122,7 +122,7 @@ class ScanTab(QtWidgets.QWidget):
     def _on_start(self):
         role = self.combo_role.currentText()
         if not role:
-            warn(self, 'Scan', 'Choisir un moteur.')
+            warn(self, 'Scan', 'Choose a motor.')
             return
         old = self.app.core.get('SCAN')
         if old is not None and old.state in ENGAGED_STATES:
@@ -139,7 +139,7 @@ class ScanTab(QtWidgets.QWidget):
         self.app.core.add_automation(scan)
         ok, msg = self.app.core.start(scan.id)
         if not ok:
-            warn(self, 'Scan', 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
+            warn(self, 'Scan', 'Cannot start:\n\n' + msg.replace(' ; ', '\n'))
             return
         self.scan = scan
         self._last_meta = {'role': role, 'module': self.app.core.roles.module_for(role),
@@ -158,11 +158,11 @@ class ScanTab(QtWidgets.QWidget):
     def _on_save(self):
         results = self.scan.results if self.scan is not None else []
         if not results:
-            warn(self, 'Scan', 'Aucune donnée de scan.')
+            warn(self, 'Scan', 'No scan data.')
             return
         stamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
         default = str(self.app.paths.recordings / f"scan_{self._last_meta.get('role', 'scan')}_{stamp}.csv")
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Enregistrer le scan', default, 'CSV (*.csv)')
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save scan', default, 'CSV (*.csv)')
         if not path:
             return
         chans = list(self.scan.channels)
@@ -174,15 +174,15 @@ class ScanTab(QtWidgets.QWidget):
                 w.writerow(['position'] + chans)
                 for x, readings in results:
                     w.writerow([x] + [readings.get(c, '') for c in chans])
-            self.app.core.events.publish('scan', 'SCAN', f'Scan enregistré : {Path(path).name}')
+            self.app.core.events.publish('scan', 'SCAN', f'Scan saved: {Path(path).name}')
         except Exception as e:
-            warn(self, 'Scan', f'Écriture impossible : {e}')
+            warn(self, 'Scan', f'Cannot write: {e}')
 
     # ------------------------------------------------------------------ refresh
     def refresh(self):
         a = self.app.core.get('SCAN')
         state = a.state if a is not None else AutoState.OFF
-        self.state.set_state(state, a.reason if a else '', prefix='Scan : ')
+        self.state.set_state(state, a.reason if a else '', prefix='Scan: ')
         engaged = state in ENGAGED_STATES
         self.btn_start.setEnabled(not engaged and not self.app.core.estop)
         self.btn_stop.setEnabled(engaged)

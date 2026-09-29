@@ -7,13 +7,13 @@ Content: six simulated motors of the laser (OC_H, OC_V, EM_H, EM_V, JET_X, JET_Y
 two test benches (STEER_H / STEER_V: beam steering, PD_X / PD_Y: photodiode) and the 0D viewer
 ``SimB`` that plays the role of computer B (centroids, sums, laser power, XUV flux, beam position,
 photodiode current, frame counter). Random intensity drops of ``SimB`` are off by default (raise
-« Intensity drops / min » in its settings to try the intensity guard).
+"Intensity drops / min" in its settings to try the intensity guard).
 
 The roles of the simulator are added to the roles file of this machine (``roles_<machine>.toml``,
 existing roles are never modified), with the same role names as in the lab example
-(``docs/exemples/roles_lab.toml``) so that presets made at the office load in the lab.
+(``docs/examples/roles_lab.toml``) so that presets made at the office load in the lab.
 
-A Laser Control preset « Démo simulateur » is written too: PIDs and optimisations with a button in
+A Laser Control preset "Simulator demo" is written too: PIDs and optimisations with a button in
 the Alignment tab, safety limits, alignment axes.
 
 Usage::
@@ -38,7 +38,7 @@ DEFAULT_MOVES: Tuple[Tuple[str, str], ...] = (
     ('Sim STEER_H', 'STEER_H'), ('Sim STEER_V', 'STEER_V'), ('Sim PD_X', 'PD_X'), ('Sim PD_Y', 'PD_Y'))
 DEFAULT_DETECTORS: Tuple[str, ...] = ('SimB',)
 PLUGIN = 'LaserSim'
-DEMO_PRESET = 'Démo simulateur'
+DEMO_PRESET = 'Simulator demo'
 
 
 def is_pymodaq_52() -> bool:
@@ -139,28 +139,28 @@ def write_sim_config(name: str = DEFAULT_NAME, moves: Sequence[Tuple[str, str]] 
     from pymodaq_gui.parameter import ioxml
     path = target_path(name)
     if path.exists() and not overwrite:
-        raise FileExistsError(f'{path} existe déjà (utiliser --force pour le remplacer)')
+        raise FileExistsError(f'{path} already exists (use --force to replace it)')
     p = build_experiment_52(name, moves, detectors) if is_pymodaq_52() else build_preset_51(name, moves, detectors)
     ioxml.parameter_to_xml_file(p, path.with_suffix(''), overwrite=True)
     return path
 
 
 #: roles of the simulator: role -> DAQ_Move title (actuators) or channel key (signals)
-SIM_ACTUATOR_ROLES = {'OC_H': ('Sim OC_H', 'Coupleur de sortie, horizontal'),
-                      'OC_V': ('Sim OC_V', 'Coupleur de sortie, vertical'),
-                      'EM_H': ('Sim EM_H', 'Miroir de fond, horizontal'),
-                      'EM_V': ('Sim EM_V', 'Miroir de fond, vertical'),
-                      'Jet_X': ('Sim JET_X', 'Jet de gaz, X'),
-                      'Jet_Y': ('Sim JET_Y', 'Jet de gaz, Y')}
+SIM_ACTUATOR_ROLES = {'OC_H': ('Sim OC_H', 'Output coupler, horizontal'),
+                      'OC_V': ('Sim OC_V', 'Output coupler, vertical'),
+                      'EM_H': ('Sim EM_H', 'End mirror, horizontal'),
+                      'EM_V': ('Sim EM_V', 'End mirror, vertical'),
+                      'Jet_X': ('Sim JET_X', 'Gas jet, X'),
+                      'Jet_Y': ('Sim JET_Y', 'Gas jet, Y')}
 SIM_SIGNAL_ROLES = {'Cam1_x': 'SimB/Cam1/x', 'Cam1_y': 'SimB/Cam1/y', 'Cam1_sum': 'SimB/Cam1/sum',
                     'Cam2_x': 'SimB/Cam2/x', 'Cam2_y': 'SimB/Cam2/y', 'Cam2_sum': 'SimB/Cam2/sum',
                     'Laser_power': 'SimB/Laser/power', 'XUV_flux': 'SimB/XUV/flux'}
 SIM_HEARTBEATS = {'SimB': 'SimB/Stats/frame_counter'}
 #: test benches of the simulator only (not in the lab roles)
-DEMO_ACTUATOR_ROLES = {'Steer_H': ('Sim STEER_H', 'Banc test : miroir de pointé, H (+ = faisceau vers +x)'),
-                       'Steer_V': ('Sim STEER_V', 'Banc test : miroir de pointé, V (+ = faisceau vers +y)'),
-                       'PD_X': ('Sim PD_X', 'Banc test : lentille devant la photodiode, X'),
-                       'PD_Y': ('Sim PD_Y', 'Banc test : lentille devant la photodiode, Y')}
+DEMO_ACTUATOR_ROLES = {'Steer_H': ('Sim STEER_H', 'Test bench: steering mirror, H (+ = beam towards +x)'),
+                       'Steer_V': ('Sim STEER_V', 'Test bench: steering mirror, V (+ = beam towards +y)'),
+                       'PD_X': ('Sim PD_X', 'Test bench: lens in front of the photodiode, X'),
+                       'PD_Y': ('Sim PD_Y', 'Test bench: lens in front of the photodiode, Y')}
 DEMO_SIGNAL_ROLES = {'Beam_x': ('SimB/Beam/x', 'µm'), 'Beam_y': ('SimB/Beam/y', 'µm'),
                      'PD_current': ('SimB/PD/current', 'mA')}
 
@@ -183,7 +183,7 @@ def write_sim_roles(overwrite: bool = False) -> Optional[Path]:
     if path.exists() and not overwrite:
         rm = RoleMap.load(path)
     else:
-        rm = RoleMap(machine=machine, description='Simulateur LaserSim (bureau)', path=path)
+        rm = RoleMap(machine=machine, description='LaserSim simulator (office)', path=path)
     known = set(rm.all_roles())
     changed = not path.exists() or overwrite
     for role, (module, note) in {**SIM_ACTUATOR_ROLES, **DEMO_ACTUATOR_ROLES}.items():
@@ -238,8 +238,8 @@ def demo_preset() -> dict:
         return d
 
     p = default_preset(DEMO_PRESET)
-    p['description'] = ('Simulateur : bancs de test « pointé » (Steer_H/V → Beam_x/y, stabilisé par PID) et '
-                        '« photodiode » (PD_X/Y → PD_current, optimisé), plus le laser simulé (OC, EM, jet).')
+    p['description'] = ('Simulator: "pointing" test bench (Steer_H/V → Beam_x/y, stabilized by PID) and '
+                        '"photodiode" test bench (PD_X/Y → PD_current, optimized), plus the simulated laser (OC, EM, jet).')
     lim = {'Steer_H': (3.0, 40.0, 200.0), 'Steer_V': (3.0, 40.0, 200.0), 'PD_X': (5.0, 40.0, 300.0),
            'PD_Y': (5.0, 40.0, 300.0), 'OC_H': (2.0, 30.0, 150.0), 'OC_V': (2.0, 30.0, 150.0),
            'EM_H': (2.0, 30.0, 150.0), 'EM_V': (2.0, 30.0, 150.0), 'Jet_X': (2.0, 30.0, 150.0),
@@ -249,15 +249,15 @@ def demo_preset() -> dict:
                                 for r, (a, b, c) in lim.items()}
     p['safety']['intensity'].update({'enabled': True, 'role': 'Laser_power', 'mode': 'relative', 'threshold': 0.5,
                                      'hysteresis': 0.1, 'reference': None})
-    p['pids'] = [pid('Beam_H', 'Faisceau H', 'Beam_x', 'Steer_H'),
-                 pid('Beam_V', 'Faisceau V', 'Beam_y', 'Steer_V'),
+    p['pids'] = [pid('Beam_H', 'Beam H', 'Beam_x', 'Steer_H'),
+                 pid('Beam_V', 'Beam V', 'Beam_y', 'Steer_V'),
                  pid('Cam1_X_OC', 'Cam1 X ← OC_H', 'Cam1_x', 'OC_H', max_step=1.5),
                  pid('Cam1_Y_OC', 'Cam1 Y ← OC_V', 'Cam1_y', 'OC_V', show=False, max_step=1.5)]
-    p['optimizers'] = [opt('Optim_PD', 'Optim photodiode', ['PD_X', 'PD_Y'], 'PD_current'),
-                       opt('Suivi_PD', 'Suivi photodiode', ['PD_X', 'PD_Y'], 'PD_current',
+    p['optimizers'] = [opt('Optim_PD', 'Photodiode optim', ['PD_X', 'PD_Y'], 'PD_current'),
+                       opt('Track_PD', 'Photodiode tracking', ['PD_X', 'PD_Y'], 'PD_current',
                            action='periodic', interval=0.5),
-                       opt('Optim_OC', 'Optim puissance OC', ['OC_H', 'OC_V'], 'Laser_power', max_step=2.0)]
-    p['alignment'] = {'axes': [_axis('Pointé', 'Steer_H', 'Steer_V'),
+                       opt('Optim_OC', 'OC power optim', ['OC_H', 'OC_V'], 'Laser_power', max_step=2.0)]
+    p['alignment'] = {'axes': [_axis('Pointing', 'Steer_H', 'Steer_V'),
                                _axis('Photodiode', 'PD_X', 'PD_Y', labels=('X', 'Y')),
                                _axis('OC', 'OC_H', 'OC_V', labels=('Horiz', 'Vert')),
                                _axis('End mirror', 'EM_H', 'EM_V', labels=('Horiz', 'Vert')),
@@ -268,7 +268,7 @@ def demo_preset() -> dict:
 
 
 def write_demo_preset(overwrite: bool = False) -> Optional[Path]:
-    """Write « Démo simulateur » in the Laser Control presets folder (None if it exists already)."""
+    """Write "Simulator demo" in the Laser Control presets folder (None if it exists already)."""
     from ..presets import PresetStore
     _machine, paths = _sim_paths()
     store = PresetStore(paths.presets)
@@ -278,31 +278,31 @@ def write_demo_preset(overwrite: bool = False) -> Optional[Path]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description='Crée le preset (PyMoDAQ 5.1) ou l’expérience (5.2) du '
-                                                 'simulateur LaserSim pour les essais au bureau.')
-    parser.add_argument('name', nargs='?', default=DEFAULT_NAME, help=f'nom (défaut : {DEFAULT_NAME})')
+    parser = argparse.ArgumentParser(description='Creates the dashboard preset (PyMoDAQ 5.1) or experiment (5.2) '
+                                                 'of the LaserSim simulator for office tests.')
+    parser.add_argument('name', nargs='?', default=DEFAULT_NAME, help=f'name (default: {DEFAULT_NAME})')
     parser.add_argument('--force', action='store_true',
-                        help='remplacer le preset / l’expérience du dashboard et le preset « Démo simulateur »')
-    parser.add_argument('--no-roles', action='store_true', help='ne pas écrire le fichier de rôles du simulateur')
+                        help=f'replace the dashboard preset / experiment and the "{DEMO_PRESET}" preset')
+    parser.add_argument('--no-roles', action='store_true', help='do not write the roles file of the simulator')
     args = parser.parse_args(argv)
     from qtpy import QtWidgets
     if QtWidgets.QApplication.instance() is None:
         _app = QtWidgets.QApplication(sys.argv[:1])  # noqa: F841  (Qt objects need an application)
-    kind = 'expérience' if is_pymodaq_52() else 'preset'
+    kind = 'experiment' if is_pymodaq_52() else 'preset'
     try:
         path = write_sim_config(args.name, overwrite=args.force)
-        print(f'{kind} du simulateur écrit : {path}')
+        print(f'simulator {kind} written: {path}')
     except FileExistsError as e:
-        print(f'{e}\n  (les bancs de test Steer / PD demandent le fichier à jour : relancer avec --force)')
+        print(f'{e}\n  (the Steer / PD test benches need the up-to-date file: run again with --force)')
     if not args.no_roles:
         roles = write_sim_roles(overwrite=False)
-        print(f'rôles du simulateur ajoutés : {roles}' if roles else 'rôles du simulateur déjà présents')
+        print(f'simulator roles added: {roles}' if roles else 'simulator roles already present')
     demo = write_demo_preset(overwrite=args.force)
-    print(f'preset Laser Control « {DEMO_PRESET} » écrit : {demo}' if demo else
-          f'preset Laser Control « {DEMO_PRESET} » déjà présent : conservé (--force pour le remplacer)')
-    print(f"Ouvrir le dashboard avec « {args.name} » puis l’extension « Laser Control »,\n"
-          f"ou : python -m pymodaq_plugins_lasercontrol.extensions.laser_control {args.name}\n"
-          f"puis Presets → « {DEMO_PRESET} » → Charger, et ▶ Acquisition dans la barre d’état.")
+    print(f'Laser Control preset "{DEMO_PRESET}" written: {demo}' if demo else
+          f'Laser Control preset "{DEMO_PRESET}" already present: kept (--force to replace it)')
+    print(f"Open the dashboard with '{args.name}', then the 'Laser Control' extension,\n"
+          f"or: python -m pymodaq_plugins_lasercontrol.extensions.laser_control {args.name}\n"
+          f"then Presets → '{DEMO_PRESET}' → Load, and ▶ Acquisition in the status bar.")
     return 0
 
 

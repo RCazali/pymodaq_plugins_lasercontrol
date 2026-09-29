@@ -31,13 +31,13 @@ class RecordingTab(QtWidgets.QWidget):
         lay.setContentsMargins(6, 6, 6, 6)
 
         top = QtWidgets.QHBoxLayout()
-        self.btn_rec = styled_button('● Démarrer l’enregistrement', '#c0392b')
+        self.btn_rec = styled_button('● Start recording', '#c0392b')
         self.btn_rec.clicked.connect(self._on_rec)
         top.addWidget(self.btn_rec)
-        self.btn_snap = styled_button('📷 Snapshot manuel', None, 'Un snapshot immédiat dans le fichier')
+        self.btn_snap = styled_button('📷 Manual snapshot', None, 'One immediate snapshot in the file')
         self.btn_snap.clicked.connect(lambda: self.app.recorder.snapshot_now(KIND_MANUAL))
         top.addWidget(self.btn_snap)
-        self.btn_folder = styled_button('📂 Dossier', None)
+        self.btn_folder = styled_button('📂 Folder', None)
         self.btn_folder.clicked.connect(lambda: open_folder(self.app.paths.recordings))
         top.addWidget(self.btn_folder)
         top.addStretch()
@@ -47,15 +47,15 @@ class RecordingTab(QtWidgets.QWidget):
         self.status.setWordWrap(True)
         lay.addWidget(self.status)
 
-        g = QtWidgets.QGroupBox('Réglages (enregistrés dans le preset)')
+        g = QtWidgets.QGroupBox('Settings (saved in the preset)')
         form = QtWidgets.QFormLayout(g)
         form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
-        self.periodic = QtWidgets.QCheckBox('snapshots périodiques, période (s) :')
-        self.period = dspin(10.0, 0.1, 86400, 2, tip='période des snapshots (s)')
+        self.periodic = QtWidgets.QCheckBox('periodic snapshots, period (s):')
+        self.period = dspin(10.0, 0.1, 86400, 2, tip='snapshot period (s)')
         form.addRow(self.periodic, self.period)
-        self.raw = QtWidgets.QCheckBox('enregistrer aussi les canaux 0D sans rôle')
+        self.raw = QtWidgets.QCheckBox('also record the 0D channels without a role')
         form.addRow('', self.raw)
-        self.burst = QtWidgets.QCheckBox('rafales sur événement')
+        self.burst = QtWidgets.QCheckBox('bursts on event')
         form.addRow('', self.burst)
         self.burst_events = CheckList()
         self.burst_events.setMaximumHeight(90)
@@ -63,27 +63,27 @@ class RecordingTab(QtWidgets.QWidget):
         for i in range(self.burst_events.count()):
             it = self.burst_events.item(i)
             it.setToolTip(BURST_TRIGGERS[it.text()])
-        form.addRow('Déclencheurs :', self.burst_events)
-        self.pre = dspin(60.0, 0, 3600, 1, tip='durée du tampon circulaire enregistré AVANT l’événement (s)')
-        self.pre_rate = dspin(2.0, 0.1, 50, 2, tip='fréquence du tampon avant événement (Hz)')
-        self.duration = dspin(30.0, 0.1, 3600, 1, tip='durée de la rafale APRÈS l’événement (s)')
-        self.interval = dspin(1.0, 0.05, 600, 2, tip='intervalle entre snapshots pendant la rafale (s)')
-        form.addRow('Avant événement (s) :', self.pre)
-        form.addRow('Fréquence avant (Hz) :', self.pre_rate)
-        form.addRow('Durée rafale (s) :', self.duration)
-        form.addRow('Intervalle rafale (s) :', self.interval)
+        form.addRow('Triggers:', self.burst_events)
+        self.pre = dspin(60.0, 0, 3600, 1, tip='length of the circular buffer saved BEFORE the event (s)')
+        self.pre_rate = dspin(2.0, 0.1, 50, 2, tip='rate of the buffer before the event (Hz)')
+        self.duration = dspin(30.0, 0.1, 3600, 1, tip='length of the burst AFTER the event (s)')
+        self.interval = dspin(1.0, 0.05, 600, 2, tip='interval between snapshots during the burst (s)')
+        form.addRow('Before event (s):', self.pre)
+        form.addRow('Rate before (Hz):', self.pre_rate)
+        form.addRow('Burst length (s):', self.duration)
+        form.addRow('Burst interval (s):', self.interval)
         self.trigger_events = CheckList()
         self.trigger_events.setMaximumHeight(90)
         self.trigger_events.set_items(list(BURST_TRIGGERS))
         folder = self.app.paths.trigger
-        form.addRow(QtWidgets.QLabel(f'Fichiers déclencheurs pour l’ordi B (O8) :\n'
-                                     f'{folder if folder else "désactivé (config : paths.event_trigger_folder)"}'),
+        form.addRow(QtWidgets.QLabel(f'Trigger files for computer B (O8):\n'
+                                     f'{folder if folder else "disabled (config: paths.event_trigger_folder)"}'),
                     self.trigger_events)
         lay.addWidget(g)
         help_lbl = QtWidgets.QLabel(
-            '<i>Un fichier HDF5 par session (rotation par taille/durée). Les snapshots contiennent tous les rôles, '
-            'tous les moteurs, les états et variables internes des automatismes, la sécurité et l’état ML. '
-            'Lecture : <code>from pymodaq_plugins_lasercontrol.recording import load_session</code>.</i>')
+            '<i>One HDF5 file per session (rotation by size/duration). Snapshots contain every role, '
+            'every motor, the states and internal variables of the automations, the safety and the ML state. '
+            'Reading: <code>from pymodaq_plugins_lasercontrol.recording import load_session</code>.</i>')
         help_lbl.setWordWrap(True)
         lay.addWidget(help_lbl)
         lay.addStretch()
@@ -135,19 +135,19 @@ class RecordingTab(QtWidgets.QWidget):
 
     def refresh(self):
         rec = self.app.recorder
-        self.btn_rec.setText('■ Arrêter l’enregistrement' if rec.active else '● Démarrer l’enregistrement')
+        self.btn_rec.setText('■ Stop recording' if rec.active else '● Start recording')
         self.btn_snap.setEnabled(rec.active)
         if rec.active and rec.writer is not None:
             w = rec.writer
-            txt = (f'<b>Enregistrement en cours</b> : {rec.current_path}<br>'
-                   f'snapshots : {w.n_snapshots} · événements : {w.n_events} · rafales en cours : {rec.bursts_running}')
+            txt = (f'<b>Recording</b>: {rec.current_path}<br>'
+                   f'snapshots: {w.n_snapshots} · events: {w.n_events} · bursts running: {rec.bursts_running}')
             if w.error:
-                txt += f'<br><span style="color:#c0392b">Erreur d’écriture : {w.error}</span>'
+                txt += f'<br><span style="color:#c0392b">Write error: {w.error}</span>'
         else:
-            txt = f'Pas d’enregistrement en cours. Dossier : {self.app.paths.recordings}'
+            txt = f'Not recording. Folder: {self.app.paths.recordings}'
         t = self.app.triggers
         if t.error:
-            txt += f'<br><span style="color:#c0392b">Fichier déclencheur : {t.error}</span>'
+            txt += f'<br><span style="color:#c0392b">Trigger file: {t.error}</span>'
         elif t.last_file is not None:
-            txt += f'<br>Dernier fichier déclencheur : {t.last_file.name}'
+            txt += f'<br>Last trigger file: {t.last_file.name}'
         self.status.setText(txt)

@@ -1,7 +1,7 @@
-"""Optimisation tab: several named optimisations (e.g. « Optim HA », « Optim OC »), each with the
+"""Optimization tab: several named optimizations (e.g. "Optim HA", "Optim OC"), each with the
 historical settings and modes (behind the pluggable interface T4.5), periodic passes, 'Optimize now',
 'Full optimization', passive live monitor (T4.3) and cost plot. Each one can have a button in the
-Alignment tab ('Bouton dans Alignement').
+Alignment tab ('Button in Alignment').
 """
 from __future__ import annotations
 
@@ -28,50 +28,50 @@ MONITOR_COLORS = ['#00c2ff', '#ff9100', '#7cff00', '#ff4dd2', '#ffd23f', '#a276f
 def opt_params() -> list:
     d = DEFAULT_OPT_CONFIG
     return [
-        {'title': 'Nom affiché :', 'name': 'label', 'type': 'str', 'value': '',
-         'tip': 'Nom court, aussi utilisé pour le bouton de l’onglet Alignement (ex. Optim HA)'},
-        {'title': 'Bouton dans Alignement :', 'name': 'show_in_alignment', 'type': 'bool', 'value': False,
-         'tip': 'Affiche un bouton sous les moteurs de l’onglet Alignement : un clic lance, un autre arrête '
-                '(sans confirmation)'},
-        {'title': 'Action du bouton :', 'name': 'button_action', 'type': 'list',
+        {'title': 'Display name:', 'name': 'label', 'type': 'str', 'value': '',
+         'tip': 'Short name, also used for the button of the Alignment tab (e.g. Optim HA)'},
+        {'title': 'Button in Alignment:', 'name': 'show_in_alignment', 'type': 'bool', 'value': False,
+         'tip': 'Shows a button under the motors of the Alignment tab: one click starts, another one stops '
+                '(no confirmation)'},
+        {'title': 'Button action:', 'name': 'button_action', 'type': 'list',
          'limits': {v: k for k, v in OPT_BUTTON_ACTION_LABELS.items()}, 'value': 'single',
-         'tip': 'une passe : s’arrête seule à la fin · périodique : une passe toutes les N min jusqu’à l’arrêt · '
-                'complète : recherche agressive en une passe'},
-        {'title': 'Intervalle entre passes (min) :', 'name': 'interval_min', 'type': 'float', 'value': d['interval_min'],
+         'tip': 'one pass: stops by itself at the end · periodic: one pass every N min until stopped · '
+                'full: aggressive search in one pass'},
+        {'title': 'Interval between passes (min):', 'name': 'interval_min', 'type': 'float', 'value': d['interval_min'],
          'min': 0.05},
-        {'title': 'Temps d’attente après mouvement (s) :', 'name': 'dwell', 'type': 'float', 'value': d['dwell'],
+        {'title': 'Dwell after move (s):', 'name': 'dwell', 'type': 'float', 'value': d['dwell'],
          'min': 0.0},
-        {'title': 'Itérations max / passe :', 'name': 'max_iterations', 'type': 'int', 'value': d['max_iterations'],
+        {'title': 'Max iterations / pass:', 'name': 'max_iterations', 'type': 'int', 'value': d['max_iterations'],
          'min': 1},
-        {'title': 'Mode :', 'name': 'run_mode', 'type': 'list', 'limits': RUN_MODES, 'value': d['run_mode']},
+        {'title': 'Mode:', 'name': 'run_mode', 'type': 'list', 'limits': RUN_MODES, 'value': d['run_mode']},
         {'title': 'Gradient / Newton-lite', 'name': 'gradient_group', 'type': 'group', 'children': [
-            {'title': 'Échantillons par point :', 'name': 'gradient_samples', 'type': 'int',
+            {'title': 'Samples per point:', 'name': 'gradient_samples', 'type': 'int',
              'value': d['gradient_samples'], 'min': 1},
-            {'title': 'Amortissement :', 'name': 'damping_factor', 'type': 'float', 'value': d['damping_factor'],
+            {'title': 'Damping:', 'name': 'damping_factor', 'type': 'float', 'value': d['damping_factor'],
              'min': 0.0},
         ]},
-        {'title': 'Critères d’arrêt', 'name': 'stop_group', 'type': 'group', 'expanded': False, 'children': [
-            {'title': 'Patience (itérations) :', 'name': 'stall_patience', 'type': 'int',
+        {'title': 'Stop criteria', 'name': 'stop_group', 'type': 'group', 'expanded': False, 'children': [
+            {'title': 'Patience (iterations):', 'name': 'stall_patience', 'type': 'int',
              'value': d['stall_patience'], 'min': 1},
-            {'title': 'Échelle de bande morte :', 'name': 'deadband_scale', 'type': 'float',
+            {'title': 'Deadband scale:', 'name': 'deadband_scale', 'type': 'float',
              'value': d['deadband_scale'], 'min': 0.001},
-            {'title': 'Facteur de sécurité :', 'name': 'safety_factor', 'type': 'float', 'value': d['safety_factor'],
+            {'title': 'Safety factor:', 'name': 'safety_factor', 'type': 'float', 'value': d['safety_factor'],
              'min': 0.1},
-            {'title': 'Reculs consécutifs max :', 'name': 'max_backoffs', 'type': 'int', 'value': d['max_backoffs'],
+            {'title': 'Max consecutive back-offs:', 'name': 'max_backoffs', 'type': 'int', 'value': d['max_backoffs'],
              'min': 1},
         ]},
-        {'title': 'Optimisation complète', 'name': 'full_opt_group', 'type': 'group', 'expanded': False, 'children': [
-            {'title': 'Itérations :', 'name': 'full_opt_iterations', 'type': 'int', 'value': d['full_opt_iterations'],
+        {'title': 'Full optimization', 'name': 'full_opt_group', 'type': 'group', 'expanded': False, 'children': [
+            {'title': 'Iterations:', 'name': 'full_opt_iterations', 'type': 'int', 'value': d['full_opt_iterations'],
              'min': 1},
-            {'title': 'Patience :', 'name': 'full_opt_stall_patience', 'type': 'int',
+            {'title': 'Patience:', 'name': 'full_opt_stall_patience', 'type': 'int',
              'value': d['full_opt_stall_patience'], 'min': 1},
-            {'title': 'Échelle de bande morte :', 'name': 'full_opt_deadband_scale', 'type': 'float',
+            {'title': 'Deadband scale:', 'name': 'full_opt_deadband_scale', 'type': 'float',
              'value': d['full_opt_deadband_scale'], 'min': 0.0001},
         ]},
-        {'title': 'Mesure', 'name': 'measure_group', 'type': 'group', 'expanded': False, 'children': [
-            {'title': 'Trames pour le bruit :', 'name': 'noise_samples', 'type': 'int', 'value': d['noise_samples'],
+        {'title': 'Measurement', 'name': 'measure_group', 'type': 'group', 'expanded': False, 'children': [
+            {'title': 'Frames for the noise:', 'name': 'noise_samples', 'type': 'int', 'value': d['noise_samples'],
              'min': 2},
-            {'title': 'Trames par point :', 'name': 'probe_samples', 'type': 'int', 'value': d['probe_samples'],
+            {'title': 'Frames per point:', 'name': 'probe_samples', 'type': 'int', 'value': d['probe_samples'],
              'min': 1},
         ]},
     ]
@@ -88,8 +88,8 @@ FLAT_KEYS = {  # config key -> parameter path
     'noise_samples': ('measure_group', 'noise_samples'), 'probe_samples': ('measure_group', 'probe_samples'),
 }
 
-MOTOR_COLS = ['Moteur (rôle)', 'Pas max', 'Pas de sonde', 'Ordre']
-SIGNAL_COLS = ['Actif', 'Signal (rôle)', 'Mode', 'Poids', 'Exposant p', 'Cible', 'Auto']
+MOTOR_COLS = ['Motor (role)', 'Max step', 'Probe step', 'Order']
+SIGNAL_COLS = ['Active', 'Signal (role)', 'Mode', 'Weight', 'Exponent p', 'Target', 'Auto']
 
 
 class SingleOptimizerWidget(QtWidgets.QWidget):
@@ -112,9 +112,9 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
         self.tree.setParameters(self.settings, showTop=False)
         self.tree.setMinimumHeight(340)
         self.settings.sigTreeStateChanged.connect(self._on_changed)
-        left.addWidget(QtWidgets.QLabel('<b>1. Réglages</b>'))
+        left.addWidget(QtWidgets.QLabel('<b>1. Settings</b>'))
         left.addWidget(self.tree)
-        left.addWidget(QtWidgets.QLabel('<b>2. Moteurs</b> <i>(« Ordre » : mode séquentiel seulement)</i>'))
+        left.addWidget(QtWidgets.QLabel('<b>2. Motors</b> <i>("Order": sequential mode only)</i>'))
         self.table_motors = QtWidgets.QTableWidget(0, len(MOTOR_COLS))
         self.table_motors.setHorizontalHeaderLabels(MOTOR_COLS)
         self.table_motors.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
@@ -122,7 +122,7 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
         self.table_motors.setMinimumHeight(110)
         self.table_motors.itemChanged.connect(self._on_changed)
         left.addWidget(self.table_motors)
-        left.addWidget(QtWidgets.QLabel('<b>3. Signaux objectifs</b>'))
+        left.addWidget(QtWidgets.QLabel('<b>3. Objective signals</b>'))
         self.table_signals = QtWidgets.QTableWidget(0, len(SIGNAL_COLS))
         self.table_signals.setHorizontalHeaderLabels(SIGNAL_COLS)
         sh = self.table_signals.horizontalHeader()
@@ -132,20 +132,20 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
         self.table_signals.setMinimumHeight(130)
         self.table_signals.itemChanged.connect(self._on_changed)
         left.addWidget(self.table_signals)
-        self.btn_capture = styled_button('📍 Cibles = valeurs actuelles', None,
-                                         'Pour chaque signal coché en mode « Target Point » : cible = dernière '
-                                         'valeur reçue, « Auto » décoché (cible fixe).')
+        self.btn_capture = styled_button('📍 Targets = current values', None,
+                                         'For each ticked signal in "Target Point" mode: target = last '
+                                         'received value, "Auto" unticked (fixed target).')
         self.btn_capture.clicked.connect(self._on_capture)
         left.addWidget(self.btn_capture)
         btns = QtWidgets.QGridLayout()
-        self.btn_start = styled_button('▶ Optimiseur périodique', '#27ae60')
-        self.btn_stop = styled_button('⏹ Arrêter', '#7f8c8d')
-        self.btn_now = styled_button('⚡ Optimiser maintenant', '#2980b9',
-                                     'Une passe tout de suite (réveille l’optimiseur périodique s’il tourne)')
-        self.btn_full = styled_button('🚀 Optimisation complète', '#b71c1c',
-                                      'Recherche agressive en une passe (sonde au pas max). Optimiseur '
-                                      'périodique arrêté requis.')
-        self.btn_resume = styled_button('⏯ Reprendre', '#2980b9', 'Reprise manuelle après un gel de sécurité')
+        self.btn_start = styled_button('▶ Periodic optimizer', '#27ae60')
+        self.btn_stop = styled_button('⏹ Stop', '#7f8c8d')
+        self.btn_now = styled_button('⚡ Optimize now', '#2980b9',
+                                     'One pass right away (wakes the periodic optimizer up if it is running)')
+        self.btn_full = styled_button('🚀 Full optimization', '#b71c1c',
+                                      'Aggressive search in one pass (probe at max step). The periodic '
+                                      'optimizer must be stopped.')
+        self.btn_resume = styled_button('⏯ Resume', '#2980b9', 'Manual resume after a safety hold')
         btns.addWidget(self.btn_start, 0, 0)
         btns.addWidget(self.btn_stop, 0, 1)
         btns.addWidget(self.btn_now, 1, 0)
@@ -153,7 +153,7 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
         btns.addWidget(self.btn_full, 2, 0, 1, 2)
         left.addLayout(btns)
         self.btn_start.clicked.connect(self._on_start)
-        self.btn_stop.clicked.connect(lambda: self.app.core.stop(self.auto_id, 'arrêt manuel'))
+        self.btn_stop.clicked.connect(lambda: self.app.core.stop(self.auto_id, 'manual stop'))
         self.btn_now.clicked.connect(self._on_now)
         self.btn_full.clicked.connect(self._on_full)
         self.btn_resume.clicked.connect(self._on_resume)
@@ -171,29 +171,29 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
         f.setPointSize(16)
         f.setBold(True)
         self.countdown.setFont(f)
-        top.addWidget(QtWidgets.QLabel('⏱ prochaine passe :'))
+        top.addWidget(QtWidgets.QLabel('⏱ next pass:'))
         top.addWidget(self.countdown)
         top.addStretch()
         right.addLayout(top)
         self.status = QtWidgets.QLabel('')
         self.status.setWordWrap(True)
         right.addWidget(self.status)
-        mon = QtWidgets.QGroupBox('Moniteur passif des signaux objectifs (dérive)')
+        mon = QtWidgets.QGroupBox('Passive monitor of the objective signals (drift)')
         ml = QtWidgets.QVBoxLayout(mon)
         self.monitor = pg.PlotWidget()
         self.monitor.setFocusPolicy(QtCore.Qt.NoFocus)
         self.monitor.showGrid(x=True, y=True, alpha=0.25)
-        self.monitor.setLabel('bottom', 'temps (s)')
+        self.monitor.setLabel('bottom', 'time (s)')
         self.monitor_legend = self.monitor.addLegend()
         ml.addWidget(self.monitor)
         right.addWidget(mon, 2)
-        cost = QtWidgets.QGroupBox('Convergence (coût par itération)')
+        cost = QtWidgets.QGroupBox('Convergence (cost per iteration)')
         cl = QtWidgets.QVBoxLayout(cost)
         self.cost_plot = pg.PlotWidget()
         self.cost_plot.setFocusPolicy(QtCore.Qt.NoFocus)
         self.cost_plot.showGrid(x=True, y=True, alpha=0.25)
-        self.cost_plot.setLabel('bottom', 'itération')
-        self.cost_plot.setLabel('left', 'coût f(x)')
+        self.cost_plot.setLabel('bottom', 'iteration')
+        self.cost_plot.setLabel('left', 'cost f(x)')
         self.cost_curve = self.cost_plot.plot(pen=pg.mkPen('#ff9100', width=2), symbol='o', symbolSize=5)
         cl.addWidget(self.cost_plot)
         right.addWidget(cost, 2)
@@ -346,10 +346,10 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
     # ------------------------------------------------------------------ actions
     def _check(self, cfg) -> bool:
         if not cfg['motors']:
-            warn(self, 'Optimiseur', 'Cocher au moins UN moteur.')
+            warn(self, 'Optimizer', 'Tick at least ONE motor.')
             return False
         if not cfg['signals']:
-            warn(self, 'Optimiseur', 'Cocher au moins UN signal objectif.')
+            warn(self, 'Optimizer', 'Tick at least ONE objective signal.')
             return False
         return True
 
@@ -358,44 +358,44 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
         if self._check(cfg):
             ok, msg = self.app.start_optimizer(cfg, single_shot=False)
             if not ok:
-                warn(self, self.label(), 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
+                warn(self, self.label(), 'Cannot start:\n\n' + msg.replace(' ; ', '\n'))
 
     def _on_now(self):
         opt = self.automation
         if opt is not None and opt.state == AutoState.ACTIVE and not opt.single_shot:
             if not opt.trigger_now(self.app.core.clock.now()):
-                info(self, 'Optimiseur', 'Une passe est déjà en cours.')
+                info(self, 'Optimizer', 'A pass is already running.')
             return
         if opt is not None and opt.state in ENGAGED_STATES:
-            info(self, 'Optimiseur', 'L’optimiseur est déjà engagé.')
+            info(self, 'Optimizer', 'The optimizer is already engaged.')
             return
         cfg = self.get_config()
         if self._check(cfg):
             ok, msg = self.app.start_optimizer(cfg, single_shot=True)
             if not ok:
-                warn(self, self.label(), 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
+                warn(self, self.label(), 'Cannot start:\n\n' + msg.replace(' ; ', '\n'))
 
     def _on_full(self):
         opt = self.automation
         if opt is not None and opt.state in ENGAGED_STATES:
-            warn(self, 'Occupé', 'Arrêter d’abord l’optimiseur (sinon les deux se disputeraient les moteurs).')
+            warn(self, 'Busy', 'Stop the optimizer first (otherwise both would fight over the motors).')
             return
         cfg = self.get_config()
         if not self._check(cfg):
             return
-        if not ask_yes_no(self, 'Optimisation complète',
-                          'Recherche agressive : sonde au pas max de chaque moteur (borné), plus d’itérations, '
-                          'bande morte réduite. Les moteurs bougent plus qu’une passe normale.\n\nContinuer ?'):
+        if not ask_yes_no(self, 'Full optimization',
+                          'Aggressive search: probe at the max step of each motor (bounded), more iterations, '
+                          'reduced deadband. The motors move more than in a normal pass.\n\nContinue?'):
             return
         cfg['config']['full_optimization'] = True
         ok, msg = self.app.start_optimizer(cfg, single_shot=True)
         if not ok:
-            warn(self, 'Optimiseur', 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
+            warn(self, 'Optimizer', 'Cannot start:\n\n' + msg.replace(' ; ', '\n'))
 
     def _on_resume(self):
         ok, msg = self.app.core.resume(self.auto_id)
         if not ok:
-            warn(self, 'Optimiseur', 'Reprise refusée :\n\n' + msg.replace(' ; ', '\n'))
+            warn(self, 'Optimizer', 'Resume refused:\n\n' + msg.replace(' ; ', '\n'))
 
     def _on_capture(self):
         n = 0
@@ -409,19 +409,19 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
             ch = self.app.core.roles.channel_for(role)
             ok, why = self.app.core.signals.freshness(ch)
             if not ok:
-                warn(self, 'Cible', f'{role} : {why}')
+                warn(self, 'Target', f'{role}: {why}')
                 continue
             self.table_signals.cellWidget(r, 5).setValue(self.app.core.signals.value(ch))
             self.table_signals.cellWidget(r, 6).setChecked(False)
             n += 1
         if n == 0:
-            info(self, 'Cible', 'Aucun signal coché en mode « Target Point ».')
+            info(self, 'Target', 'No ticked signal in "Target Point" mode.')
 
     # ------------------------------------------------------------------ refresh
     def refresh(self):
         opt = self.automation
         state = opt.state if opt is not None else AutoState.OFF
-        self.state.set_state(state, opt.reason if opt else '', prefix=f'{self.label()} : ')
+        self.state.set_state(state, opt.reason if opt else '', prefix=f'{self.label()}: ')
         engaged = state in ENGAGED_STATES
         self.btn_start.setEnabled(not engaged and not self.app.core.estop)
         self.btn_full.setEnabled(not engaged and not self.app.core.estop)
@@ -433,11 +433,11 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
         now = self.app.core.clock.now()
         left = opt.seconds_to_next_pass(now) if state == AutoState.ACTIVE else None
         if left is None:
-            self.countdown.setText('EN COURS' if opt.in_pass else '--:--')
+            self.countdown.setText('RUNNING' if opt.in_pass else '--:--')
         else:
             m, s = divmod(int(left), 60)
             self.countdown.setText(f'{m:02d}:{s:02d}')
-        extra = f' · passes : {opt.pass_count} · itération : {opt.iteration}'
+        extra = f' · passes: {opt.pass_count} · iteration: {opt.iteration}'
         self.status.setText(f'<i>{opt.status}</i>{extra}' + (f'<br><b>{opt.reason}</b>' if opt.reason and
                                                                 state != AutoState.ACTIVE else ''))
         if opt.history:
@@ -476,10 +476,10 @@ class OptimizerTab(QtWidgets.QWidget):
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(3, 3, 3, 3)
         bar = QtWidgets.QHBoxLayout()
-        self.btn_add = styled_button('➕ Ajouter une optimisation', None)
-        self.btn_dup = styled_button('⧉ Dupliquer', None, 'Nouvelle optimisation avec les mêmes réglages')
-        self.btn_rename = styled_button('✎ Renommer', None)
-        self.btn_remove = styled_button('❌ Supprimer', None)
+        self.btn_add = styled_button('➕ Add optimization', None)
+        self.btn_dup = styled_button('⧉ Duplicate', None, 'New optimization with the same settings')
+        self.btn_rename = styled_button('✎ Rename', None)
+        self.btn_remove = styled_button('❌ Remove', None)
         self.btn_add.clicked.connect(self._on_add)
         self.btn_dup.clicked.connect(self._on_duplicate)
         self.btn_rename.clicked.connect(self._on_rename)
@@ -487,11 +487,11 @@ class OptimizerTab(QtWidgets.QWidget):
         for b in (self.btn_add, self.btn_dup, self.btn_rename, self.btn_remove):
             bar.addWidget(b)
         bar.addStretch()
-        bar.addWidget(QtWidgets.QLabel('<i>Les réglages sont enregistrés dans le preset (onglet Presets).</i>'))
+        bar.addWidget(QtWidgets.QLabel('<i>Settings are saved in the preset (Presets tab).</i>'))
         lay.addLayout(bar)
         self.tabs = QtWidgets.QTabWidget()
         lay.addWidget(self.tabs)
-        self.empty = QtWidgets.QLabel('Aucune optimisation dans ce preset : « ➕ Ajouter une optimisation ».')
+        self.empty = QtWidgets.QLabel('No optimization in this preset: "➕ Add optimization".')
         self.empty.setAlignment(QtCore.Qt.AlignCenter)
         self.empty.setStyleSheet('color: gray; font-style: italic;')
         lay.addWidget(self.empty)
@@ -509,12 +509,12 @@ class OptimizerTab(QtWidgets.QWidget):
         return w
 
     def _ask_id(self, title: str, default: str = '') -> Optional[str]:
-        name, ok = QtWidgets.QInputDialog.getText(self, title, 'Identifiant (ex. Optim_HA) :', text=default)
+        name, ok = QtWidgets.QInputDialog.getText(self, title, 'Identifier (e.g. Optim_HA):', text=default)
         if not ok or not name.strip():
             return None
         opt_id = sanitize_role_name(name)
         if opt_id in self.widgets:
-            warn(self, 'Optimisation', f'{opt_id} existe déjà')
+            warn(self, 'Optimization', f'{opt_id} already exists')
             return None
         return opt_id
 
@@ -525,7 +525,7 @@ class OptimizerTab(QtWidgets.QWidget):
         return w
 
     def _on_add(self):
-        opt_id = self._ask_id('Nouvelle optimisation')
+        opt_id = self._ask_id('New optimization')
         if opt_id:
             self.add(default_optimizer(opt_id))
 
@@ -533,7 +533,7 @@ class OptimizerTab(QtWidgets.QWidget):
         w = self._current()
         if w is None:
             return
-        opt_id = self._ask_id('Dupliquer', w.opt_id + '_2')
+        opt_id = self._ask_id('Duplicate', w.opt_id + '_2')
         if opt_id:
             cfg = w.get_config()
             cfg.update({'id': opt_id, 'label': ''})
@@ -547,7 +547,7 @@ class OptimizerTab(QtWidgets.QWidget):
         w = self._current()
         if w is None:
             return
-        label, ok = QtWidgets.QInputDialog.getText(self, 'Renommer', 'Nom affiché :', text=w.label())
+        label, ok = QtWidgets.QInputDialog.getText(self, 'Rename', 'Display name:', text=w.label())
         if ok:
             w.settings.child('label').setValue(label.strip())
 
@@ -557,9 +557,9 @@ class OptimizerTab(QtWidgets.QWidget):
             return
         a = w.automation
         if a is not None and a.state in ENGAGED_STATES:
-            warn(self, 'Optimisation', 'Arrêter l’optimisation avant de la supprimer.')
+            warn(self, 'Optimization', 'Stop the optimization before removing it.')
             return
-        if not ask_yes_no(self, 'Supprimer', f'Supprimer l’optimisation {w.label()} du preset ?'):
+        if not ask_yes_no(self, 'Remove', f'Remove optimization {w.label()} from the preset?'):
             return
         self.app.core.remove_automation(w.auto_id)
         self.widgets.pop(w.opt_id, None)

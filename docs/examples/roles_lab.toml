@@ -1,0 +1,82 @@
+# Laser Control - logical roles of computer A in the lab (template, specification T1.2)
+#
+# Copy into the data folder of the extension as roles_<machine>.toml
+# (<machine> = [machine] name of config_lasercontrol.toml, otherwise the computer name).
+# Presets ONLY reference role names (OC_H, Cam1_x, ...): this file is the only thing that changes
+# between the office (simulator) and the lab. Same role names as the simulator
+# (python -m pymodaq_plugins_lasercontrol.tools.sim_preset) => a preset made at the office loads here.
+#
+# module  = title of the DAQ_Move in the dashboard (as shown in its dock)
+# channel = "<DAQ_Viewer title>/<data name>/<channel label>"; the exact list of the received channels
+#           is in Configuration > Detectors > "Received 0D channels" (acquisition running).
+# Replace the "TO_FILL_..." values, then, in the extension: Configuration > Roles > Reload file.
+
+[meta]
+machine = "lab"
+description = "Computer A, lab: motor controllers + LECO DAQ_Viewer of computer B"
+
+[actuators.OC_H]
+module = "TO_FILL_OC_H"
+units = "step"
+note = "Output coupler, horizontal (picomotor). Direction: + = beam to the right on Cam1?"
+
+[actuators.OC_V]
+module = "TO_FILL_OC_V"
+units = "step"
+note = "Output coupler, vertical (picomotor)"
+
+[actuators.EM_H]
+module = "TO_FILL_EM_H"
+units = "step"
+note = "End mirror, horizontal (picomotor)"
+
+[actuators.EM_V]
+module = "TO_FILL_EM_V"
+units = "step"
+note = "End mirror, vertical (picomotor)"
+
+[actuators.Jet_X]
+module = "TO_FILL_JET_X"
+units = "mm"
+note = "Gas jet, X"
+
+[actuators.Jet_Y]
+module = "TO_FILL_JET_Y"
+units = "mm"
+note = "Gas jet, Y"
+
+[signals.Cam1_x]
+channel = "TO_FILL_LECO_B/Cam1/x"
+units = "px"
+note = "Centroid X of camera 1 (computer B)"
+
+[signals.Cam1_y]
+channel = "TO_FILL_LECO_B/Cam1/y"
+units = "px"
+
+[signals.Cam1_sum]
+channel = "TO_FILL_LECO_B/Cam1/sum"
+
+[signals.Cam2_x]
+channel = "TO_FILL_LECO_B/Cam2/x"
+units = "px"
+
+[signals.Cam2_y]
+channel = "TO_FILL_LECO_B/Cam2/y"
+units = "px"
+
+[signals.Cam2_sum]
+channel = "TO_FILL_LECO_B/Cam2/sum"
+
+[signals.Laser_power]
+channel = "TO_FILL_Power/Power/W"
+units = "W"
+note = "Laser power: role of the intensity guard (S2)"
+
+[signals.XUV_flux]
+channel = "TO_FILL_LECO_B/XUV/flux"
+
+[heartbeats]
+# O9: frame counter added in the extension of computer B (+1 per frame).
+# Key = DAQ_Viewer title, value = channel of the counter.
+"TO_FILL_LECO_B" = "TO_FILL_LECO_B/Stats/frame_counter"

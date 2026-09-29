@@ -25,7 +25,7 @@ def scan_positions(start: float, stop: float, step: float) -> List[float]:
     """Same grid as the historical ScanEngine (start included, stop included when reached)."""
     step = abs(float(step))
     if step == 0:
-        raise ValueError('le pas du scan ne peut pas être nul')
+        raise ValueError('the scan step cannot be zero')
     n = int(abs(stop - start) / step + 1e-9) + 1
     direction = 1.0 if stop >= start else -1.0
     return [start + direction * i * step for i in range(n)]
@@ -50,7 +50,7 @@ class Scan1DAutomation(Automation):
     def __init__(self, role: str, start: float, stop: float, step: float, dwell: float = 0.1,
                  samples: int = 1, channels: Optional[List[str]] = None, relative: bool = True,
                  return_to_start: bool = True, check_intensity: bool = False,
-                 auto_id: str = 'SCAN', label: str = 'Scan 1D'):
+                 auto_id: str = 'SCAN', label: str = '1D Scan'):
         super().__init__(auto_id, label)
         self.period_s = 0.05
         self.role = role
@@ -98,8 +98,8 @@ class Scan1DAutomation(Automation):
         return {module: (min(pts), max(pts))}
 
     def summary(self) -> str:
-        ref = 'relatif à la position actuelle' if self.relative else 'absolu'
-        return (f"{self.label} : {self.role} de {self.start_v:g} à {self.stop_v:g} pas {self.step_v:g} ({ref}), "
+        ref = 'relative to the current position' if self.relative else 'absolute'
+        return (f"{self.label}: {self.role} from {self.start_v:g} to {self.stop_v:g} step {self.step_v:g} ({ref}), "
                 f"{len(scan_positions(self.start_v, self.stop_v, self.step_v))} points")
 
     def validate(self, core: 'LaserCore') -> List[str]:
@@ -107,7 +107,7 @@ class Scan1DAutomation(Automation):
             n = len(scan_positions(self.start_v, self.stop_v, self.step_v))
         except ValueError as e:
             return [str(e)]
-        return [] if n > 0 else ['scan vide']
+        return [] if n > 0 else ['empty scan']
 
     # ------------------------------------------------------------------ lifecycle
     def on_start(self, core: 'LaserCore') -> Optional[str]:
@@ -178,7 +178,7 @@ class Scan1DAutomation(Automation):
         self.index += 1
         if self.index >= len(self.points):
             self.completed = True
-            core.events.publish(EventKind.SCAN, self.id, f"{self.label} terminé ({len(self.results)} points)")
+            core.events.publish(EventKind.SCAN, self.id, f"{self.label} finished ({len(self.results)} points)")
             if self.return_to_start and self.origin is not None:
                 self.phase = 'return'
                 self.sequencer.set_targets({self.role: self.origin})
@@ -202,7 +202,7 @@ class XYScanAutomation(Automation):
 
     def __init__(self, group_id: str, x_role: str, y_role: str, xmin: float, xmax: float, dx: float,
                  ymin: float, ymax: float, dy: float, dwell: float = 0.0, label: str = ''):
-        super().__init__(f'XYSCAN:{group_id}', label or f'Scan XY {group_id}')
+        super().__init__(f'XYSCAN:{group_id}', label or f'XY Scan {group_id}')
         self.period_s = 0.05
         self.x_role, self.y_role = x_role, y_role
         self.bounds = dict(xmin=float(xmin), xmax=float(xmax), dx=float(dx),
@@ -235,15 +235,15 @@ class XYScanAutomation(Automation):
 
     def summary(self) -> str:
         b = self.bounds
-        return (f"{self.label} : X={self.x_role} [{b['xmin']:g}, {b['xmax']:g}] pas {b['dx']:g}, "
-                f"Y={self.y_role} [{b['ymin']:g}, {b['ymax']:g}] pas {b['dy']:g} ({len(self.pattern)} points)")
+        return (f"{self.label}: X={self.x_role} [{b['xmin']:g}, {b['xmax']:g}] step {b['dx']:g}, "
+                f"Y={self.y_role} [{b['ymin']:g}, {b['ymax']:g}] step {b['dy']:g} ({len(self.pattern)} points)")
 
     def validate(self, core: 'LaserCore') -> List[str]:
         errors = []
         if not self.pattern:
-            errors.append('paramètres de scan invalides (min < max, pas > 0)')
+            errors.append('invalid scan parameters (min < max, step > 0)')
         if self.x_role == self.y_role:
-            errors.append('X et Y doivent être deux actionneurs différents')
+            errors.append('X and Y must be two different actuators')
         return errors
 
     def on_start(self, core: 'LaserCore') -> Optional[str]:
@@ -273,7 +273,7 @@ class XYScanAutomation(Automation):
             if self.index >= len(self.pattern):
                 self.completed = True
                 self.finished = True
-                core.events.publish(EventKind.SCAN, self.id, f"{self.label} terminé ({len(self.pattern)} points)")
+                core.events.publish(EventKind.SCAN, self.id, f"{self.label} finished ({len(self.pattern)} points)")
                 return
             x, y = self.pattern[self.index]
             self.sequencer.set_targets({self.x_role: x, self.y_role: y})

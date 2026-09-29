@@ -1,4 +1,4 @@
-"""State snapshot of the laser (cahier des charges T7.1).
+"""State snapshot of the laser (specification T7.1).
 
 Generic by construction (O7): every declared role (actuator or 0D signal), every actuator of the
 dashboard, every 0D channel received and every automation's internal variables are included

@@ -1,4 +1,4 @@
-"""Hardware broker: the only door to the hardware (cahier des charges T3.1, option O2-A).
+"""Hardware broker: the only door to the hardware (specification T3.1, option O2-A).
 
 Event driven, in the GUI thread: orders are sent without blocking (``move_rel``/``move_abs`` of
 the DAQ_Move), the end of a move is followed through ``move_done_signal``, data arrive through
@@ -242,7 +242,7 @@ class HardwareBroker:
             port.move_rel(float(delta))
         except Exception as e:
             st.busy, st.expect_done, st.mover = False, False, None
-            self.events.publish(EventKind.ERROR, 'BROKER', f'Ordre refusé par {module}: {e}', Level.ERROR)
+            self.events.publish(EventKind.ERROR, 'BROKER', f'Order refused by {module}: {e}', Level.ERROR)
             return False
         return True
 
@@ -250,19 +250,19 @@ class HardwareBroker:
     def _manual_prologue(self, ref: str, source: str) -> Tuple[Optional[str], Optional[ActuatorPort], str]:
         module = self.resolve(ref)
         if module is None:
-            return None, None, f"actionneur inconnu : {ref}"
+            return None, None, f"unknown actuator: {ref}"
         port = self.actuators.get(module)
         if port is None:
-            return None, None, f"module absent du dashboard : {module}"
+            return None, None, f"module missing from the dashboard: {module}"
         if self.core is not None and self.core.estop:
-            return None, None, "ARRÊT D'URGENCE actif : cliquez « Réarmer » avant tout mouvement"
+            return None, None, "EMERGENCY STOP active: click 'Re-arm' before any move"
         return module, port, ''
 
     def _preempt(self, module: str, source: str):
         if self.core is not None:
             self.core.human_preempt(module, source)
 
-    def manual_move_abs(self, ref: str, value: float, source: str = 'manuel') -> Tuple[bool, str]:
+    def manual_move_abs(self, ref: str, value: float, source: str = 'manual') -> Tuple[bool, str]:
         module, port, msg = self._manual_prologue(ref, source)
         if module is None:
             return False, msg
@@ -272,7 +272,7 @@ class HardwareBroker:
             return False, refusal
         st = self.motors[module]
         if st.position is not None and abs(float(value) - st.position) <= 1e-12 * max(1.0, abs(st.position)):
-            return True, 'déjà en position'   # PyMoDAQ 5.1 sends no move_done for a null move
+            return True, 'already in position'   # PyMoDAQ 5.1 sends no move_done for a null move
         self._preempt(module, source)                  # S7: stop the automation BEFORE the order
         st.busy, st.busy_since, st.mover, st.expect_done = True, self.clock.now(), f'{HUMAN}:{source}', True
         st.commanded = float(value)
@@ -283,7 +283,7 @@ class HardwareBroker:
             return False, f'{module}: {e}'
         return True, ''
 
-    def manual_move_rel(self, ref: str, delta: float, source: str = 'manuel') -> Tuple[bool, str]:
+    def manual_move_rel(self, ref: str, delta: float, source: str = 'manual') -> Tuple[bool, str]:
         module, port, msg = self._manual_prologue(ref, source)
         if module is None:
             return False, msg
@@ -295,7 +295,7 @@ class HardwareBroker:
         if lim is not None and self.safety.config.manual_abs_limits and \
                 (lim.abs_min is not None or lim.abs_max is not None):
             if st.position is None:
-                return False, f"{role}: position inconnue, impossible de vérifier les limites"
+                return False, f"{role}: unknown position, cannot check the limits"
             refusal = self.safety.check_manual(role, st.position + float(delta))
             if refusal:
                 return False, refusal
@@ -316,7 +316,7 @@ class HardwareBroker:
         if module is None:
             return False, msg
         if not port.supports_native_jog():
-            return False, f"{module}: le plugin n'implémente pas jog()"
+            return False, f"{module}: the plugin does not implement jog()"
         self._preempt(module, source)
         st = self.motors[module]
         st.busy, st.busy_since, st.mover, st.expect_done, st.jogging = \
@@ -356,7 +356,7 @@ class HardwareBroker:
     def manual_stop(self, ref: str, source: str = 'stop') -> Tuple[bool, str]:
         module = self.resolve(ref)
         if module is None or module not in self.actuators:
-            return False, f"actionneur inconnu : {ref}"
+            return False, f"unknown actuator: {ref}"
         self._preempt(module, source)
         self._stop_module(module)
         return True, ''
@@ -369,7 +369,7 @@ class HardwareBroker:
         try:
             port.stop()
         except Exception as e:
-            self.events.publish(EventKind.ERROR, 'BROKER', f'Stop impossible sur {module}: {e}', Level.ERROR)
+            self.events.publish(EventKind.ERROR, 'BROKER', f'Stop failed on {module}: {e}', Level.ERROR)
         st.busy, st.expect_done, st.jogging, st.mover = False, False, False, None
         st.busy_since = None
         st.stop_grace_until = self.clock.now() + STOP_GRACE_S
@@ -378,7 +378,7 @@ class HardwareBroker:
         except Exception:  # pragma: no cover
             pass
 
-    def stop_all(self, reason: str = 'arrêt'):
+    def stop_all(self, reason: str = 'stop'):
         """Stop EVERY actuator of the dashboard (not only the roles), S11."""
         for module in list(self.actuators):
             self._stop_module(module)
@@ -413,7 +413,7 @@ class HardwareBroker:
                 try:
                     port.start_grab()
                 except Exception as e:
-                    self.events.publish(EventKind.ERROR, 'BROKER', f'Acquisition impossible sur {n}: {e}',
+                    self.events.publish(EventKind.ERROR, 'BROKER', f'Acquisition failed on {n}: {e}',
                                         Level.ERROR)
 
     def stop_grab(self, names: Optional[Iterable[str]] = None):

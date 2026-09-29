@@ -1,58 +1,65 @@
 # Changelog
 
-Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : tags git (`hatch-vcs`).
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git tags (`hatch-vcs`).
+
+## [Unreleased]
+
+### Changed
+- The whole plugin (user interface, messages, logs, docstrings, documentation) is now in English.
+  Documentation files renamed: `docs/user_guide.md`, `docs/incident_sheet.md`, `docs/design.md`,
+  `docs/pid_tuning.md`, `docs/examples/`.
+- Simulator demo preset renamed "Simulator demo" (was "Démo simulateur"); its periodic optimization
+  id is now `Track_PD` (was `Suivi_PD`). Run `tools.sim_preset --force` to rewrite it.
 
 ## [0.2.0] — 2026-09-23
 
-L'onglet Alignement devient le poste de travail principal.
+The Alignment tab becomes the main workstation.
 
-### Ajouté
-- **Boutons d'automatismes dans l'onglet Alignement**, sous les moteurs : un par PID ou optimisation
-  marqué « Bouton dans Alignement ». Un clic démarre, un autre arrête, un clic sur un automatisme gelé
-  le reprend, sans confirmation. Clic droit : reprendre, arrêter, ouvrir les réglages. Un refus
-  (limites manquantes, arrêt d'urgence…) s'affiche sous les boutons et dans le journal, sans boîte de
-  dialogue.
-- **Plusieurs optimisations nommées** (onglet Optimisation : ajouter, dupliquer, renommer, supprimer),
-  chacune avec son nom court et l'action de son bouton (une passe, périodique, complète).
-- Simulateur : deux bancs de test, pointé de faisceau (`Steer_H/V` → `Beam_x/y`) et photodiode
-  (`PD_X/Y` → `PD_current`). `tools.sim_preset` écrit aussi le preset Laser Control
-  « Démo simulateur » (PID et optimisations avec bouton, limites de sécurité, axes d'alignement).
+### Added
+- **Automation buttons in the Alignment tab**, under the motors: one per PID or optimization marked
+  "Button in Alignment". One click starts, another one stops, a click on a held automation resumes
+  it, without confirmation. Right click: resume, stop, open settings. A refusal (missing limits,
+  emergency stop…) is shown under the buttons and in the log, without a dialog box.
+- **Several named optimizations** (Optimization tab: add, duplicate, rename, remove), each one with its
+  short name and the action of its button (one pass, periodic, full).
+- Simulator: two test benches, beam pointing (`Steer_H/V` → `Beam_x/y`) and photodiode
+  (`PD_X/Y` → `PD_current`). `tools.sim_preset` also writes the Laser Control preset
+  "Simulator demo" (PIDs and optimizations with a button, safety limits, alignment axes).
 
-### Modifié
-- Presets : schéma 2 (`optimizers`, liste). Un preset du schéma 1 est converti au chargement : son
-  optimiseur devient l'optimisation « Optimiseur ».
-- La barre d'état ne montre plus que les automatismes engagés.
-- `tools.sim_preset` complète le fichier de rôles existant (sans modifier les rôles présents).
-- Simulateur : chutes d'intensité aléatoires désactivées par défaut (réglage du viewer `SimB`).
-- Guide PID : partir de Ki = 0 (le moteur intègre déjà les pas).
+### Changed
+- Presets: schema 2 (`optimizers`, list). A schema 1 preset is converted when loaded: its optimizer
+  becomes the "Optimizer" optimization.
+- The status bar only shows the engaged automations.
+- `tools.sim_preset` completes the existing roles file (without changing the existing roles).
+- Simulator: random intensity drops disabled by default (setting of the `SimB` viewer).
+- PID guide: start from Ki = 0 (the motor already integrates the steps).
 
 ## [0.1.0] — 2026-09-23
 
-Première version : une seule extension remplace LaserController, XY Stage Controller et leurs
-onglets, conformément au cahier des charges (D1–D9, options O2, O3, O4, O6, O8, O9 et O10 en A).
+First version: a single extension replaces LaserController, XY Stage Controller and their tabs,
+according to the specification (D1–D9, options O2, O3, O4, O6, O8, O9 and O10 as A).
 
-### Ajouté
-- Cœur événementiel dans le thread GUI (O2-A) : broker matériel, source de signaux avec fraîcheur et
-  compteur de trames (O9-A), propriété des moteurs (D4 : le dernier activé prend la main, l'autre en
-  pause, O3-A ; D5 : action humaine = arrêt), superviseur de sécurité S1–S5, machine d'états, bus
-  d'événements, arrêt d'urgence verrouillé (S11).
-- Engines : plusieurs PID simultanés (anti-windup, bande morte, pas de coup de dérivée, confirmation
-  des mouvements, consigne capturée), optimiseur périodique enfichable avec les 4 modes historiques
-  (Joint, Sequential, Nelder-Mead, Gradient/Newton-lite) et l'optimisation complète, scan 1D, scan
-  serpentin XY, moniteur passif.
-- Interface : barre d'état toujours visible, Vue d'ensemble (stabilisation en un clic, tout ou rien,
-  cartes moteurs avec propriétaire et enveloppe), Alignement (jog clavier step / native / limit,
-  historique cliquable), XY (groupes, positions mémorisées, carte), PID, Optimisation, Scan 1D,
-  Enregistrement, Presets, Configuration (rôles, heartbeat, sécurité, détecteurs, dossiers).
-- Rôles logiques par machine (`roles_<machine>.toml`) : les presets sont portables entre bureau et labo.
-- Presets versionnés (brouillon / validé, empreinte du contenu, validation par machine), session
-  restaurée sans rien démarrer, import des anciens profils (sessions, PID, optimiseur, XY).
-- Enregistrement HDF5 (O4-A) : snapshots périodiques de tous les rôles et automatismes, rafales sur
-  événement avec tampon avant événement, notes, état ML (O6-A), rotation, lecture `load_session`,
-  fichiers déclencheurs pour l'ordi B (O8-A).
-- Simulateur LaserSim (plugins moteur et détecteur 0D : dérive, bruit, couplages, chutes d'intensité,
-  ordi B muet ou figé) et outil `tools/sim_preset` (preset / experiment et rôles du simulateur).
-- Shaker Red Pitaya non bloquant.
-- 68 tests : invariants S1–S12, engines, presets, enregistrement, vrais modules PyMoDAQ, interface,
-  chargement par le dashboard PyMoDAQ 5.1 et 5.2.
-- Documentation : guide utilisateur, fiche incident, conception, réglage PID.
+### Added
+- Event-driven core in the GUI thread (O2-A): hardware broker, signal source with freshness and frame
+  counter (O9-A), motor ownership (D4: the last activated one takes over, the other one pauses, O3-A;
+  D5: human action = stop), S1–S5 safety supervisor, state machine, event bus, latched emergency
+  stop (S11).
+- Engines: several simultaneous PIDs (anti-windup, deadband, no derivative kick, move confirmation,
+  captured setpoint), pluggable periodic optimizer with the 4 historical modes (Joint, Sequential,
+  Nelder-Mead, Gradient/Newton-lite) and the full optimization, 1D scan, XY snake scan, passive monitor.
+- User interface: always-visible status bar, Overview (one-click all-or-nothing stabilization, motor
+  cards with owner and envelope), Alignment (step / native / limit keyboard jog, clickable history),
+  XY (groups, saved positions, map), PID, Optimization, 1D Scan, Recording, Presets, Configuration
+  (roles, heartbeat, safety, detectors, folders).
+- Logical roles per machine (`roles_<machine>.toml`): presets are portable between office and lab.
+- Versioned presets (draft / validated, content hash, validation per machine), session restored
+  without starting anything, import of the legacy profiles (sessions, PID, optimizer, XY).
+- HDF5 recording (O4-A): periodic snapshots of every role and automation, bursts on event with a
+  pre-event buffer, notes, ML state (O6-A), rotation, `load_session` reader, trigger files for
+  computer B (O8-A).
+- LaserSim simulator (motor and 0D detector plugins: drift, noise, couplings, intensity drops,
+  computer B silent or frozen) and `tools/sim_preset` tool (preset / experiment and roles of the simulator).
+- Non-blocking Red Pitaya shaker.
+- 68 tests: invariants S1–S12, engines, presets, recording, real PyMoDAQ modules, user interface,
+  loading by the PyMoDAQ 5.1 and 5.2 dashboard.
+- Documentation: user guide, incident sheet, design, PID tuning.

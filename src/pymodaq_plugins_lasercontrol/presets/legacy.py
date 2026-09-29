@@ -1,4 +1,4 @@
-"""Import of the historical profiles (cahier des charges T6.3).
+"""Import of the historical profiles (specification T6.3).
 
 Handled files (``~/.pymodaq/laser_controller_profiles`` and ``~/.pymodaq/xy_stage_profiles``):
 
@@ -45,7 +45,7 @@ class LegacyImport:
                 i += 1
             self.roles.set_actuator(role, module)
             self.created_roles.append(role)
-            self.report.append(f"rôle moteur créé : {role} → {module}")
+            self.report.append(f"motor role created: {role} → {module}")
         return role
 
     def signal_role(self, channel: str) -> str:
@@ -60,7 +60,7 @@ class LegacyImport:
                 i += 1
             self.roles.set_signal(role, channel)
             self.created_roles.append(role)
-            self.report.append(f"rôle signal créé : {role} → {channel} (clé historique : 1er canal)")
+            self.report.append(f"signal role created: {role} → {channel} (legacy key: 1st channel)")
         return role
 
     # ------------------------------------------------------------------ converters
@@ -86,7 +86,7 @@ class LegacyImport:
             old = dict(cfg.get('config') or {})
             pid['settings'] = PIDSettings.from_dict(old).to_dict()
             pids.append(pid)
-            self.report.append(f"PID importé : {pid['id']} ({pid['signal']} → {', '.join(motors)})")
+            self.report.append(f"PID imported: {pid['id']} ({pid['signal']} → {', '.join(motors)})")
         return pids
 
     def optimizer_from_profile(self, data: dict) -> dict:
@@ -102,7 +102,7 @@ class LegacyImport:
                                    'mode': s.get('mode', 'Maximize'), 'weight': float(s.get('weight', 1.0)),
                                    'p': float(s.get('p', 2.0)), 'target_value': float(s.get('target_value', 0.0)),
                                    'auto_target': bool(s.get('auto_target', True))})
-        self.report.append(f"optimiseur importé : {len(opt['motors'])} moteur(s), {len(opt['signals'])} signal(aux)")
+        self.report.append(f"optimizer imported: {len(opt['motors'])} motor(s), {len(opt['signals'])} signal(s)")
         return opt
 
     def alignment_from_xy(self, data: dict) -> Tuple[dict, List[dict]]:
@@ -118,8 +118,8 @@ class LegacyImport:
             g['actuator_x'] = self.actuator_role(tab.get('actuator_x', 'None'))
             g['actuator_y'] = self.actuator_role(tab.get('actuator_y', 'None'))
             groups.append(g)
-        self.report.append(f"alignement importé : {len(align.get('axes', []) or [])} axe(s), "
-                           f"{len(groups)} groupe(s) XY")
+        self.report.append(f"alignment imported: {len(align.get('axes', []) or [])} axis(es), "
+                           f"{len(groups)} XY group(s)")
         return align, groups
 
     # ------------------------------------------------------------------ entry point
@@ -151,11 +151,11 @@ class LegacyImport:
                                                     for v in data.values()):
             preset['pids'] = self.pids_from_profile(data, safety)
         elif isinstance(data, dict) and 'schema_version' in data:
-            self.report.append(f"{name} est déjà un preset Laser Control : ouvert tel quel")
+            self.report.append(f"{name} is already a Laser Control preset: opened as is")
             return normalize(data)
         else:
-            raise ValueError(f"format de {name} non reconnu")
+            raise ValueError(f"format of {name} not recognized")
         preset['safety'] = safety.to_dict()
-        preset['description'] = (preset.get('description', '') + f"\nImporté de {name}").strip()
-        self.report.append("⚠ définir max_step / max_excursion / rate_max des rôles moteurs avant activation")
+        preset['description'] = (preset.get('description', '') + f"\nImported from {name}").strip()
+        self.report.append("⚠ set max_step / max_excursion / rate_max of the motor roles before activation")
         return normalize(preset)

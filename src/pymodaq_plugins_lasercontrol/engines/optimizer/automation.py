@@ -54,7 +54,7 @@ class OptimizerAutomation(Automation):
     acquire_at_start = False
 
     def __init__(self, config: Optional[dict] = None, motors: Optional[List[dict]] = None,
-                 signals: Optional[List[dict]] = None, auto_id: str = 'OPT', label: str = 'Optimiseur'):
+                 signals: Optional[List[dict]] = None, auto_id: str = 'OPT', label: str = 'Optimizer'):
         super().__init__(auto_id, label)
         self.period_s = 0.05
         self.config = dict(DEFAULT_OPT_CONFIG)
@@ -113,24 +113,24 @@ class OptimizerAutomation(Automation):
         mot = ', '.join(f"{m['role']} (±{float(m['max_step']):g})" for m in self.motors_cfg)
         sig = ', '.join(f"{s['role']} [{s.get('mode', 'Maximize')}]" for s in self.signals_cfg
                         if float(s.get('weight', 0) or 0) != 0)
-        mode = 'une passe' if self.single_shot else f"une passe toutes les {self.config['interval_min']:g} min"
-        return f"{self.label} ({self.config['run_mode']}, {mode}) : moteurs {mot} ; objectifs {sig}"
+        mode = 'one pass' if self.single_shot else f"one pass every {self.config['interval_min']:g} min"
+        return f"{self.label} ({self.config['run_mode']}, {mode}): motors {mot} ; objectives {sig}"
 
     def validate(self, core: 'LaserCore') -> List[str]:
         errors = []
         if not self.motors_cfg:
-            errors.append("optimiseur : aucun moteur coché")
+            errors.append("optimizer: no motor ticked")
         if not self.objective_roles():
-            errors.append("optimiseur : aucun signal objectif coché (poids non nul)")
+            errors.append("optimizer: no objective signal ticked (non-zero weight)")
         for m in self.motors_cfg:
             if float(m.get('max_step', 0)) <= 0 or float(m.get('probe_step', 0)) <= 0:
-                errors.append(f"optimiseur : {m['role']} max_step et probe_step doivent être > 0")
+                errors.append(f"optimizer: {m['role']} max_step and probe_step must be > 0")
         for role in self.objective_roles():
             ch = core.roles.channel_for(role)
             if ch is None:
-                errors.append(f"optimiseur : rôle signal '{role}' non déclaré")
+                errors.append(f"optimizer: signal role '{role}' not declared")
             elif not core.signals.known(ch):
-                errors.append(f"optimiseur : canal '{ch}' jamais reçu")
+                errors.append(f"optimizer: channel '{ch}' never received")
         return errors
 
     # ------------------------------------------------------------------ control
@@ -163,7 +163,7 @@ class OptimizerAutomation(Automation):
         self.finished = False
         self.phase = 'waiting'
         self.next_pass_t = core.clock.now()           # first pass right away
-        self.status = 'démarré'
+        self.status = 'started'
         self._aborted = False
         return None
 
@@ -177,8 +177,8 @@ class OptimizerAutomation(Automation):
             self._close_algo()
             self._aborted = True
             self.phase = 'aborted'
-            self.status = f"passe interrompue ({self.reason})"
-            core.events.publish(EventKind.OPTIMIZER, self.id, f"Passe interrompue : {self.reason}",
+            self.status = f"pass aborted ({self.reason})"
+            core.events.publish(EventKind.OPTIMIZER, self.id, f"Pass aborted: {self.reason}",
                                 Level.WARNING)
 
     def on_resume(self, core: 'LaserCore'):
@@ -216,7 +216,7 @@ class OptimizerAutomation(Automation):
     def _start_pass(self, core: 'LaserCore', now: float):
         self.pass_start = {r: core.position(r) for r in self.motor_roles()}
         if any(v is None for v in self.pass_start.values()):
-            self.status = 'position inconnue : passe reportée'
+            self.status = 'unknown position: pass postponed'
             self.next_pass_t = now + 5.0
             return
         self.phase = 'settle'                           # wait until PIDs' last moves are finished
@@ -227,16 +227,16 @@ class OptimizerAutomation(Automation):
                                       for m in self.motors_cfg],
                               config=dict(self.config), rng=self.rng)
         self.algo = create_algorithm(self.config.get('run_mode', 'joint'))
-        self.status = 'estimation du bruit…'
+        self.status = 'estimating noise…'
         self.pass_best_cost = math.nan
         core.events.publish(EventKind.OPTIMIZER, self.id,
-                            f"Passe d'optimisation {self.pass_count + 1} ({self.algo.label})", Level.INFO)
+                            f"Optimization pass {self.pass_count + 1} ({self.algo.label})", Level.INFO)
 
     def _end_pass(self, core: 'LaserCore', now: float, message: str = ''):
         self._close_algo()
         self.pass_count += 1
-        self.status = message or f"passe terminée (coût {self.last_cost:.4g})"
-        core.events.publish(EventKind.OPTIMIZER, self.id, f"Fin de passe : {self.status}", Level.INFO,
+        self.status = message or f"pass finished (cost {self.last_cost:.4g})"
+        core.events.publish(EventKind.OPTIMIZER, self.id, f"End of pass: {self.status}", Level.INFO,
                             cost=self.last_cost)
         if self.single_shot:
             self.phase = 'done'
@@ -294,7 +294,7 @@ class OptimizerAutomation(Automation):
                 self.sequencer.set_targets(self._targets(req.offsets))
                 self.phase = 'moving'
                 return
-            raise TypeError(f"requête d'optimiseur inconnue : {req!r}")
+            raise TypeError(f"unknown optimizer request: {req!r}")
 
     def tick(self, core: 'LaserCore', now: float):
         if self.phase == 'waiting':

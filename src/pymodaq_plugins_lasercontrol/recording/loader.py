@@ -1,4 +1,4 @@
-"""Session loader for the analysis (cahier des charges T9.2).
+"""Session loader for the analysis (specification T9.2).
 
 >>> from pymodaq_plugins_lasercontrol.recording.loader import load_session
 >>> s = load_session('session_20260923_101500.h5')

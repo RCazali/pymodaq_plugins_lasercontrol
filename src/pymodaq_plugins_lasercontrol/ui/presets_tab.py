@@ -24,17 +24,17 @@ class PresetsTab(QtWidgets.QWidget):
         main.setContentsMargins(6, 6, 6, 6)
 
         left = QtWidgets.QVBoxLayout()
-        left.addWidget(QtWidgets.QLabel('<b>Presets</b> (validés en premier)'))
+        left.addWidget(QtWidgets.QLabel('<b>Presets</b> (validated first)'))
         self.list = QtWidgets.QListWidget()
         self.list.itemDoubleClicked.connect(lambda *_: self._on_load())
         left.addWidget(self.list, 1)
         grid = QtWidgets.QGridLayout()
-        self.btn_load = styled_button('📥 Charger', '#2980b9', 'Charge le preset (rien ne démarre)')
-        self.btn_new = styled_button('✚ Nouveau', None)
-        self.btn_delete = styled_button('🗑 Supprimer', None)
-        self.btn_import = styled_button('⇪ Importer un ancien profil…', None,
-                                        'Profils PID / optimisation / XY / session de l’ancienne extension')
-        self.btn_folder = styled_button('📂 Dossier', None)
+        self.btn_load = styled_button('📥 Load', '#2980b9', 'Loads the preset (nothing starts)')
+        self.btn_new = styled_button('✚ New', None)
+        self.btn_delete = styled_button('🗑 Delete', None)
+        self.btn_import = styled_button('⇪ Import a legacy profile…', None,
+                                        'PID / optimization / XY / session profiles of the former extension')
+        self.btn_folder = styled_button('📂 Folder', None)
         grid.addWidget(self.btn_load, 0, 0)
         grid.addWidget(self.btn_new, 0, 1)
         grid.addWidget(self.btn_delete, 1, 0)
@@ -48,7 +48,7 @@ class PresetsTab(QtWidgets.QWidget):
         self.name = QtWidgets.QLabel('—')
         self.name.setStyleSheet('font-size: 13pt; font-weight: bold;')
         head.addWidget(self.name)
-        self.badge = Badge('brouillon', '#e67e22')
+        self.badge = Badge('draft', '#e67e22')
         head.addWidget(self.badge)
         head.addStretch()
         self.hash = QtWidgets.QLabel('')
@@ -58,31 +58,31 @@ class PresetsTab(QtWidgets.QWidget):
         form = QtWidgets.QFormLayout()
         self.description = QtWidgets.QPlainTextEdit()
         self.description.setMaximumHeight(70)
-        form.addRow('Description :', self.description)
+        form.addRow('Description:', self.description)
         self.regime = QtWidgets.QComboBox()
         self.regime.setEditable(True)
-        self.regime.addItems(['CW', 'ML', 'autre'])
-        form.addRow('Régime :', self.regime)
+        self.regime.addItems(['CW', 'ML', 'other'])
+        form.addRow('Regime:', self.regime)
         self.pump = QtWidgets.QLineEdit()
-        self.pump.setPlaceholderText('ex. 180 W')
-        form.addRow('Puissance de pompe :', self.pump)
+        self.pump.setPlaceholderText('e.g. 180 W')
+        form.addRow('Pump power:', self.pump)
         self.cond_notes = QtWidgets.QLineEdit()
-        form.addRow('Conditions / notes :', self.cond_notes)
+        form.addRow('Conditions / notes:', self.cond_notes)
         self.validation = QtWidgets.QLabel('')
         self.validation.setWordWrap(True)
         self.validation.setStyleSheet('color: gray;')
-        form.addRow('Validation :', self.validation)
+        form.addRow('Validation:', self.validation)
         right.addLayout(form)
         row = QtWidgets.QHBoxLayout()
-        self.btn_save = styled_button('💾 Enregistrer', '#27ae60')
-        self.btn_save_as = styled_button('💾 Enregistrer sous…', None)
-        self.btn_validate = styled_button('✔ Marquer comme validé…', '#16a085',
-                                          'Après un essai réussi : auteur + commentaire (T6.4)')
-        self.btn_check = styled_button('🔎 Vérifier sur cette machine', None)
+        self.btn_save = styled_button('💾 Save', '#27ae60')
+        self.btn_save_as = styled_button('💾 Save as…', None)
+        self.btn_validate = styled_button('✔ Mark as validated…', '#16a085',
+                                          'After a successful test: author + comment (T6.4)')
+        self.btn_check = styled_button('🔎 Check on this machine', None)
         for b in (self.btn_save, self.btn_save_as, self.btn_validate, self.btn_check):
             row.addWidget(b)
         right.addLayout(row)
-        right.addWidget(QtWidgets.QLabel('<b>Cohérence avec cette machine</b> (rôles, modules, limites de sécurité) :'))
+        right.addWidget(QtWidgets.QLabel('<b>Consistency with this machine</b> (roles, modules, safety limits):'))
         self.report = QtWidgets.QPlainTextEdit()
         self.report.setReadOnly(True)
         right.addWidget(self.report, 1)
@@ -111,9 +111,9 @@ class PresetsTab(QtWidgets.QWidget):
         for inf in self.app.store.list():
             it = QtWidgets.QListWidgetItem(('✔ ' if inf.status == 'validated' else '   ') + inf.name)
             it.setData(QtCore.Qt.UserRole, inf.name)
-            tip = f'{inf.description}\nrégime : {inf.regime}\nmodifié : {inf.modified}'
+            tip = f'{inf.description}\nregime: {inf.regime}\nmodified: {inf.modified}'
             if inf.validated_on:
-                tip += f'\nvalidé : {inf.validated_on}'
+                tip += f'\nvalidated: {inf.validated_on}'
             it.setToolTip(tip)
             if inf.name == self.app.preset.get('name'):
                 f = it.font()
@@ -148,13 +148,13 @@ class PresetsTab(QtWidgets.QWidget):
 
     def _update_status(self, preset: dict):
         if preset.get('status') == 'validated':
-            self.badge.set('✔ validé', '#27ae60')
-            self.validation.setText(f"validé le {preset.get('validated_on')} par {preset.get('validated_by') or '?'}"
+            self.badge.set('✔ validated', '#27ae60')
+            self.validation.setText(f"validated on {preset.get('validated_on')} by {preset.get('validated_by') or '?'}"
                                     f"\n{preset.get('validation_notes', '')}")
         else:
-            self.badge.set('brouillon', '#e67e22')
-            self.validation.setText(preset.get('validation_notes', '') or 'non validé')
-        self.hash.setText(f"empreinte {content_hash(preset)}")
+            self.badge.set('draft', '#e67e22')
+            self.validation.setText(preset.get('validation_notes', '') or 'not validated')
+        self.hash.setText(f"hash {content_hash(preset)}")
 
     def _on_changed(self, *args):
         if not self._loading:
@@ -172,34 +172,34 @@ class PresetsTab(QtWidgets.QWidget):
             self.app.load_preset_interactive(name, self)
 
     def _on_new(self):
-        name, ok = QtWidgets.QInputDialog.getText(self, 'Nouveau preset', 'Nom :')
+        name, ok = QtWidgets.QInputDialog.getText(self, 'New preset', 'Name:')
         if ok and name.strip():
             self.app.new_preset(name.strip(), self)
 
     def _on_delete(self):
         name = self._selected()
-        if name and ask_yes_no(self, 'Supprimer', f'Supprimer le fichier du preset « {name} » ?'):
+        if name and ask_yes_no(self, 'Delete', f"Delete the file of preset '{name}'?"):
             self.app.store.delete(name)
             self.refresh_list()
 
     def _on_save_as(self):
-        name, ok = QtWidgets.QInputDialog.getText(self, 'Enregistrer sous', 'Nom du preset :',
+        name, ok = QtWidgets.QInputDialog.getText(self, 'Save as', 'Preset name:',
                                                   text=self.app.preset.get('name', ''))
         if ok and name.strip():
             if self.app.store.exists(name.strip()) and name.strip() != self.app.preset.get('name') and \
-                    not ask_yes_no(self, 'Remplacer', f'« {name.strip()} » existe déjà. Remplacer ?'):
+                    not ask_yes_no(self, 'Replace', f"'{name.strip()}' already exists. Replace it?"):
                 return
             self.app.save_preset(name.strip())
 
     def _on_validate(self):
         dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle('Marquer comme validé')
+        dlg.setWindowTitle('Mark as validated')
         form = QtWidgets.QFormLayout(dlg)
         who = QtWidgets.QLineEdit(self.app.operator)
         notes = QtWidgets.QPlainTextEdit()
-        notes.setPlaceholderText('conditions de l’essai, résultat, remarques…')
-        form.addRow('Validé par :', who)
-        form.addRow('Commentaire :', notes)
+        notes.setPlaceholderText('test conditions, result, remarks…')
+        form.addRow('Validated by:', who)
+        form.addRow('Comment:', notes)
         bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         bb.accepted.connect(dlg.accept)
         bb.rejected.connect(dlg.reject)
@@ -210,7 +210,7 @@ class PresetsTab(QtWidgets.QWidget):
 
     def _on_import(self):
         start = str(Path.home() / '.pymodaq')
-        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(self, 'Anciens profils (JSON)', start, 'JSON (*.json)')
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(self, 'Legacy profiles (JSON)', start, 'JSON (*.json)')
         if paths:
             self.app.import_legacy(paths, self)
 

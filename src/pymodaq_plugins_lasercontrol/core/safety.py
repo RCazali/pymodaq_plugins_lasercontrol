@@ -1,4 +1,4 @@
-"""Safety supervisor (cahier des charges T3.4, invariants S1-S5, option O10-A).
+"""Safety supervisor (specification T3.4, invariants S1-S5, option O10-A).
 
 Every *automatic* order goes through :meth:`SafetySupervisor.check_move` before reaching the
 hardware:
@@ -202,8 +202,8 @@ class IntensityGuard:
         if st in ('disabled', 'ok'):
             return True, ''
         if st == 'unknown':
-            return False, "intensité inconnue (signal absent ou périmé)"
-        return False, "intensité toujours sous le seuil (+ hystérésis)"
+            return False, "unknown intensity (signal missing or stale)"
+        return False, "intensity still below threshold (+ hysteresis)"
 
     def ratio(self) -> float:
         ref = self.reference
@@ -270,22 +270,22 @@ class SafetySupervisor:
         for role in motor_roles:
             lim = self.limits(role)
             if lim is None:
-                errors.append(f"{role}: limites de sécurité non définies (max_step, max_excursion, rate_max)")
+                errors.append(f"{role}: safety limits not defined (max_step, max_excursion, rate_max)")
                 continue
             missing = [m for m in lim.missing()
                        if not (m == 'max_excursion' and policy.envelope == 'explicit')
                        and not (m == 'rate_max' and not policy.check_rate)]
             if missing:
-                errors.append(f"{role}: limite(s) manquante(s) {', '.join(missing)}")
+                errors.append(f"{role}: missing limit(s) {', '.join(missing)}")
             if lim.abs_min is not None and lim.abs_max is not None and lim.abs_min >= lim.abs_max:
                 errors.append(f"{role}: abs_min >= abs_max")
         if policy.check_intensity and self.config.intensity.enabled:
             role = self.config.intensity.role
             if not role:
-                errors.append("garde intensité (S2) : aucun rôle d'intensité défini "
-                              "(ou désactiver explicitement la garde dans le preset)")
+                errors.append("intensity guard (S2): no intensity role defined "
+                              "(or explicitly disable the guard in the preset)")
             elif not self.roles.is_signal(role):
-                errors.append(f"garde intensité (S2) : rôle '{role}' inconnu sur cette machine")
+                errors.append(f"intensity guard (S2): role '{role}' unknown on this machine")
         return errors
 
     # --------------------------------------------------------------- envelopes
@@ -337,16 +337,16 @@ class SafetySupervisor:
         For S4 the move is clamped to the envelope and sent, then the automation is frozen."""
         lim = self.limits(role)
         if lim is None:
-            return 0.0, Violation('config', f"limites de sécurité non définies pour {role}", role)
+            return 0.0, Violation('config', f"safety limits not defined for {role}", role)
         if lim.max_step is None or lim.max_step <= 0:
-            return 0.0, Violation('config', f"max_step non défini pour {role}", role)
+            return 0.0, Violation('config', f"max_step not defined for {role}", role)
         if position is None or not is_finite(position):
-            return 0.0, Violation('config', f"position inconnue pour {role}", role)
+            return 0.0, Violation('config', f"unknown position for {role}", role)
         if policy.envelope == 'excursion' and (owner, module) not in self._refs:
-            return 0.0, Violation('config', f"pas de position d'engagement pour {role}", role)
+            return 0.0, Violation('config', f"no engagement position for {role}", role)
         d = float(delta)
         if not math.isfinite(d):
-            return 0.0, Violation('config', f"pas invalide (NaN) demandé sur {role}", role)
+            return 0.0, Violation('config', f"invalid step (NaN) requested on {role}", role)
         # S3: bounded relative step
         if abs(d) > lim.max_step:
             d = math.copysign(lim.max_step, d)
@@ -357,19 +357,19 @@ class SafetySupervisor:
         target = position + d
         if target > hi + eps:
             d = max(hi - position, 0.0) if position <= hi else 0.0
-            violation = Violation('envelope', f"enveloppe atteinte sur {role} (limite haute {hi:.6g})", role)
+            violation = Violation('envelope', f"envelope reached on {role} (upper limit {hi:.6g})", role)
         elif target < lo - eps:
             d = min(lo - position, 0.0) if position >= lo else 0.0
-            violation = Violation('envelope', f"enveloppe atteinte sur {role} (limite basse {lo:.6g})", role)
+            violation = Violation('envelope', f"envelope reached on {role} (lower limit {lo:.6g})", role)
         # S5: rate limit
         if policy.check_rate:
             if lim.rate_max is None or lim.rate_max <= 0:
-                return 0.0, Violation('config', f"rate_max non défini pour {role}", role)
+                return 0.0, Violation('config', f"rate_max not defined for {role}", role)
             used = self.rate.total(module, lim.rate_window_s, self.clock.now())
             if used + abs(d) > lim.rate_max * (1 + 1e-9):
                 return 0.0, Violation(
-                    'rate', f"limite de débit atteinte sur {role} ({used:.4g} déjà parcourus en "
-                            f"{lim.rate_window_s:.0f} s, limite {lim.rate_max:.4g})", role)
+                    'rate', f"rate limit reached on {role} ({used:.4g} already travelled in "
+                            f"{lim.rate_window_s:.0f} s, limit {lim.rate_max:.4g})", role)
         return d, violation
 
     def record_move(self, module: str, delta: float):
@@ -383,9 +383,9 @@ class SafetySupervisor:
         if lim is None:
             return None
         if lim.abs_min is not None and target < lim.abs_min:
-            return f"{role}: cible {target:.6g} sous abs_min ({lim.abs_min:.6g})"
+            return f"{role}: target {target:.6g} below abs_min ({lim.abs_min:.6g})"
         if lim.abs_max is not None and target > lim.abs_max:
-            return f"{role}: cible {target:.6g} au-dessus de abs_max ({lim.abs_max:.6g})"
+            return f"{role}: target {target:.6g} above abs_max ({lim.abs_max:.6g})"
         return None
 
     def intensity_state(self) -> str:
@@ -393,9 +393,9 @@ class SafetySupervisor:
         if st != self._last_guard_state:
             if st == 'low':
                 self.events.publish(EventKind.SAFETY_INFO, 'SAFETY',
-                                    f"Intensité sous le seuil ({self.guard.value():.4g})", Level.WARNING)
+                                    f"Intensity below threshold ({self.guard.value():.4g})", Level.WARNING)
             elif st == 'ok' and self._last_guard_state == 'low':
                 self.events.publish(EventKind.SAFETY_INFO, 'SAFETY',
-                                    "Intensité revenue au-dessus du seuil (+ hystérésis)", Level.INFO)
+                                    "Intensity back above threshold (+ hysteresis)", Level.INFO)
             self._last_guard_state = st
         return st

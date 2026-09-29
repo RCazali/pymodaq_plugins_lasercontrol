@@ -1,4 +1,4 @@
-"""Pluggable optimiser interface (cahier des charges T4.5).
+"""Pluggable optimiser interface (specification T4.5).
 
 An optimiser algorithm never moves anything and never reads anything by itself. It *proposes*
 requests and *observes* results::

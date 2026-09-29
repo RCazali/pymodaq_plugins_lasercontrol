@@ -31,7 +31,7 @@ class CostModel:
             arr = np.asarray(samples.get(s['role'], []), dtype=float)
             arr = arr[np.isfinite(arr)]
             if arr.size == 0:
-                raise ValueError(f"aucune mesure valide pour {s['role']}")
+                raise ValueError(f"no valid measurement for {s['role']}")
             self.anchor[s['role']] = float(np.mean(arr))
             self.noise[s['role']] = max(float(np.std(arr)), MIN_SCALE)
         self.deadband = 0.25 * max(len(self.signals), 1) * max(float(deadband_scale), 1e-6)

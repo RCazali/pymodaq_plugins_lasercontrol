@@ -91,7 +91,7 @@ class PresetStore:
                 p['validated_hash'] != content_hash(p):
             p['status'] = 'draft'     # content changed since its validation
             p['validation_notes'] = (p.get('validation_notes', '') +
-                                     f"\n[{now_iso()}] modifié après validation : repassé en brouillon").strip()
+                                     f"\n[{now_iso()}] modified after validation: back to draft").strip()
         preset.clear()
         preset.update(p)
         return atomic_write_json(self.path_for(p['name']), p)

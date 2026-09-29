@@ -1,4 +1,4 @@
-"""Motor ownership registry (cahier des charges T3.3, invariant S6).
+"""Motor ownership registry (specification T3.3, invariant S6).
 
 One owner per *physical* motor (DAQ_Move module) at any time. Owners are automation ids
 (``PID:TipTilt``, ``OPT``, ``SCAN`` ...). A human action is not a persistent owner: it preempts

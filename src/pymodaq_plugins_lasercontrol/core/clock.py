@@ -1,5 +1,5 @@
 """Time sources. The core never calls ``time`` directly so that every rule can be tested with a
-fake clock (no Qt, no hardware, cahier des charges T1.4)."""
+fake clock (no Qt, no hardware, specification T1.4)."""
 from __future__ import annotations
 
 import time

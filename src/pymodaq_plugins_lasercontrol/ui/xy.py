@@ -1,4 +1,4 @@
-"""XY tab (cahier des charges T2.3 / T5.4), ported from the XY Stage Controller.
+"""XY tab (specification T2.3 / T5.4), ported from the XY Stage Controller.
 
 One sub-tab per XY group: two actuator roles, jog pad + w/a/s/d keyboard (Shift x10), saved
 positions, 2D map (click to move), snake 'hardware' scan. Every order goes through the broker
@@ -58,13 +58,13 @@ class ActuatorWidget(QtWidgets.QGroupBox):
         f.setPointSize(f.pointSize() + 2)
         self.current_pos_label.setFont(f)
         layout.addWidget(self.current_pos_label, 0, 1)
-        self.unit_labels = [QtWidgets.QLabel('u.a.') for _ in range(3)]
+        self.unit_labels = [QtWidgets.QLabel('a.u.') for _ in range(3)]
         layout.addWidget(self.unit_labels[0], 0, 2)
-        self.status_label = QtWidgets.QLabel('Repos')
+        self.status_label = QtWidgets.QLabel('Idle')
         self.status_label.setStyleSheet('color: gray; font-size: 11px;')
         self.status_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         layout.addWidget(self.status_label, 0, 3, 1, 2)
-        layout.addWidget(QtWidgets.QLabel('Cible'), 1, 0)
+        layout.addWidget(QtWidgets.QLabel('Target'), 1, 0)
         self.target_spinbox = spin()
         layout.addWidget(self.target_spinbox, 1, 1)
         layout.addWidget(self.unit_labels[1], 1, 2)
@@ -76,9 +76,9 @@ class ActuatorWidget(QtWidgets.QGroupBox):
             b.setFocusPolicy(QtCore.Qt.NoFocus)
         layout.addWidget(self.btn_move_abs, 1, 3)
         layout.addWidget(self.btn_stop, 1, 4)
-        layout.addWidget(QtWidgets.QLabel('Pas'), 2, 0)
+        layout.addWidget(QtWidgets.QLabel('Step'), 2, 0)
         self.step_spinbox = spin(1.0, vmin=1e-9)
-        self.step_spinbox.setToolTip('Pas de a/d (X) ou w/s (Y) et du pavé ; Maj = ×10')
+        self.step_spinbox.setToolTip('Step of a/d (X) or w/s (Y) and of the pad; Shift = ×10')
         layout.addWidget(self.step_spinbox, 2, 1)
         layout.addWidget(self.unit_labels[2], 2, 2)
         self.btn_move_abs.clicked.connect(lambda: self.move_requested.emit(self.target_spinbox.value()))
@@ -91,7 +91,7 @@ class ActuatorWidget(QtWidgets.QGroupBox):
 
     def update_unit_display(self, unit_str: str):
         for lbl in self.unit_labels:
-            lbl.setText(unit_str or 'u.a.')
+            lbl.setText(unit_str or 'a.u.')
 
     def set_status(self, text: str):
         self.status_label.setText(text)
@@ -108,10 +108,10 @@ class ActuatorWidget(QtWidgets.QGroupBox):
         if busy:
             self.current_pos_label.setStyleSheet('background-color: #e67e22; color: white; padding: 0px 4px; '
                                                  'border-radius: 3px;')
-            self.status_label.setText('En mouvement…')
+            self.status_label.setText('Moving…')
         else:
             self.current_pos_label.setStyleSheet('padding: 0px 4px;')
-            self.status_label.setText('Repos')
+            self.status_label.setText('Idle')
 
 
 class JogPad(QtWidgets.QWidget):
@@ -130,9 +130,9 @@ class JogPad(QtWidgets.QWidget):
         self.btn_up, self.btn_down = QtWidgets.QPushButton('▲'), QtWidgets.QPushButton('▼')
         self.btn_left, self.btn_right = QtWidgets.QPushButton('◀'), QtWidgets.QPushButton('▶')
         self.btn_home = QtWidgets.QPushButton('⌂')
-        for btn, tip in ((self.btn_up, 'Y + un pas (w)'), (self.btn_down, 'Y − un pas (s)'),
-                         (self.btn_left, 'X − un pas (a)'), (self.btn_right, 'X + un pas (d)'),
-                         (self.btn_home, 'Aller en (0, 0)')):
+        for btn, tip in ((self.btn_up, 'Y + one step (w)'), (self.btn_down, 'Y − one step (s)'),
+                         (self.btn_left, 'X − one step (a)'), (self.btn_right, 'X + one step (d)'),
+                         (self.btn_home, 'Go to (0, 0)')):
             btn.setToolTip(tip)
             btn.setFixedSize(34, 30)
             btn.setFocusPolicy(QtCore.Qt.NoFocus)
@@ -161,7 +161,7 @@ class SavedPositionsWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(4)
         self.table = QtWidgets.QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(['Nom', 'X', 'Y', ''])
+        self.table.setHorizontalHeaderLabels(['Name', 'X', 'Y', ''])
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -169,9 +169,9 @@ class SavedPositionsWidget(QtWidgets.QWidget):
         layout.addWidget(self.table)
         row = QtWidgets.QHBoxLayout()
         self.name_edit = QtWidgets.QLineEdit()
-        self.name_edit.setPlaceholderText('Nom de la position…')
+        self.name_edit.setPlaceholderText('Position name…')
         self.name_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
-        self.btn_save = QtWidgets.QPushButton('💾 Mémoriser')
+        self.btn_save = QtWidgets.QPushButton('💾 Save')
         self.btn_save.setStyleSheet('font-weight: bold;')
         self.btn_save.setFocusPolicy(QtCore.Qt.NoFocus)
         row.addWidget(self.name_edit)
@@ -185,7 +185,7 @@ class SavedPositionsWidget(QtWidgets.QWidget):
     def _on_save(self):
         name = self.name_edit.text().strip()
         if not name:
-            warn(self, 'Nom requis', 'Donner un nom à la position.')
+            warn(self, 'Name required', 'Give the position a name.')
             return
         self._positions[name] = {'x': self._current_x, 'y': self._current_y}
         self.name_edit.clear()
@@ -219,7 +219,7 @@ class SavedPositionsWidget(QtWidgets.QWidget):
         self.table.resizeColumnToContents(3)
 
     def _on_delete(self, name: str):
-        if ask_yes_no(self, 'Supprimer la position', f'Supprimer « {name} » ?'):
+        if ask_yes_no(self, 'Remove position', f"Remove '{name}'?"):
             self._positions.pop(name, None)
             self.refresh_table()
             self.positions_changed.emit()
@@ -252,8 +252,8 @@ class StageMapWidget(QtWidgets.QWidget):
         self.y_min_sb, self.y_max_sb = make_spin(-50.0), make_spin(50.0)
         lim = QtWidgets.QHBoxLayout()
         lim.setSpacing(3)
-        lbl = QtWidgets.QLabel('Limites  X')
-        lbl.setToolTip('Limites de la platine (unités natives) : les Go en dehors sont refusés')
+        lbl = QtWidgets.QLabel('Limits  X')
+        lbl.setToolTip('Stage limits (native units): Go outside them is refused')
         lim.addWidget(lbl)
         lim.addWidget(self.x_min_sb, 1)
         lim.addWidget(QtWidgets.QLabel('…'))
@@ -263,17 +263,17 @@ class StageMapWidget(QtWidgets.QWidget):
         lim.addWidget(self.y_min_sb, 1)
         lim.addWidget(QtWidgets.QLabel('…'))
         lim.addWidget(self.y_max_sb, 1)
-        b = QtWidgets.QPushButton('Appliquer vue')
+        b = QtWidgets.QPushButton('Apply view')
         b.setFocusPolicy(QtCore.Qt.NoFocus)
         b.clicked.connect(self.update_view_bounds)
         lim.addWidget(b)
         layout.addLayout(lim)
         trail = QtWidgets.QHBoxLayout()
-        self.chk_trail = QtWidgets.QCheckBox('Trace')
+        self.chk_trail = QtWidgets.QCheckBox('Trail')
         self.chk_trail.setChecked(True)
-        self.btn_clear_trail = QtWidgets.QPushButton('Effacer trace')
-        self.btn_clear_history = QtWidgets.QPushButton('🗑️ Effacer scans')
-        self.chk_click_move = QtWidgets.QCheckBox('Clic carte → déplacement')
+        self.btn_clear_trail = QtWidgets.QPushButton('Clear trail')
+        self.btn_clear_history = QtWidgets.QPushButton('🗑️ Clear scans')
+        self.chk_click_move = QtWidgets.QCheckBox('Click on map → move')
         self.chk_click_move.setStyleSheet('color: #e67e22; font-weight: bold;')
         for w in (self.chk_trail, self.btn_clear_trail, self.btn_clear_history, self.chk_click_move):
             w.setFocusPolicy(QtCore.Qt.NoFocus)
@@ -434,14 +434,14 @@ class XYGroupWidget(QtWidgets.QWidget):
         top = QtWidgets.QWidget()
         tl = QtWidgets.QHBoxLayout(top)
         tl.setContentsMargins(0, 0, 0, 0)
-        self.widget_x = ActuatorWidget('Axe X  (a ◀ ▶ d)')
-        self.widget_y = ActuatorWidget('Axe Y  (s ▼ ▲ w)')
+        self.widget_x = ActuatorWidget('X axis  (a ◀ ▶ d)')
+        self.widget_y = ActuatorWidget('Y axis  (s ▼ ▲ w)')
         tl.addWidget(self.widget_x, 1)
         tl.addWidget(self.widget_y, 1)
         self.jog_pad = JogPad()
         tl.addWidget(self.jog_pad, 0, QtCore.Qt.AlignVCenter)
         split.addWidget(top)
-        box = QtWidgets.QGroupBox('📍 Positions mémorisées')
+        box = QtWidgets.QGroupBox('📍 Saved positions')
         bl = QtWidgets.QVBoxLayout(box)
         bl.setContentsMargins(2, 2, 2, 2)
         self.saved = SavedPositionsWidget()
@@ -449,31 +449,31 @@ class XYGroupWidget(QtWidgets.QWidget):
         split.addWidget(box)
         split.setSizes([120, 400])
         opl.addWidget(split)
-        self.left_tabs.addTab(op, '🕹️ Pilotage')
+        self.left_tabs.addTab(op, '🕹️ Control')
         self.kb = QtWidgets.QPushButton()
         self.kb.clicked.connect(self.activate_keyboard)
         self.left_tabs.setCornerWidget(self.kb, QtCore.Qt.TopRightCorner)
         cfg = QtWidgets.QWidget()
         cl = QtWidgets.QVBoxLayout(cfg)
         row = QtWidgets.QHBoxLayout()
-        row.addWidget(QtWidgets.QLabel('Nom du groupe :'))
-        self.name_edit = QtWidgets.QLineEdit('Nouveau groupe')
+        row.addWidget(QtWidgets.QLabel('Group name:'))
+        self.name_edit = QtWidgets.QLineEdit('New group')
         self.name_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
         row.addWidget(self.name_edit)
         cl.addLayout(row)
-        sel = QtWidgets.QGroupBox('Actionneurs (rôles)')
+        sel = QtWidgets.QGroupBox('Actuators (roles)')
         sf = QtWidgets.QFormLayout(sel)
         self.combo_x = QtWidgets.QComboBox()
         self.combo_y = QtWidgets.QComboBox()
         for c in (self.combo_x, self.combo_y):
             c.setFocusPolicy(QtCore.Qt.ClickFocus)
-        sf.addRow('X :', self.combo_x)
-        sf.addRow('Y :', self.combo_y)
-        self.btn_apply = QtWidgets.QPushButton('Appliquer')
+        sf.addRow('X:', self.combo_x)
+        sf.addRow('Y:', self.combo_y)
+        self.btn_apply = QtWidgets.QPushButton('Apply')
         self.btn_apply.setStyleSheet('font-weight: bold; min-height: 26px;')
         sf.addRow(self.btn_apply)
         cl.addWidget(sel)
-        scan = QtWidgets.QGroupBox('🐍 Scan serpentin (automatisme du cœur)')
+        scan = QtWidgets.QGroupBox('🐍 Snake scan (core automation)')
         sg = QtWidgets.QGridLayout(scan)
 
         def sspin(val, step=False):
@@ -490,15 +490,15 @@ class XYGroupWidget(QtWidgets.QWidget):
         self.s_dwell.setMinimum(0.0)
         for r, (lab, a, b, c) in enumerate((('X', self.sx_min, self.sx_max, self.sx_step),
                                             ('Y', self.sy_min, self.sy_max, self.sy_step))):
-            sg.addWidget(QtWidgets.QLabel(f'{lab} min :'), r, 0)
+            sg.addWidget(QtWidgets.QLabel(f'{lab} min:'), r, 0)
             sg.addWidget(a, r, 1)
-            sg.addWidget(QtWidgets.QLabel(f'{lab} max :'), r, 2)
+            sg.addWidget(QtWidgets.QLabel(f'{lab} max:'), r, 2)
             sg.addWidget(b, r, 3)
-            sg.addWidget(QtWidgets.QLabel(f'{lab} pas :'), r, 4)
+            sg.addWidget(QtWidgets.QLabel(f'{lab} step:'), r, 4)
             sg.addWidget(c, r, 5)
-        sg.addWidget(QtWidgets.QLabel('Attente / point (s) :'), 2, 0)
+        sg.addWidget(QtWidgets.QLabel('Dwell / point (s):'), 2, 0)
         sg.addWidget(self.s_dwell, 2, 1)
-        self.btn_scan = QtWidgets.QPushButton('🚀 DÉMARRER LE SCAN')
+        self.btn_scan = QtWidgets.QPushButton('🚀 START SCAN')
         self.btn_scan.setStyleSheet('background-color: #2ecc71; color: white; font-weight: bold; min-height: 26px;')
         sg.addWidget(self.btn_scan, 3, 0, 1, 6)
         self.scan_info = QtWidgets.QLabel('')
@@ -532,10 +532,10 @@ class XYGroupWidget(QtWidgets.QWidget):
 
     def _update_kb(self, active: bool):
         if active:
-            self.kb.setText('⌨ Clavier : ACTIF')
+            self.kb.setText('⌨ Keyboard: ACTIVE')
             self.kb.setStyleSheet('background-color: #27ae60; color: white; font-weight: bold; padding: 2px 8px;')
         else:
-            self.kb.setText('⌨ inactif — cliquer')
+            self.kb.setText('⌨ inactive — click')
             self.kb.setStyleSheet('background-color: #7f8c8d; color: white; font-weight: bold; padding: 2px 8px;')
 
     # ------------------------------------------------------------------ hardware
@@ -592,7 +592,7 @@ class XYGroupWidget(QtWidgets.QWidget):
         lo, hi = self.map.x_limits if axis == 'x' else self.map.y_limits
         w = self._widget(axis)
         if not (lo <= position <= hi):
-            w.set_status('⚠ Limites')
+            w.set_status('⚠ Limits')
             self._stepping.pop(axis, None)
             return
         role = self._role(axis)
@@ -647,24 +647,24 @@ class XYGroupWidget(QtWidgets.QWidget):
 
     def _on_scan(self):
         if self._scan_running():
-            self.app.core.stop(self.scan_id, 'arrêt manuel')
+            self.app.core.stop(self.scan_id, 'manual stop')
             return
         b = dict(xmin=self.sx_min.value(), xmax=self.sx_max.value(), dx=self.sx_step.value(),
                  ymin=self.sy_min.value(), ymax=self.sy_max.value(), dy=self.sy_step.value())
         if not snake_pattern(**b):
-            warn(self, 'Scan', 'Paramètres de scan invalides (min < max, pas > 0).')
+            warn(self, 'Scan', 'Invalid scan parameters (min < max, step > 0).')
             return
         xl, yl = self.map.x_limits, self.map.y_limits
         if b['xmin'] < xl[0] or b['xmax'] > xl[1] or b['ymin'] < yl[0] or b['ymax'] > yl[1]:
-            warn(self, 'Scan', 'La zone de scan sort des limites de la carte.')
+            warn(self, 'Scan', 'The scan area goes beyond the map limits.')
             return
         a = XYScanAutomation(self.pair_id, self._x, self._y, dwell=self.s_dwell.value(),
-                             label=f'Scan XY {self.name_edit.text()}', **b)
+                             label=f'XY Scan {self.name_edit.text()}', **b)
         self.app.core.remove_automation(self.scan_id)
         self.app.core.add_automation(a)
         ok, msg = self.app.core.start(a.id)
         if not ok:
-            warn(self, 'Scan', 'Démarrage impossible :\n\n' + msg.replace(' ; ', '\n'))
+            warn(self, 'Scan', 'Cannot start:\n\n' + msg.replace(' ; ', '\n'))
             return
         self._scan_bounds = b
         self._scan_zone_drawn = False
@@ -674,18 +674,18 @@ class XYGroupWidget(QtWidgets.QWidget):
         running = a is not None and a.state in ENGAGED_STATES
         if running:
             done, total = a.progress()
-            self.btn_scan.setText('🛑 ARRÊTER LE SCAN')
+            self.btn_scan.setText('🛑 STOP SCAN')
             self.btn_scan.setStyleSheet('background-color: #c0392b; color: white; font-weight: bold; min-height: 26px;')
             self.scan_info.setText(f'point {done + 1}/{total} · {a.state.value} {a.reason}')
         else:
-            self.btn_scan.setText('🚀 DÉMARRER LE SCAN')
+            self.btn_scan.setText('🚀 START SCAN')
             self.btn_scan.setStyleSheet('background-color: #2ecc71; color: white; font-weight: bold; min-height: 26px;')
             if a is not None and not self._scan_zone_drawn and self._scan_bounds:
                 b = self._scan_bounds
                 self.map.add_scan_zone_to_history(b['xmin'], b['xmax'], b['dx'], b['ymin'], b['ymax'], b['dy'],
                                                   completed=getattr(a, 'completed', False))
                 self._scan_zone_drawn = True
-                self.scan_info.setText('scan terminé' if a.completed else f'scan interrompu : {a.reason}')
+                self.scan_info.setText('scan finished' if a.completed else f'scan aborted: {a.reason}')
         for axis in ('x', 'y'):
             if axis in self._busy and not self.manual.is_busy(self._role(axis)) and axis not in self._stepping:
                 self._busy.discard(axis)
@@ -730,7 +730,7 @@ class XYGroupWidget(QtWidgets.QWidget):
         if e.modifiers() & (QtCore.Qt.ControlModifier | QtCore.Qt.AltModifier | QtCore.Qt.MetaModifier):
             return False
         if key == QtCore.Qt.Key_Space:
-            self.app.shake('clavier XY')
+            self.app.shake('XY keyboard')
             return True
         if key in XY_JOG_KEYS:
             self._fast = bool(e.modifiers() & QtCore.Qt.ShiftModifier)
@@ -792,7 +792,7 @@ class XYGroupWidget(QtWidgets.QWidget):
     def load_config(self, cfg: dict):
         if not cfg:
             return
-        self.name_edit.setText(cfg.get('tab_title', 'Groupe'))
+        self.name_edit.setText(cfg.get('tab_title', 'Group'))
         self._x = cfg.get('actuator_x', 'None') or 'None'
         self._y = cfg.get('actuator_y', 'None') or 'None'
         roles = ['None'] + self.manual.actuator_roles()
@@ -832,12 +832,12 @@ class XYTab(QtWidgets.QWidget):
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(3, 3, 3, 3)
         bar = QtWidgets.QHBoxLayout()
-        self.btn_add = QtWidgets.QPushButton('＋ Groupe')
-        self.btn_save_all = QtWidgets.QPushButton('📸 Mémoriser toutes les positions')
+        self.btn_add = QtWidgets.QPushButton('＋ Group')
+        self.btn_save_all = QtWidgets.QPushButton('📸 Save all positions')
         self.btn_save_all.setStyleSheet('background-color: #8e44ad; color: white; font-weight: bold;')
-        self.btn_go_all = QtWidgets.QPushButton('🚀 Tout rappeler…')
+        self.btn_go_all = QtWidgets.QPushButton('🚀 Recall all…')
         self.btn_go_all.setStyleSheet('background-color: #27ae60; color: white; font-weight: bold;')
-        self.btn_undo = QtWidgets.QPushButton('↩️ Annuler')
+        self.btn_undo = QtWidgets.QPushButton('↩️ Undo')
         self.btn_undo.setStyleSheet('background-color: #e67e22; color: white; font-weight: bold;')
         self.btn_undo.setEnabled(False)
         self.btn_stop = QtWidgets.QPushButton('■ STOP XY')
@@ -846,7 +846,7 @@ class XYTab(QtWidgets.QWidget):
             b.setFocusPolicy(QtCore.Qt.NoFocus)
             bar.addWidget(b)
         bar.addStretch()
-        hint = QtWidgets.QLabel('w/s Y · a/d X · Maj ×10 · Espace shaker · T / Maj+T : groupe suivant')
+        hint = QtWidgets.QLabel('w/s Y · a/d X · Shift ×10 · Space shaker · T / Shift+T: next group')
         hint.setStyleSheet('color: gray; font-style: italic;')
         bar.addWidget(hint)
         lay.addLayout(bar)
@@ -881,7 +881,7 @@ class XYTab(QtWidgets.QWidget):
         w = self.tabs.widget(index)
         if not isinstance(w, XYGroupWidget):
             return
-        if not ask_yes_no(self, 'Fermer le groupe', f'Supprimer le groupe « {self.tabs.tabText(index)} » du preset ?'):
+        if not ask_yes_no(self, 'Close group', f"Remove group '{self.tabs.tabText(index)}' from the preset?"):
             return
         self.app.core.remove_automation(w.scan_id)
         w.shutdown()
@@ -908,16 +908,16 @@ class XYTab(QtWidgets.QWidget):
         if not self.groups:
             return
         default = f"Snapshot_{QtCore.QDateTime.currentDateTime().toString('yyyyMMdd_hhmmss')}"
-        name, ok = QtWidgets.QInputDialog.getText(self, 'Mémoriser toutes les positions',
-                                                  'Nom commun de cette photo des positions :', text=default)
+        name, ok = QtWidgets.QInputDialog.getText(self, 'Save all positions',
+                                                  'Common name of this position snapshot:', text=default)
         if not ok or not name.strip():
             return
         for i, g in enumerate(self.groups):
-            title = g.name_edit.text().strip() or f'Groupe_{i + 1}'
+            title = g.name_edit.text().strip() or f'Group_{i + 1}'
             g.saved._positions[f'{name.strip()} ({title})'] = {'x': g.widget_x.current_raw, 'y': g.widget_y.current_raw}
             g.saved.refresh_table()
             g.saved.positions_changed.emit()
-        info(self, 'Positions', f'Positions mémorisées dans les {len(self.groups)} groupes sous « {name.strip()} ».')
+        info(self, 'Positions', f"Positions saved in the {len(self.groups)} groups as '{name.strip()}'.")
 
     def _go_all(self):
         prefixes = set()
@@ -925,18 +925,18 @@ class XYTab(QtWidgets.QWidget):
             for full in g.saved._positions:
                 prefixes.add(full.split(' (')[0] if ' (' in full else full)
         if not prefixes:
-            warn(self, 'Tout rappeler', 'Aucune position mémorisée.')
+            warn(self, 'Recall all', 'No saved position.')
             return
-        item, ok = QtWidgets.QInputDialog.getItem(self, 'Tout rappeler', 'Photo de positions à rappeler :',
+        item, ok = QtWidgets.QInputDialog.getItem(self, 'Recall all', 'Position snapshot to recall:',
                                                   sorted(prefixes), editable=False)
         if not ok or not item:
             return
-        if not ask_yes_no(self, 'Tout rappeler', f'Déplacer tous les groupes vers « {item} » ?\n'
-                                                 '(les automatismes utilisant ces moteurs seront arrêtés)'):
+        if not ask_yes_no(self, 'Recall all', f"Move every group to '{item}'?\n"
+                                              '(the automations using these motors will be stopped)'):
             return
         self._undo = {g.pair_id: {'x': g.widget_x.current_raw, 'y': g.widget_y.current_raw} for g in self.groups}
         for i, g in enumerate(self.groups):
-            title = g.name_edit.text().strip() or f'Groupe_{i + 1}'
+            title = g.name_edit.text().strip() or f'Group_{i + 1}'
             pos = g.saved._positions.get(f'{item} ({title})') or g.saved._positions.get(item)
             if pos:
                 g.go_to(pos['x'], pos['y'])

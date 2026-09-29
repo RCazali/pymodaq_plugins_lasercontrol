@@ -1,6 +1,6 @@
 """The core: glue between broker, ownership, safety, state machine and automations.
 
-Policy implemented here (cahier des charges D4, D5, O3-A, O10-A, S1-S12):
+Policy implemented here (specification D4, D5, O3-A, O10-A, S1-S12):
 
 * **D4 / O3-A** - the last activated automation takes the shared motors; the previous owner goes
   PAUSED and resumes by itself (integral reset) when the motors are released.
@@ -33,7 +33,7 @@ from .states import AutoState, ENGAGED_STATES, GlobalState, aggregate
 logger = DedupLogger(module_logger(__file__))
 
 ML_STATES = ('unknown', 'ML_ON', 'ML_OFF', 'UNSTABLE')
-ML_LABELS = {'unknown': 'ML ?', 'ML_ON': 'ML ON', 'ML_OFF': 'ML OFF', 'UNSTABLE': 'Instable'}
+ML_LABELS = {'unknown': 'ML ?', 'ML_ON': 'ML ON', 'ML_OFF': 'ML OFF', 'UNSTABLE': 'Unstable'}
 ML_CODES = {'unknown': math.nan, 'ML_ON': 1.0, 'ML_OFF': 0.0, 'UNSTABLE': 0.5}
 
 ConfirmHandler = Callable[[Automation, str, Callable[[bool], None]], None]
@@ -76,7 +76,7 @@ class LaserCore:
     def add_automation(self, a: Automation) -> Automation:
         old = self.automations.get(a.id)
         if old is not None and old is not a and old.state != AutoState.OFF:
-            raise RuntimeError(f"{a.id} est engagé : l'arrêter avant de le remplacer")
+            raise RuntimeError(f"{a.id} is engaged: stop it before replacing it")
         self.automations[a.id] = a
         return a
 
@@ -85,7 +85,7 @@ class LaserCore:
         if a is None:
             return
         if a.state != AutoState.OFF:
-            self.stop(auto_id, 'supprimé')
+            self.stop(auto_id, 'removed')
         self.automations.pop(auto_id, None)
 
     def get(self, auto_id: str) -> Optional[Automation]:
@@ -111,9 +111,9 @@ class LaserCore:
         owner = self.ownership.owner_of(module)
         st = self.broker.state(module)
         if st is not None and st.busy and st.mover and str(st.mover).startswith(HUMAN):
-            return 'Humain'
+            return 'Human'
         if owner is None:
-            return 'Libre'
+            return 'Free'
         a = self.automations.get(owner)
         return a.label if a else owner
 
@@ -126,7 +126,7 @@ class LaserCore:
             a.pause_kind = None
             a.paused_by = None
         if publish and (old != state or reason):
-            text = f"{a.label} : {old.value} → {state.value}" + (f" ({reason})" if reason else '')
+            text = f"{a.label}: {old.value} → {state.value}" + (f" ({reason})" if reason else '')
             self.events.publish(kind, a.id, text, level, old=old.value, new=state.value, reason=reason)
         self._update_global_state()
 
@@ -136,7 +136,7 @@ class LaserCore:
             old = self.global_state
             self.global_state = g
             lvl = Level.ALARM if g in (GlobalState.ESTOP, GlobalState.SAFETY_HOLD, GlobalState.ERROR) else Level.INFO
-            self.events.publish(EventKind.AUTOMATION_STATE, 'CORE', f"État global : {old.value} → {g.value}",
+            self.events.publish(EventKind.AUTOMATION_STATE, 'CORE', f"Global state: {old.value} → {g.value}",
                                 lvl, old=old.value, new=g.value, scope='global')
 
     # ================================================================== validation
@@ -147,62 +147,62 @@ class LaserCore:
         for role in a.motor_roles():
             module = self.roles.module_for(role)
             if module is None:
-                errors.append(f"rôle moteur '{role}' non déclaré sur cette machine")
+                errors.append(f"motor role '{role}' not declared on this machine")
                 continue
             if module in seen_modules:
-                errors.append(f"'{role}' et '{seen_modules[module]}' pilotent le même module {module}")
+                errors.append(f"'{role}' and '{seen_modules[module]}' drive the same module {module}")
             seen_modules[module] = role
             if not self.broker.has_module(module):
-                errors.append(f"{role} : module '{module}' absent du dashboard")
+                errors.append(f"{role}: module '{module}' missing from the dashboard")
                 continue
             if not self.broker.is_initialized(module):
-                errors.append(f"{role} : module '{module}' non initialisé")
+                errors.append(f"{role}: module '{module}' not initialized")
                 continue
             if self.broker.position(module) is None:
-                errors.append(f"{role} : position inconnue (lire la position)")
+                errors.append(f"{role}: unknown position (read the position)")
         for role in a.signal_roles():
             ch = self.roles.channel_for(role)
             if ch is None:
-                errors.append(f"rôle signal '{role}' non déclaré sur cette machine")
+                errors.append(f"signal role '{role}' not declared on this machine")
             elif not self.signals.known(ch):
-                errors.append(f"{role} : canal '{ch}' jamais reçu (acquisition lancée ?)")
+                errors.append(f"{role}: channel '{ch}' never received (is acquisition running?)")
             elif policy.check_data:
                 ok, why = self.signals.freshness(ch)
                 if not ok:
-                    errors.append(f"{role} : {why}")
+                    errors.append(f"{role}: {why}")
         errors += self.safety.config_errors(a.motor_roles(), policy)
         if policy.check_intensity and self.safety.config.intensity.enabled and self.safety.config.intensity.role:
             ch = self.safety.guard.channel()
             if ch is None:
                 pass  # already reported by config_errors
             elif not self.signals.is_fresh(ch):
-                errors.append(f"garde intensité : {self.signals.freshness(ch)[1]}")
+                errors.append(f"intensity guard: {self.signals.freshness(ch)[1]}")
             elif self.will_capture_intensity_reference(a):
                 v = self.safety.guard.value()
                 if not (is_finite(v) and v > 0):
-                    errors.append("garde intensité : intensité nulle ou invalide, pas de référence possible "
-                                  "(laser éteint ?)")
+                    errors.append("intensity guard: zero or invalid intensity, no reference possible "
+                                  "(laser off?)")
             elif self.safety.guard.evaluate() == 'low':
-                errors.append("garde intensité : intensité sous le seuil")
+                errors.append("intensity guard: intensity below threshold")
         try:
             errors += list(a.validate(self) or [])
         except Exception as e:  # pragma: no cover
-            errors.append(f"validation interne : {e}")
+            errors.append(f"internal validation: {e}")
         return errors
 
     # ================================================================== lifecycle
     def start(self, auto_id: str) -> Tuple[bool, str]:
         a = self.automations.get(auto_id)
         if a is None:
-            return False, f"automatisme inconnu : {auto_id}"
+            return False, f"unknown automation: {auto_id}"
         if self.estop:
-            return False, "ARRÊT D'URGENCE actif : cliquez « Réarmer » d'abord"
+            return False, "EMERGENCY STOP active: click 'Re-arm' first"
         if a.state in ENGAGED_STATES:
-            return False, f"{a.label} est déjà engagé ({a.state.value})"
+            return False, f"{a.label} is already engaged ({a.state.value})"
         errors = self.validate(a)
         if errors:
             msg = ' ; '.join(errors)
-            self.events.publish(EventKind.AUTOMATION_START, a.id, f"Démarrage refusé : {msg}", Level.WARNING,
+            self.events.publish(EventKind.AUTOMATION_START, a.id, f"Start refused: {msg}", Level.WARNING,
                                 errors=errors)
             return False, msg
         policy = a.policy()
@@ -213,24 +213,24 @@ class LaserCore:
         if self.will_capture_intensity_reference(a):
             if not self.safety.guard.capture_reference():
                 self._abort_start(a)
-                return False, "garde intensité : impossible de capturer la référence"
+                return False, "intensity guard: cannot capture the reference"
             self.events.publish(EventKind.SAFETY_INFO, 'SAFETY',
-                                f"Référence d'intensité capturée : {self.safety.guard.reference:.4g}")
+                                f"Intensity reference captured: {self.safety.guard.reference:.4g}")
         try:
             err = a.on_start(self)
         except Exception as e:
-            err = f"erreur au démarrage : {e}"
+            err = f"error at start: {e}"
             logger.exception(f'{a.id} on_start failed')
         if err:
             self._abort_start(a)
-            self.events.publish(EventKind.AUTOMATION_START, a.id, f"Démarrage refusé : {err}", Level.WARNING)
+            self.events.publish(EventKind.AUTOMATION_START, a.id, f"Start refused: {err}", Level.WARNING)
             return False, err
         a.started_at = self.clock.now()
         a.last_error = ''
         a.next_due = self.clock.now()
         if a.acquire_at_start:
             self.acquire(a)
-        self._set_state(a, AutoState.ACTIVE, kind=EventKind.AUTOMATION_START, reason='démarré')
+        self._set_state(a, AutoState.ACTIVE, kind=EventKind.AUTOMATION_START, reason='started')
         self._try_resume_paused()
         return True, ''
 
@@ -251,7 +251,7 @@ class LaserCore:
         self.ownership.release(a.id)
         self._set_state(a, AutoState.OFF, publish=False)
 
-    def stop(self, auto_id: str, reason: str = 'arrêt demandé', level: Level = Level.INFO,
+    def stop(self, auto_id: str, reason: str = 'stop requested', level: Level = Level.INFO,
              kind: str = EventKind.AUTOMATION_STOP) -> bool:
         a = self.automations.get(auto_id)
         if a is None or a.state == AutoState.OFF:
@@ -266,7 +266,7 @@ class LaserCore:
         self._try_resume_paused()
         return True
 
-    def stop_all_automations(self, reason: str = 'arrêt général'):
+    def stop_all_automations(self, reason: str = 'general stop'):
         for a in list(self.automations.values()):
             if a.state != AutoState.OFF:
                 self.stop(a.id, reason)
@@ -284,13 +284,13 @@ class LaserCore:
         """Manual resume after a safety hold (O10-A) or after an error-free pause."""
         a = self.automations.get(auto_id)
         if a is None:
-            return False, 'inconnu'
+            return False, 'unknown'
         if self.estop:
-            return False, "ARRÊT D'URGENCE actif : réarmer d'abord"
+            return False, "EMERGENCY STOP active: re-arm first"
         if a.state not in (AutoState.HELD, AutoState.PAUSED):
-            return False, f"{a.label} n'est ni gelé ni en pause ({a.state.value})"
+            return False, f"{a.label} is neither held nor paused ({a.state.value})"
         if a.state == AutoState.PAUSED and a.pause_kind == 'confirm':
-            return False, "une confirmation de déplacement est en attente"
+            return False, "a move confirmation is pending"
         policy = a.policy()
         errors = []
         for role in a.signal_roles():
@@ -304,10 +304,10 @@ class LaserCore:
                 errors.append(why)
         for m in self.modules_of(a):
             if self.broker.position(m) is None:
-                errors.append(f"{self.role_label(m)} : position inconnue")
+                errors.append(f"{self.role_label(m)}: unknown position")
         if errors:
             msg = ' ; '.join(errors)
-            self.events.publish(EventKind.SAFETY_RESUME, a.id, f"Reprise refusée : {msg}", Level.WARNING)
+            self.events.publish(EventKind.SAFETY_RESUME, a.id, f"Resume refused: {msg}", Level.WARNING)
             return False, msg
         self.acquire(a)       # D4: resuming is an activation -> takes the motors back
         try:
@@ -316,7 +316,7 @@ class LaserCore:
             self.error(a, e)
             return False, str(e)
         a.next_due = self.clock.now()
-        self._set_state(a, AutoState.ACTIVE, 'reprise manuelle', Level.INFO, EventKind.SAFETY_RESUME)
+        self._set_state(a, AutoState.ACTIVE, 'manual resume', Level.INFO, EventKind.SAFETY_RESUME)
         return True, ''
 
     def reset_reference(self, auto_id: str) -> bool:
@@ -326,7 +326,7 @@ class LaserCore:
             return False
         positions = {m: self.broker.position(m) for m in self.modules_of(a)}
         self.safety.engage(a.id, positions, reset=True)
-        self.events.publish(EventKind.SAFETY_INFO, a.id, f"{a.label} : nouvelle référence d'enveloppe")
+        self.events.publish(EventKind.SAFETY_INFO, a.id, f"{a.label}: new envelope reference")
         return True
 
     def error(self, a: Automation, exc: BaseException):
@@ -368,18 +368,18 @@ class LaserCore:
             prev.state = AutoState.PAUSED
             prev.pause_kind = 'preempted'
             prev.paused_by = by.id
-            prev.reason = f"préempté par {by.label} ({names})"
+            prev.reason = f"preempted by {by.label} ({names})"
             try:
                 prev.on_pause(self)
             except Exception as e:  # pragma: no cover
                 logger.error(f'{prev.id} on_pause failed: {e}')
             self.events.publish(EventKind.PREEMPTION, prev.id,
-                                f"{prev.label} en pause : {by.label} a pris {names}", Level.WARNING,
+                                f"{prev.label} paused: {by.label} took {names}", Level.WARNING,
                                 by=by.id, modules=modules)
             self._update_global_state()
         else:
             self.events.publish(EventKind.PREEMPTION, prev.id,
-                                f"{prev.label} ({prev.state.value}) perd {names} au profit de {by.label}",
+                                f"{prev.label} ({prev.state.value}) loses {names} to {by.label}",
                                 Level.WARNING, by=by.id, modules=modules)
 
     def _try_resume_paused(self):
@@ -398,7 +398,7 @@ class LaserCore:
                 self.error(a, e)
                 continue
             a.next_due = self.clock.now()
-            self._set_state(a, AutoState.ACTIVE, 'reprise automatique (moteurs libérés)', Level.INFO,
+            self._set_state(a, AutoState.ACTIVE, 'automatic resume (motors released)', Level.INFO,
                             EventKind.PREEMPTION)
 
     # ================================================================== human / hardware notifications
@@ -408,7 +408,7 @@ class LaserCore:
                    if a.state != AutoState.OFF and module in self.modules_of(a)]
         role = self.role_label(module)
         for a in victims:
-            self.stop(a.id, f"action manuelle sur {role} ({source})", Level.WARNING, EventKind.PREEMPTION)
+            self.stop(a.id, f"manual action on {role} ({source})", Level.WARNING, EventKind.PREEMPTION)
 
     def on_external_move(self, module: str, position: Optional[float]):
         role = self.role_label(module)
@@ -416,21 +416,21 @@ class LaserCore:
                    if a.state != AutoState.OFF and module in self.modules_of(a)]
         pos = f"{position:.6g}" if position is not None and is_finite(position) else '?'
         self.events.publish(EventKind.MOVE_EXTERNAL, 'BROKER',
-                            f"Mouvement externe détecté sur {role} (position {pos})",
+                            f"External move detected on {role} (position {pos})",
                             Level.WARNING if victims else Level.INFO, module=module)
         for a in victims:
-            self.stop(a.id, f"mouvement externe détecté sur {role} (hors extension)", Level.WARNING,
+            self.stop(a.id, f"external move detected on {role} (outside the extension)", Level.WARNING,
                       EventKind.PREEMPTION)
 
     def on_move_timeout(self, module: str, mover: Optional[str]):
         role = self.role_label(module)
         timeout = self.safety.config.move_timeout_s
         self.events.publish(EventKind.MOVE_TIMEOUT, 'BROKER',
-                            f"{role} : déplacement non terminé après {timeout:.0f} s", Level.ALARM,
+                            f"{role}: move not finished after {timeout:.0f} s", Level.ALARM,
                             module=module)
         a = self.automations.get(mover) if mover else None
         if a is not None:
-            self.hold(a, Violation('timeout', f"délai dépassé sur {role} (> {timeout:.0f} s)", role))
+            self.hold(a, Violation('timeout', f"timeout on {role} (> {timeout:.0f} s)", role))
 
     # ================================================================== moves requested by engines
     def request_moves(self, a: Automation, moves: Dict[str, float]) -> Dict[str, float]:
@@ -443,13 +443,13 @@ class LaserCore:
             ok, reasons = self.signals.all_fresh(
                 [self.roles.channel_for(r) for r in a.signal_roles() if self.roles.channel_for(r)])
             if not ok:
-                self.hold(a, Violation('stale', 'données périmées : ' + ' ; '.join(reasons)))
+                self.hold(a, Violation('stale', 'stale data: ' + ' ; '.join(reasons)))
                 return {}
         if policy.check_intensity and self.safety.config.intensity.enabled:
             guard_state = self.safety.guard.evaluate()
             if guard_state in ('low', 'unknown'):
-                self.hold(a, Violation('intensity', 'intensité sous le seuil' if guard_state == 'low'
-                                       else 'intensité inconnue'))
+                self.hold(a, Violation('intensity', 'intensity below threshold' if guard_state == 'low'
+                                       else 'unknown intensity'))
                 return {}
         plan: Dict[str, Tuple[str, float]] = {}
         envelope_violation = None
@@ -462,10 +462,10 @@ class LaserCore:
                 continue
             module = self.roles.module_for(role)
             if module is None or not self.broker.has_module(module):
-                self.hold(a, Violation('config', f"rôle {role} non résolu", role))
+                self.hold(a, Violation('config', f"role {role} not resolved", role))
                 return {}
             if self.ownership.owner_of(module) != a.id:          # S6
-                self.hold(a, Violation('owner', f"{a.label} n'est pas propriétaire de {role}", role))
+                self.hold(a, Violation('owner', f"{a.label} does not own {role}", role))
                 return {}
             if self.broker.is_busy(module):                      # T4.1: skip, never stack
                 return {}
@@ -502,18 +502,18 @@ class LaserCore:
     def request_confirmation(self, a: Automation, text: str, moves: Dict[str, float]):
         """'Confirm moves' mode: the automation is explicitly PAUSED while the dialog is open."""
         if self.confirm_handler is None:
-            self.stop(a.id, "confirmation impossible (pas d'interface)", Level.WARNING)
+            self.stop(a.id, "confirmation impossible (no user interface)", Level.WARNING)
             return
         a.state = AutoState.PAUSED
         a.pause_kind = 'confirm'
-        a.reason = 'attente de confirmation des déplacements'
+        a.reason = 'waiting for move confirmation'
         self._update_global_state()
 
         def answer(accepted: bool, a=a, moves=dict(moves)):
             if a.state != AutoState.PAUSED or a.pause_kind != 'confirm':
                 return  # stale answer (stopped / preempted meanwhile)
             if not accepted:
-                self.stop(a.id, "déplacement refusé par l'utilisateur", Level.INFO)
+                self.stop(a.id, "move refused by the user", Level.INFO)
                 return
             self._set_state(a, AutoState.ACTIVE, publish=False)
             self.request_moves(a, moves)
@@ -528,9 +528,9 @@ class LaserCore:
         self.estop = True                                     # latch first: nothing can be sent anymore
         for a in list(self.automations.values()):             # 1. all automations
             if a.state != AutoState.OFF:
-                self.stop(a.id, "ARRÊT D'URGENCE", Level.ALARM, EventKind.ESTOP)
-        self.broker.stop_all("ARRÊT D'URGENCE")               # 2. every motor of the dashboard
-        self.events.publish(EventKind.ESTOP, source, "ARRÊT D'URGENCE : automatismes et moteurs arrêtés",
+                self.stop(a.id, "EMERGENCY STOP", Level.ALARM, EventKind.ESTOP)
+        self.broker.stop_all("EMERGENCY STOP")               # 2. every motor of the dashboard
+        self.events.publish(EventKind.ESTOP, source, "EMERGENCY STOP: automations and motors stopped",
                             Level.ALARM)
         self._update_global_state()                           # 3. ESTOP state (manual exit only)
 
@@ -538,7 +538,7 @@ class LaserCore:
         if not self.estop:
             return
         self.estop = False
-        self.events.publish(EventKind.ESTOP_RESET, source, "Arrêt d'urgence réarmé", Level.INFO)
+        self.events.publish(EventKind.ESTOP_RESET, source, "Emergency stop re-armed", Level.INFO)
         self._update_global_state()
 
     # ================================================================== annotations
@@ -547,7 +547,7 @@ class LaserCore:
             raise ValueError(state)
         old = self.ml_state
         self.ml_state = state
-        self.events.publish(EventKind.ML, source, f"État mode-lock : {ML_LABELS[old]} → {ML_LABELS[state]}",
+        self.events.publish(EventKind.ML, source, f"Mode-lock state: {ML_LABELS[old]} → {ML_LABELS[state]}",
                             Level.INFO, old=old, new=state)
 
     def add_note(self, text: str, source: str = 'UI'):
@@ -560,12 +560,12 @@ class LaserCore:
         snapshot synchronously), then the shaker is fired."""
         if self.estop:
             return False
-        self.events.publish(EventKind.SHAKE, source, 'Shake piézo', Level.INFO)
+        self.events.publish(EventKind.SHAKE, source, 'Piezo shake', Level.INFO)
         if self.shake_handler is not None:
             try:
                 self.shake_handler()
             except Exception as e:
-                self.events.publish(EventKind.ERROR, 'SHAKER', f'Shake impossible : {e}', Level.ERROR)
+                self.events.publish(EventKind.ERROR, 'SHAKER', f'Shake impossible: {e}', Level.ERROR)
                 return False
         return True
 
@@ -582,19 +582,19 @@ class LaserCore:
             if policy.check_data:
                 channels = [self.roles.channel_for(r) for r in a.signal_roles()]
                 if any(c is None for c in channels):
-                    self.hold(a, Violation('config', 'rôle signal non déclaré'))
+                    self.hold(a, Violation('config', 'signal role not declared'))
                     continue
                 ok, reasons = self.signals.all_fresh(channels)
                 if not ok:
-                    self.hold(a, Violation('stale', 'données périmées : ' + ' ; '.join(reasons)))
+                    self.hold(a, Violation('stale', 'stale data: ' + ' ; '.join(reasons)))
                     continue
             if policy.check_intensity and self.safety.config.intensity.enabled:
                 if guard_state == 'low':
-                    self.hold(a, Violation('intensity', f"intensité sous le seuil "
+                    self.hold(a, Violation('intensity', f"intensity below threshold "
                                                         f"({self.safety.guard.value():.4g})"))
                     continue
                 if guard_state == 'unknown':
-                    self.hold(a, Violation('intensity', "intensité inconnue (signal absent ou périmé)"))
+                    self.hold(a, Violation('intensity', "unknown intensity (signal missing or stale)"))
                     continue
             try:
                 a.tick(self, now)
@@ -602,5 +602,5 @@ class LaserCore:
                 self.error(a, e)
                 continue
             if a.state == AutoState.ACTIVE and a.is_done():
-                self.stop(a.id, 'terminé')
+                self.stop(a.id, 'finished')
         self._update_global_state()

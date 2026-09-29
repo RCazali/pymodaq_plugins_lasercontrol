@@ -17,7 +17,7 @@ recordings_folder = ""
 event_trigger_folder = ""
 
 [ui]
-refresh_hz = 5                 # UI refresh rate (cahier des charges: <= 5 Hz)
+refresh_hz = 5                 # UI refresh rate (specification: <= 5 Hz)
 estop_shortcut = "F12"         # emergency stop keyboard shortcut (Pause/Break is always active too)
 plot_history_s = 600           # length of the live curves (s)
 

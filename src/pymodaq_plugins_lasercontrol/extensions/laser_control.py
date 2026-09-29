@@ -111,17 +111,17 @@ class LaserControl(CustomExt):
         pass
 
     def setup_actions(self):
-        self.add_action('estop', "Arrêt d'urgence", _icon('#c0392b', 'octagon'),
-                        "Arrête tous les automatismes puis tous les moteurs du dashboard")
-        self.add_action('save_preset', 'Enregistrer le preset', _std_icon('SP_DialogSaveButton'),
-                        'Enregistrer le preset courant')
-        self.add_action('record', 'Enregistrement', _icon('#e74c3c'), 'Démarrer / arrêter l’enregistrement HDF5',
+        self.add_action('estop', "Emergency stop", _icon('#c0392b', 'octagon'),
+                        "Stops every automation, then every motor of the dashboard")
+        self.add_action('save_preset', 'Save preset', _std_icon('SP_DialogSaveButton'),
+                        'Save the current preset')
+        self.add_action('record', 'Recording', _icon('#e74c3c'), 'Start / stop the HDF5 recording',
                         checkable=True)
-        self.add_action('refresh_hardware', 'Relire le matériel', _std_icon('SP_BrowserReload'),
-                        'Relier à nouveau les modules du dashboard (après ajout / changement de modules)')
+        self.add_action('refresh_hardware', 'Reload hardware', _std_icon('SP_BrowserReload'),
+                        'Re-attach the dashboard modules (after adding / changing modules)')
 
     def connect_things(self):
-        self.connect_action('estop', lambda: self.app.emergency_stop('barre d’outils'))
+        self.connect_action('estop', lambda: self.app.emergency_stop('toolbar'))
         self.connect_action('save_preset', lambda: self.app.save_preset())
         self.connect_action('record', lambda: self.app.toggle_recording(self.is_action_checked('record')))
         self.connect_action('refresh_hardware', self.app.refresh_hardware)
@@ -141,7 +141,7 @@ class LaserControl(CustomExt):
     def stop(self):
         """Programmatic stop requested by PyMoDAQ: automations stopped (motors are not moved)."""
         if self.app is not None:
-            self.app.core.stop_all_automations('arrêt demandé par PyMoDAQ')
+            self.app.core.stop_all_automations('stop requested by PyMoDAQ')
 
     def do_things_after_experiment_set(self, experiment_name: str):
         parent = getattr(super(), 'do_things_after_experiment_set', None)
@@ -156,9 +156,9 @@ class LaserControl(CustomExt):
             engaged = self.app.engaged_labels()
             if engaged:
                 answer = QtWidgets.QMessageBox.question(
-                    self.mainwindow, 'Fermer Laser Control',
-                    'Automatismes engagés : ' + ', '.join(engaged) +
-                    '\n\nIls seront arrêtés (aucun moteur ne bouge). Fermer ?',
+                    self.mainwindow, 'Close Laser Control',
+                    'Engaged automations: ' + ', '.join(engaged) +
+                    '\n\nThey will be stopped (no motor moves). Close?',
                     QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
                 if answer != QtWidgets.QMessageBox.Yes:
                     event.ignore()
