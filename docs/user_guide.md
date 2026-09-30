@@ -35,9 +35,14 @@ cannot be activated. **Check on this machine** runs the check again.
 
 ## 4. Working from the Alignment tab
 
-![Alignment tab: axes, automation buttons under the motors, history](images/alignment.png)
+![Alignment tab: automation buttons above the motors, history](images/alignment.png)
 
-Under the motors, **one button per chosen automation**: in the PID or Optimization tab, give a short
+The tab is laid out **from the bottom up** (in the lab only the lower half of the screen is visible
+through the setup): the last line holds the keyboard state and **■ STOP ALIGNMENT**, just above it the
+motor cards (left) and the active axis (right); the automation buttons and the history plot fill the
+top.
+
+Above the motors, **one button per chosen automation**: in the PID or Optimization tab, give a short
 **Display name** ("Optim HA", "Stab. OC_X"…) and tick **Button in Alignment**. For an optimization,
 **Button action**: *one pass* (stops by itself), *periodic* (one pass every N minutes until stopped) or
 *full optimization*.
@@ -52,7 +57,8 @@ Under the motors, **one button per chosen automation**: in the PID or Optimizati
 - The line of the button gives the state: PID error, pass iteration, next pass, reason of the hold.
   The tooltip gives the details (signal, motors, max step).
 - If the start is refused (missing safety limits, missing signal, emergency stop…), the reason is
-  written in red above the buttons and in the log. No dialog box.
+  written in red above the buttons and in the log (**📜 Log** tab; its title shows the number of
+  warnings not read yet, e.g. "📜 Log (2 ⚠)"). No dialog box.
 - The settings stay in their tab; the button starts with the displayed settings, even unsaved.
 - The keyboard stays active: a click on a button does not deactivate it. Moving a driven motor with the
   keyboard stops the automation that drives it (§ 5).

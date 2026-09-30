@@ -1,6 +1,6 @@
 # PID roadmap — calibration, loop state, coupled (MIMO) control
 
-Status: **proposal, not implemented**. Three features for the PID module, in the order they should
+Status: **§ 1 implemented** (`engines/calibration.py`, PID tab), § 2 and § 3 are proposals. Three features for the PID module, in the order they should
 be built: each one reuses the previous one.
 
 1. [Automatic calibration](#1-automatic-calibration) — sign, sensitivity, noise, suggested settings.
@@ -43,7 +43,11 @@ The user sees the proposal and clicks **Apply** (nothing is changed silently).
    insensitive to a linear drift. Outputs g, its standard error, the residual σ.
 5. **Checks** (each one gives a warning, the first two refuse the result):
    - |g| / stderr(g) < 5 → "response not significant: increase δ or check the motor";
-   - residual σ ≫ noise σ → "non-linear or unstable response";
+   - significant quadratic term (fit `s₀ + g·m + c·m² + d·t`) with |c|·δ / |g| > 30 % → "non-linear
+     response" (refused);
+   - residual σ ≫ noise σ / √M → warning only: on a real beam it is usually slow correlated noise
+     (drift), already included in the standard error of g (a residual-based refusal rejected good
+     calibrations on the simulator beam-walk bench);
    - |g₊ − g₋| / |g| > 30 % (g fitted separately on + and − steps) → "asymmetric: backlash?";
    - settling time > period → "increase Settle after move".
 6. **Return** to the start position (absolute move, checked like any other move).

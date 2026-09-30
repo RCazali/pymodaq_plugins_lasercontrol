@@ -19,6 +19,7 @@ from pymodaq_gui.parameter import Parameter, ParameterTree
 from ..core.events import EventKind, Level
 from ..core.states import AutoState, ENGAGED_STATES, STATE_COLORS, STATE_LABELS
 from ..core.roles import sanitize_role_name
+from ..engines.calibration import CalibrationResult, suggest_pid_settings
 from ..engines.pid import PIDSettings, error_stats
 from ..presets.schema import default_pid
 from .widgets import (EnvelopeGauge, StateBadge, ask_yes_no, fmt, reset_rows, set_combo_items, styled_button,
@@ -100,6 +101,9 @@ class SinglePIDWidget(QtWidgets.QWidget):
         self._motor_gauges: Dict[str, EnvelopeGauge] = {}
         self._motor_labels: Dict[str, QtWidgets.QLabel] = {}
         self._weights: Dict[str, QtWidgets.QDoubleSpinBox] = {}
+        self._cal_store: Dict[str, dict] = {}                 # role -> CalibrationResult.to_dict() (kept in the preset)
+        self._cal_results: Dict[str, CalibrationResult] = {}
+        self._cal_seen = None                                 # calibration automation already collected
         main = QtWidgets.QHBoxLayout(self)
         main.setContentsMargins(3, 3, 3, 3)
 
@@ -167,12 +171,39 @@ class SinglePIDWidget(QtWidgets.QWidget):
         self.tree = ParameterTree()
         self.tree.setParameters(self.settings, showTop=False)
         self.tree.setMinimumWidth(320)
+        self.tree.setMinimumHeight(60)            # "Advanced" is collapsed by default; it scrolls when opened
         header = self.tree.header()
         header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
         self.tree.setColumnWidth(0, 170)          # the value column must stay visible
         self.settings.sigTreeStateChanged.connect(self._on_changed)
         cl.addWidget(self.tree, 1)
+        cal_row = QtWidgets.QHBoxLayout()
+        self.btn_calibrate = styled_button('🎯 Calibrate', '#8e44ad',
+                                          'Moves each motor of the list by small bipolar steps (the others still) '
+                                          'and measures sign, sensitivity and noise. The motors come back to their '
+                                          'start position. Nothing is changed until you click Apply')
+        self.btn_apply_cal = styled_button('✔ Apply proposal', None,
+                                           'Loop sign, Kp (half of the error corrected per iteration), '
+                                           'deadband (2σ) and settle time from the last calibration')
+        cal_row.addWidget(self.btn_calibrate)
+        cal_row.addWidget(self.btn_apply_cal)
+        cl.addLayout(cal_row)
+        self.cal_text = QtWidgets.QLabel('')
+        self.cal_text.setWordWrap(True)
+        self.cal_text.setStyleSheet('font-size: 11px;')
+        self.cal_text.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        # one line per motor + warnings: scrolls instead of growing the tab (small screens, 1300 x 700)
+        cal_scroll = QtWidgets.QScrollArea()
+        cal_scroll.setWidget(self.cal_text)
+        cal_scroll.setWidgetResizable(True)
+        cal_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        cal_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        cal_scroll.setFocusPolicy(QtCore.Qt.NoFocus)
+        cal_scroll.setFixedHeight(3 * self.cal_text.fontMetrics().lineSpacing() + 8)
+        cl.addWidget(cal_scroll)
+        self.btn_calibrate.clicked.connect(self._on_calibrate)
+        self.btn_apply_cal.clicked.connect(self._on_apply_calibration)
         self.state = StateBadge('', font_pt=11)
         cl.addWidget(self.state)
         self.reason = QtWidgets.QLabel('')
@@ -192,8 +223,8 @@ class SinglePIDWidget(QtWidgets.QWidget):
         grid.addWidget(self.btn_stop, 0, 1)
         grid.addWidget(self.btn_resume, 1, 0)
         grid.addWidget(self.btn_invert, 1, 1)
-        grid.addWidget(self.btn_capture, 2, 0, 1, 2)
-        grid.addWidget(self.btn_ref, 3, 0, 1, 2)
+        grid.addWidget(self.btn_capture, 2, 0)
+        grid.addWidget(self.btn_ref, 2, 1)
         cl.addLayout(grid)
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(lambda: self.app.core.stop(self.auto_id, 'manual stop'))
@@ -201,7 +232,17 @@ class SinglePIDWidget(QtWidgets.QWidget):
         self.btn_invert.clicked.connect(self._on_invert)
         self.btn_capture.clicked.connect(self._on_capture)
         self.btn_ref.clicked.connect(self._on_reset_ref)
-        main.addWidget(center, 3)
+        # scrolls on a small screen (1300 x 700) instead of forcing the height of the window;
+        # Start / Stop stay reachable from the overview table above
+        center_scroll = QtWidgets.QScrollArea()
+        center_scroll.setWidget(center)
+        center_scroll.setWidgetResizable(True)
+        center_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        center_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        center_scroll.setMinimumWidth(center.minimumSizeHint().width()
+                                      + center_scroll.verticalScrollBar().sizeHint().width())
+        center_scroll.setMinimumHeight(220)
+        main.addWidget(center_scroll, 3)
 
         # 3. live ----------------------------------------------------------------------------
         right = QtWidgets.QGroupBox('3. Monitoring')
@@ -335,7 +376,8 @@ class SinglePIDWidget(QtWidgets.QWidget):
                 'show_in_alignment': bool(self._param('show_in_alignment').value()),
                 'signal': self.combo_signal.currentText(),
                 'motors': {r: w for r, w in self.motor_weights().items() if w},
-                'settings': PIDSettings.from_dict(s).to_dict()}
+                'settings': PIDSettings.from_dict(s).to_dict(),
+                'calibration': {r: dict(d) for r, d in self._cal_store.items()}}
 
     def load_config(self, cfg: dict):
         self._loading = True
@@ -358,6 +400,10 @@ class SinglePIDWidget(QtWidgets.QWidget):
                     self._param(name).setValue(v)
                 except Exception:
                     pass
+            self._cal_store = {str(r): dict(d) for r, d in (cfg.get('calibration') or {}).items()
+                               if isinstance(d, dict)}
+            self._cal_results = {r: CalibrationResult.from_dict(d) for r, d in self._cal_store.items()}
+            self._show_calibration()
         finally:
             self._loading = False
 
@@ -397,6 +443,117 @@ class SinglePIDWidget(QtWidgets.QWidget):
             return
         self._param('setpoint').setValue(self.app.core.signals.value(ch))
 
+    # ------------------------------------------------------------------ calibration
+    def _calibration(self):
+        return self.app.calibration(self.pid_id)
+
+    def _on_calibrate(self):
+        cal = self._calibration()
+        if cal is not None and cal.state in ENGAGED_STATES:
+            self.app.core.stop(cal.id, 'calibration stopped')
+            return
+        cfg = self.get_config()
+        if not cfg['signal'] or not cfg['motors']:
+            warn(self, self.label(), 'Choose a signal and at least one motor first.')
+            return
+        motors = ', '.join(cfg['motors'])
+        if not ask_yes_no(self, 'Calibration',
+                          f"Calibrate {motors} on {cfg['signal']}?\n\nEach motor moves by small steps (both "
+                          f"directions, at most its max step) while the others stay still, then comes back to "
+                          f"its start position. The PID settings are not changed until you click Apply."):
+            return
+        ok, msg = self.app.start_calibration(cfg)
+        if not ok:
+            warn(self, self.label(), 'Cannot start the calibration:\n\n' + msg.replace(' ; ', '\n'))
+
+    def _collect_calibration(self, cal) -> None:
+        """Keep the results of a finished / aborted calibration (kept in the preset)."""
+        self._cal_seen = cal
+        stamp = None
+        for role, res in cal.results.items():
+            self._cal_results[role] = res
+            self._cal_store[role] = res.to_dict(stamp)
+        if cal.results:
+            self.app.preset_dirty = True
+        self._show_calibration(cal)
+
+    def _show_calibration(self, cal=None):
+        lines = []
+        for role, res in self._cal_results.items():
+            d = self._cal_store.get(role, {})
+            if not res.ok:
+                head = f'✖ {role}: refused' + (f' (g = {res.g:.4g} ± {res.stderr:.2g})'
+                                               if math.isfinite(res.g) and math.isfinite(res.stderr) else '')
+            else:
+                head = (f'● {role}: g = {res.g:.4g} ± {res.stderr:.2g}' if math.isfinite(res.stderr)
+                        else f'● {role}: g = {res.g:.4g}')
+            extra = [f'σ = {res.noise_sigma:.3g}'] if math.isfinite(res.noise_sigma) else []
+            if math.isfinite(res.settle_s):
+                extra.append(f'settle {res.settle_s:.2g} s')
+            if d.get('date'):
+                extra.append(str(d['date']).replace('T', ' '))
+            lines.append(head + ('  (' + ', '.join(extra) + ')' if extra else ''))
+            lines.extend(f'    ⚠ {w}' for w in res.warnings)
+        if cal is not None and not cal.completed and cal.state == AutoState.OFF:
+            lines.append(f'Calibration stopped: {cal.reason or "aborted"}')
+        self.cal_text.setText('\n'.join(lines) if lines else 'No calibration yet.')
+
+    def _on_apply_calibration(self):
+        weights = {r: w for r, w in self.motor_weights().items() if w}
+        proposal, notes = suggest_pid_settings(self._cal_results, weights)
+        if proposal is None:
+            warn(self, self.label(), 'No proposal:\n\n' + '\n'.join(notes or ['calibrate the motors first']))
+            return
+        cur = (self._param('loop_sign').value(), self._param('kp').value(), self._param('deadband').value(),
+               self._param('settle_s').value())
+        msg = (f"Loop sign: {cur[0]} → {proposal['sign_kp']}\nKp: {cur[1]:.4g} → {proposal['kp']:.4g}\n"
+               f"Deadband: {cur[2]:.4g} → {proposal['deadband']:.4g}\n"
+               f"Settle after move: {cur[3]:.4g} → {proposal['settle_s']:.4g} s")
+        if notes:
+            msg += '\n\n' + '\n'.join(notes)
+        if not ask_yes_no(self, 'Apply the calibration', msg + '\n\nApply these settings?'):
+            return
+        self._param('loop_sign').setValue(proposal['sign_kp'])
+        self._param('kp').setValue(proposal['kp'])
+        self._param('deadband').setValue(proposal['deadband'])
+        self._param('settle_s').setValue(proposal['settle_s'])
+
+    def decoupling_proposal(self, weights: Dict[str, float], results: Dict[str, CalibrationResult]):
+        """(settings or None, notes) this PID would get with the decoupling ``weights`` and the
+        calibration of every motor on its signal (``results``). Nothing is changed."""
+        cal = dict(self._cal_results)
+        cal.update(results)
+        return suggest_pid_settings(cal, {r: w for r, w in weights.items() if w})
+
+    def apply_decoupling(self, weights: Dict[str, float], results: Dict[str, CalibrationResult],
+                         proposal: dict):
+        """New motor combination (decoupling of several PIDs), its calibration kept in the preset, and
+        the loop settings of the new combination. The caller has asked for confirmation."""
+        for role, res in results.items():
+            self._cal_results[role] = res
+            self._cal_store[role] = res.to_dict()
+        self._fill_motors({r: w for r, w in weights.items() if w})
+        self._param('loop_sign').setValue(proposal['sign_kp'])
+        self._param('kp').setValue(proposal['kp'])
+        self._param('deadband').setValue(proposal['deadband'])
+        self._param('settle_s').setValue(proposal['settle_s'])
+        self._show_calibration()
+        self._on_changed()
+
+    def _refresh_calibration(self, pid_state):
+        cal = self._calibration()
+        running = cal is not None and cal.state in ENGAGED_STATES
+        if cal is not None and not running and cal is not self._cal_seen:
+            self._collect_calibration(cal)
+        if running:
+            done, total = cal.progress()
+            self.btn_calibrate.setText(f'⏹ Stop calibration ({min(done + 1, total)}/{total})')
+        else:
+            self.btn_calibrate.setText('🎯 Calibrate')
+        self.btn_calibrate.setEnabled(running or (pid_state not in ENGAGED_STATES and not self.app.core.estop))
+        self.btn_apply_cal.setEnabled(not running and pid_state not in ENGAGED_STATES
+                                      and any(r.ok for r in self._cal_results.values()))
+
     def _on_reset_ref(self):
         if ask_yes_no(self, 'Envelope', 'Re-center the S4 envelope of this PID on the current positions?'):
             self.app.core.reset_reference(self.auto_id)
@@ -418,6 +575,7 @@ class SinglePIDWidget(QtWidgets.QWidget):
         self.combo_add.setEnabled(not engaged)
         self.btn_add_motor.setEnabled(not engaged and self.combo_add.count() > 0)
         self.combo_signal.setEnabled(not engaged)
+        self._refresh_calibration(state)
         for role, g in self._motor_gauges.items():
             lo, hi, pos, ref = envelope_used(self.app, a, role)
             g.set_values(lo, hi, pos, ref)
@@ -478,7 +636,13 @@ class PIDTab(QtWidgets.QWidget):
         self.btn_add.clicked.connect(self._on_add)
         self.btn_rename.clicked.connect(self._on_rename)
         self.btn_remove.clicked.connect(self._on_remove)
-        for b in (self.btn_add, self.btn_rename, self.btn_remove):
+        self.btn_decouple = styled_button('🔀 Decouple PIDs…', '#8e44ad',
+                                          'PIDs that share motors (or whose motors move several signals): '
+                                          'measure every motor on every signal, then give each PID the '
+                                          'combination of motors that moves only its own signal')
+        self.btn_decouple.clicked.connect(self.open_decoupling)
+        self.decoupling_dialog = None
+        for b in (self.btn_add, self.btn_rename, self.btn_remove, self.btn_decouple):
             bar.addWidget(b)
         bar.addStretch()
         bar.addWidget(QtWidgets.QLabel('<i>Settings are saved in the preset (Presets tab).</i>'))
@@ -581,6 +745,16 @@ class PIDTab(QtWidgets.QWidget):
             self._select_id(self._order[0])
         else:
             self.stack.setCurrentWidget(self.empty)
+
+    def open_decoupling(self):
+        """Non-modal window: the E-STOP and the other tabs stay usable while the motors are measured."""
+        from .decoupling_dialog import DecouplingDialog
+        if self.decoupling_dialog is None:
+            self.decoupling_dialog = DecouplingDialog(self.app, self)
+        cur = self._current()
+        self.decoupling_dialog.reload(checked=[cur.pid_id] if cur is not None else [])
+        self.decoupling_dialog.show()
+        self.decoupling_dialog.raise_()
 
     def select(self, auto_id: str) -> bool:
         pid_id = auto_id.split(':', 1)[-1]

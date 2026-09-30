@@ -22,7 +22,7 @@ from ..core.events import EventKind, Level
 from ..core.log import DedupLogger, add_rotating_file_handler, module_logger
 from ..core.safety import SafetyConfig
 from ..core.states import AutoState, ENGAGED_STATES
-from ..engines import OptimizerAutomation, PIDAutomation, PIDSettings
+from ..engines import CalibrationAutomation, OptimizerAutomation, PIDAutomation, PIDSettings
 from ..hardware.pymodaq_ports import discover_ports
 from ..hardware.shaker import PiezoShaker
 from ..presets import (LegacyImport, PresetStore, SessionStore, content_hash, default_preset, normalize,
@@ -33,6 +33,10 @@ from .manual import VIRTUAL_PREFIX, ManualControl, VirtualActuators
 from .widgets import ask_yes_no, info, warn
 
 logger = DedupLogger(module_logger(__file__))
+
+TAB_TITLES = {'overview': '🏠 Overview', 'alignment': '🎯 Alignment', 'xy': '✥ XY', 'pid': '⚙️ PID',
+              'optimizer': '📈 Optimization', 'scan': '📊 1D Scan', 'recording': '⏺ Recording',
+              'presets': '📂 Presets', 'config': '🔧 Configuration', 'log': '📜 Log'}
 
 try:
     from pymodaq_utils.config import get_set_local_dir
@@ -265,28 +269,31 @@ class LaserControlApp(QtCore.QObject):
         self.tabs['recording'] = RecordingTab(self)
         self.tabs['presets'] = PresetsTab(self)
         self.tabs['config'] = ConfigTab(self)
-        titles = {'overview': '🏠 Overview', 'alignment': '🎯 Alignment', 'xy': '✥ XY', 'pid': '⚙️ PID',
-                  'optimizer': '📈 Optimization', 'scan': '📊 1D Scan', 'recording': '⏺ Recording',
-                  'presets': '📂 Presets', 'config': '🔧 Configuration'}
-        for key, w in self.tabs.items():
-            self.tab_widget.addTab(w, titles[key])
-        self.tab_widget.currentChanged.connect(self._on_tab_changed)
+        # the journal is only needed to investigate a problem: its own tab (the title counts the
+        # warnings / alarms not seen yet) instead of a dock taking height under the tabs
         self.event_log = EventLogWidget(self.core.events)
+        self.tabs['log'] = self.event_log
+        self.event_log.unseen_changed.connect(self._on_log_unseen)
+        for key, w in self.tabs.items():
+            self.tab_widget.addTab(w, TAB_TITLES[key])
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
 
         if dockarea is not None:
             self.docks = {'status': Dock('Status', size=(1000, 60), hideTitle=True),
-                          'main': Dock('Laser Control', size=(1000, 700)),
-                          'journal': Dock('Log', size=(1000, 160))}
+                          'main': Dock('Laser Control', size=(1000, 700))}
             dockarea.addDock(self.docks['status'], 'top')
             dockarea.addDock(self.docks['main'], 'bottom', self.docks['status'])
-            dockarea.addDock(self.docks['journal'], 'bottom', self.docks['main'])
             self.docks['status'].addWidget(self.status_bar)
             self.docks['main'].addWidget(self.tab_widget)
-            self.docks['journal'].addWidget(self.event_log)
         self._install_shortcuts(dockarea)
         self.restore_session()
         if self._start_timers:
             self.start_timers()
+
+    def _on_log_unseen(self, n: int):
+        i = self.tab_widget.indexOf(self.event_log)
+        if i >= 0:
+            self.tab_widget.setTabText(i, TAB_TITLES['log'] + (f' ({n} ⚠)' if n else ''))
 
     def start_timers(self):
         self.tick_timer.start()
@@ -392,6 +399,66 @@ class LaserControlApp(QtCore.QObject):
     def start_pid(self, cfg: dict) -> Tuple[bool, str]:
         a = self.ensure_pid(cfg)
         return self.core.start(a.id)
+
+    def calibration(self, pid_id: str) -> Optional[CalibrationAutomation]:
+        a = self.core.get(f'CAL:{pid_id}')
+        return a if isinstance(a, CalibrationAutomation) else None
+
+    def start_calibration(self, cfg: dict) -> Tuple[bool, str]:
+        """Calibrate the motors of the PID ``cfg`` (one after the other, the others still). A previous
+        run is replaced; nothing changes in the PID settings until the user applies the proposal."""
+        aid = f"CAL:{cfg['id']}"
+        old = self.core.get(aid)
+        if old is not None:
+            if old.state in ENGAGED_STATES:
+                return False, 'a calibration is already running'
+            self.core.remove_automation(aid)
+        pid = self.core.get(f"PID:{cfg['id']}")
+        if pid is not None and pid.state in ENGAGED_STATES:
+            return False, 'stop the PID before calibrating its motors'
+        st = PIDSettings.from_dict(cfg.get('settings', {}))
+        roles = [r for r, w in (cfg.get('motors') or {}).items() if w]
+        label = cfg.get('label') or cfg['id']
+        cal = CalibrationAutomation(cfg.get('signal', ''), roles, settle_s=st.settle_s, period_s=st.period_s,
+                                    auto_id=aid, label=f'Calibration {label}')
+        self.core.add_automation(cal)
+        return self.core.start(aid)
+
+    DECOUPLING_ID = 'DEC'
+
+    def decoupling(self) -> Optional[CalibrationAutomation]:
+        a = self.core.get(self.DECOUPLING_ID)
+        return a if isinstance(a, CalibrationAutomation) else None
+
+    def start_decoupling(self, cfgs: List[dict], cycles: int = 3) -> Tuple[bool, str]:
+        """Measure every motor of the PIDs ``cfgs`` on every one of their signals (one run, one motor at
+        a time, back to the start positions). Nothing changes in the PIDs until the user applies the
+        proposed weights (engines/decoupling.py)."""
+        if len(cfgs) < 2:
+            return False, 'choose at least two PIDs'
+        signals = [c.get('signal', '') for c in cfgs]
+        if '' in signals or len(set(signals)) != len(signals):
+            return False, 'each PID needs its own signal (two PIDs on the same signal cannot be decoupled)'
+        motors = list(dict.fromkeys(r for c in cfgs for r, w in (c.get('motors') or {}).items() if w))
+        if len(motors) < len(signals):
+            return False, (f'{len(motors)} motors for {len(signals)} signals: add motors to the PIDs '
+                           f'(at least as many motors as signals)')
+        for c in cfgs:
+            for aid in (f"PID:{c['id']}", f"CAL:{c['id']}"):
+                a = self.core.get(aid)
+                if a is not None and a.state in ENGAGED_STATES:
+                    return False, f'stop {a.label} first'
+        old = self.core.get(self.DECOUPLING_ID)
+        if old is not None:
+            if old.state in ENGAGED_STATES:
+                return False, 'a decoupling measurement is already running'
+            self.core.remove_automation(self.DECOUPLING_ID)
+        settle = max(PIDSettings.from_dict(c.get('settings', {})).settle_s for c in cfgs)
+        labels = ' / '.join(c.get('label') or c['id'] for c in cfgs)
+        cal = CalibrationAutomation(signals[0], motors, cycles=cycles, extra_signals=signals[1:], settle_s=settle,
+                                    auto_id=self.DECOUPLING_ID, label=f'Decoupling {labels}')
+        self.core.add_automation(cal)
+        return self.core.start(self.DECOUPLING_ID)
 
     def optimizer(self, opt_id: str) -> Optional[OptimizerAutomation]:
         a = self.core.get(f'OPT:{opt_id}')
@@ -657,7 +724,7 @@ class LaserControlApp(QtCore.QObject):
         self.preset = p
         self.core.set_safety_config(SafetyConfig.from_dict(p['safety']))
         for a in list(self.core.automations.values()):
-            if a.kind in ('pid', 'optimizer'):
+            if a.kind in ('pid', 'optimizer', 'calibration'):
                 self.core.remove_automation(a.id)
         for cfg in p.get('pids', []):
             self.ensure_pid(cfg)

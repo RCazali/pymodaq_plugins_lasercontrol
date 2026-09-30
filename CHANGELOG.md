@@ -5,6 +5,35 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 ## [Unreleased]
 
 ### Added
+- **Automatic PID calibration** (`engines/calibration.py`, PID tab "🎯 Calibrate"): each motor of the PID
+  is moved by small bipolar steps (the others still, back to the start position), a drift-robust least
+  squares fit gives the sensitivity, its error, the noise and the settling time. Refused: a response
+  that is not significant, or a significant curvature (quadratic term changing the slope by > 30 % over
+  ±δ). Warnings only: asymmetric / backlash, settle > period, plateaus scattering much more than the
+  frame noise (slow drift of the beam: the error of g already includes it). "✔ Apply proposal" sets the
+  loop sign, Kp (half of the error corrected per iteration, for a combination of motors Kp = 0.5 / Σ
+  weight·g), deadband (2σ) and settle time after confirmation. Results are kept in the preset
+  (`pids[].calibration`). Checked on the simulator coupled benches: gains within a few % of the known
+  matrices, single motors and combinations.
+- **Decoupling of PIDs** (PID tab "🔀 Decouple PIDs…", `engines/decoupling.py`): the calibration now
+  measures each motor on several signals at once (`CalibrationAutomation(extra_signals=…)`), which gives
+  the sensitivity matrix J of a group of PIDs. Each PID is proposed the combination of motors that moves
+  only its own signal (column of J⁺, largest weight ±1), with its condition number, the coupling now →
+  after and the coupling still allowed by the errors of J; "✔ Apply weights" sets the weights, keeps the
+  calibration in the preset and sets sign / Kp / deadband / settle of the new combination. Non-modal
+  window (E-STOP reachable), cycles per motor adjustable. A motor with no clear effect on a signal no
+  longer blocks the Kp proposal of a combination: the significance is checked on the total loop gain.
+  **Limit:** decoupled PIDs share their motors, so they cannot run at the same time yet (single owner
+  per motor, the last started pauses the other).
+- **Log in its own tab** ("📜 Log", last tab) instead of a dock under the tabs; the tab title counts the
+  warnings / alarms not read yet. The window now fits 1300 × 700 (minimum height 775 → 663 px).
+- **Alignment tab laid out from the bottom up** (only the lower half of the screen is visible in the
+  lab): keyboard state and STOP ALIGNMENT on the last line, motor cards and active axis just above, the
+  automation buttons and the history plot at the top. Inner tab headers stay at the top.
+- PID tab on small screens (1300 × 700): the "2. Settings" column and the calibration results scroll
+  instead of forcing the window height (minimum height of the tab 561 → 340 px).
+- `docs/alignment_roadmap.md`: plan for the alignment cockpit (layout, goggles palette, configurable keys,
+  PIDs as jogged items, step-dither extremum seeking).
 - **PID setpoints in the Alignment tab**: each PID setpoint is a virtual axis `SP:<pid id>` that can be
   assigned to an axis channel (h / v) like a motor, and moved with the keyboard (step mode, 10 steps/s,
   Slow / Fast = setpoint step). Moving a setpoint does not stop the PID (it is not a motor); the value

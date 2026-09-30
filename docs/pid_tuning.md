@@ -67,6 +67,14 @@ setpoint and Kp are large fields; every other setting is under **Advanced**.
 - The max step applies **after** weighting, motor by motor.
 - Two PIDs must not drive the same motor at the same time (D4: the last activated one takes over, the
   other one pauses).
+- **Decoupling** ("🔀 Decouple PIDs…" in the PID tab): when the motors of one PID also move the
+  signal of another one (rotated mount, beam walk near / far field), tick these PIDs and **Measure**:
+  every motor is moved by small bipolar steps and every signal is recorded, which gives the sensitivity
+  matrix. The report proposes for each PID the weights that move **only its own signal** (coupling
+  now → after), the condition number κ (< 10 good, > 100 refused: two motors do the same thing) and the
+  coupling still allowed by the measurement errors (if large: more cycles per motor). **Apply weights**
+  sets the weights and the loop settings of each PID. Each PID then needs every motor of the group:
+  until PID groups exist, run them one at a time (D4).
 
 ## 4. Envelopes and limits (Configuration → Safety)
 

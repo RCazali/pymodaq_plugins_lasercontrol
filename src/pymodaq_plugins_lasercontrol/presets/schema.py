@@ -54,7 +54,7 @@ OPT_BUTTON_ACTION_LABELS = {'single': 'one pass', 'periodic': 'periodic', 'full'
 
 def default_pid(pid_id: str = 'PID_1') -> dict:
     return {'id': pid_id, 'label': '', 'in_stabilization': True, 'show_in_alignment': False, 'signal': '',
-            'motors': {}, 'settings': PIDSettings().to_dict()}
+            'motors': {}, 'settings': PIDSettings().to_dict(), 'calibration': {}}
 
 
 def default_optimizer(opt_id: str = 'Optim_1') -> dict:

@@ -70,7 +70,20 @@ def ext(tmp_path_factory):
 def test_01_nothing_started_and_tabs(ext):
     e, win, model, data = ext
     a = e.app
-    assert set(a.tabs) == {'overview', 'alignment', 'xy', 'pid', 'optimizer', 'scan', 'recording', 'presets', 'config'}
+    assert set(a.tabs) == {'overview', 'alignment', 'xy', 'pid', 'optimizer', 'scan', 'recording', 'presets', 'config',
+                           'log'}
+    # the journal is a tab: its title counts the warnings not seen yet, cleared when it is shown
+    from pymodaq_plugins_lasercontrol.core.events import EventKind, Level
+    log_index = a.tab_widget.indexOf(a.tabs['log'])
+    a.tab_widget.setCurrentWidget(a.tabs['overview'])
+    run(0.4)
+    a.tabs['log'].mark_seen()                        # startup warnings (no roles yet)
+    a.core.events.publish(EventKind.INFO, 'TEST', 'something odd', Level.WARNING)
+    run(0.5)
+    assert '(1 ⚠)' in a.tab_widget.tabText(log_index)
+    a.tab_widget.setCurrentIndex(log_index)
+    run(0.3)
+    assert '⚠' not in a.tab_widget.tabText(log_index)
     assert a.core.global_state.value == 'IDLE'
     assert all(x.state.value == 'OFF' for x in a.core.automations.values())      # S9
     for i in range(a.tab_widget.count()):
@@ -308,6 +321,110 @@ def test_06_scan_tab(ext):
         run(0.2)
     scan = a.core.get('SCAN')
     assert scan.completed and len(scan.results) == 3
+
+
+def test_06b_pid_calibration_from_the_tab(ext):
+    """The PID tab collects a finished calibration, keeps it in the preset and applies the proposal."""
+    from pymodaq_plugins_lasercontrol.engines import CalibrationAutomation
+    from pymodaq_plugins_lasercontrol.presets import normalize
+    e, win, model, data = ext
+    a = e.app
+    for x in list(a.core.automations.values()):
+        if x.state.value != 'OFF':
+            a.core.stop(x.id, 'test')
+    pid_tab = a.tabs['pid']
+    w = pid_tab._add_widget({'id': 'C', 'label': 'Cal', 'in_stabilization': False, 'signal': 'Cam1_x',
+                             'motors': {'Sim_OC_H': 1.0},
+                             'settings': {'setpoint': 0.0, 'kp': 0.01, 'period_s': 0.2}})
+    a.tab_widget.setCurrentWidget(pid_tab)
+    pid_tab.select('PID:C')
+    run(0.3)
+    assert 'No calibration' in w.cal_text.text() and not w.btn_apply_cal.isEnabled()
+    cal = CalibrationAutomation('Cam1_x', ['Sim_OC_H'], cycles=1, samples=2, noise_samples=6, auto_id='CAL:C',
+                                label='Calibration Cal')
+    a.core.add_automation(cal)
+    ok, msg = a.core.start(cal.id)
+    assert ok, msg
+    run(0.3)
+    assert 'Stop calibration' in w.btn_calibrate.text() and not w.btn_apply_cal.isEnabled()
+    t0 = time.time()
+    while time.time() - t0 < 90 and cal.state.value != 'OFF':
+        run(0.2)
+    assert cal.completed, cal.reason
+    run(0.5)
+    assert 'Sim_OC_H' in w.cal_text.text() and w.btn_calibrate.text() == '🎯 Calibrate'
+    stored = w.get_config()['calibration']['Sim_OC_H']
+    assert stored['date'] and math.isfinite(stored['g'])
+    assert normalize({'pids': [w.get_config()]})['pids'][0]['calibration']['Sim_OC_H'] == stored
+    if stored['ok']:
+        assert w.btn_apply_cal.isEnabled()
+        w._on_apply_calibration()
+        assert w._param('kp').value() == pytest.approx(0.5 / abs(stored['g']), abs=1e-4)      # the field keeps 4 decimals
+        assert w._param('loop_sign').value() == ('+' if stored['g'] > 0 else '-')
+    pid_tab.widgets.pop('C')
+    pid_tab._order.remove('C')
+    pid_tab.stack.removeWidget(w)
+    w.deleteLater()
+    pid_tab._rebuild_overview()
+    a.core.remove_automation(cal.id)
+
+
+def test_06c_decoupling_window(ext):
+    """Decouple PIDs: refusals, measurement start / stop, then a finished measurement (known matrix) gives
+    each PID the combination that moves only its own signal, with the loop settings of that combination."""
+    from pymodaq_plugins_lasercontrol.engines import CalibrationAutomation, CalibrationResult
+    e, win, model, data = ext
+    a = e.app
+    pid_tab = a.tabs['pid']
+    wx = pid_tab._add_widget({'id': 'DX', 'label': 'Dec x', 'in_stabilization': False, 'signal': 'Cam1_x',
+                              'motors': {'Sim_OC_H': 1.0}, 'settings': {'kp': 0.1, 'period_s': 0.2}})
+    wy = pid_tab._add_widget({'id': 'DY', 'label': 'Dec y', 'in_stabilization': False, 'signal': 'Cam1_y',
+                              'motors': {'Sim_OC_V': 1.0}, 'settings': {'kp': 0.1, 'period_s': 0.2}})
+    ok, msg = a.start_decoupling([wx.get_config()])
+    assert not ok and 'two PIDs' in msg
+    ok, msg = a.start_decoupling([wx.get_config(), dict(wy.get_config(), signal='Cam1_x')])
+    assert not ok and 'own signal' in msg
+    pid_tab.open_decoupling()
+    dlg = pid_tab.decoupling_dialog
+    dlg.set_selected(['DX', 'DY'])
+    run(0.4)
+    assert dlg.btn_measure.isEnabled() and not dlg.btn_apply.isEnabled()
+    dlg._on_measure()                                   # really starts, then stopped by the user
+    run(0.5)
+    assert a.decoupling().state.value == 'ACTIVE' and 'Stop measurement' in dlg.btn_measure.text()
+    dlg._on_measure()
+    run(0.5)
+    assert a.decoupling().state.value == 'OFF' and 'stopped' in dlg.report.toPlainText()
+    assert a.core.position('Sim_OC_H') is not None
+    # a finished measurement with a known coupled matrix (x = H + 0.5 V, y = −0.2 H + V)
+    J = {'Cam1_x': {'Sim_OC_H': 1.0, 'Sim_OC_V': 0.5}, 'Cam1_y': {'Sim_OC_H': -0.2, 'Sim_OC_V': 1.0}}
+    a.core.remove_automation('DEC')
+    done = CalibrationAutomation('Cam1_x', ['Sim_OC_H', 'Sim_OC_V'], extra_signals=['Cam1_y'], auto_id='DEC')
+    done.results_by = {s: {m: CalibrationResult(g=g, stderr=0.01, noise_sigma=0.1, settle_s=0.2, ok=True)
+                           for m, g in row.items()} for s, row in J.items()}
+    done.completed = True
+    a.core.add_automation(done)
+    dlg._run = [('DX', 'Cam1_x'), ('DY', 'Cam1_y')]
+    run(0.5)
+    assert dlg.result is not None and dlg.result.ok, dlg.report.toPlainText()
+    assert 'coupling now' in dlg.report.toPlainText() and dlg.btn_apply.isEnabled()
+    dlg._on_apply()
+    for w, sig, other in ((wx, 'Cam1_x', 'Cam1_y'), (wy, 'Cam1_y', 'Cam1_x')):
+        weights = w.get_config()['motors']
+        assert set(weights) == {'Sim_OC_H', 'Sim_OC_V'}
+        resp = {s: sum(J[s][m] * v for m, v in weights.items()) for s in J}
+        assert abs(resp[other]) < 1e-3 * abs(resp[sig])        # moves only its own signal
+        assert w._param('kp').value() == pytest.approx(0.5 / resp[sig], abs=1e-4)
+        assert w._param('loop_sign').value() == '+'
+        assert set(w.get_config()['calibration']) == {'Sim_OC_H', 'Sim_OC_V'}
+    dlg.close()
+    a.core.remove_automation('DEC')
+    for w in (wx, wy):
+        pid_tab.widgets.pop(w.pid_id)
+        pid_tab._order.remove(w.pid_id)
+        pid_tab.stack.removeWidget(w)
+        w.deleteLater()
+    pid_tab._rebuild_overview()
 
 
 def test_07_recording_and_presets(ext):

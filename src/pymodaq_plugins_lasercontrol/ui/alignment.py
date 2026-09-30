@@ -427,11 +427,14 @@ class AlignmentWidget(QtWidgets.QWidget):
         btn_stop.setStyleSheet('background-color: #c0392b; color: white; font-weight: bold; padding: 1px 10px;')
         btn_stop.clicked.connect(self.stop_all)
         status.addWidget(btn_stop)
-        page_l.addLayout(status)
 
+        # bottom-up layout: in the lab only the lower half of the screen is visible, so what is used
+        # all the time is at the bottom (keyboard state + STOP on the last line, motor cards and the
+        # active axis just above); the automation buttons and the history plot fill the top
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         splitter.setChildrenCollapsible(False)
         page_l.addWidget(splitter, stretch=1)
+        page_l.addLayout(status)
         self.pos_scroll = QtWidgets.QScrollArea()
         self.pos_scroll.setWidgetResizable(True)
         self.pos_scroll.setFocusPolicy(QtCore.Qt.NoFocus)
@@ -442,7 +445,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.card_grid.setSpacing(5)
         self.card_grid.setContentsMargins(2, 2, 2, 2)
         self.pos_scroll.setWidget(self.card_container)
-        # left column: motor cards, then (set_bottom_panel) the automation buttons
+        # left column: (set_bottom_panel) the automation buttons, then the motor cards at the bottom
         self.left_split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.left_split.setChildrenCollapsible(False)
         self.left_split.addWidget(self.pos_scroll)
@@ -456,13 +459,13 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.detail = QtWidgets.QFrame()
         self.detail.setObjectName('detailPanel')
         self.detail_l = QtWidgets.QVBoxLayout(self.detail)
-        self.detail_l.setContentsMargins(0, 0, 0, 4)
+        self.detail_l.setContentsMargins(0, 4, 0, 0)
         self.detail_l.setSpacing(2)
-        right_l.addWidget(self.detail)
         self.history_plot = AxisHistoryPlot()
         self.history_plot.point_clicked.connect(self._go_to_history_point)
         self.history_plot.clear_requested.connect(self._clear_active_history)
         right_l.addWidget(self.history_plot, stretch=1)
+        right_l.addWidget(self.detail)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
@@ -566,9 +569,10 @@ class AlignmentWidget(QtWidgets.QWidget):
 
     # ================================================================ bottom panel (automation buttons)
     def set_bottom_panel(self, widget: QtWidgets.QWidget):
-        """Widget shown under the motor cards (the automation buttons of the extension)."""
+        """Automation buttons of the extension, shown above the motor cards (the cards stay at the
+        bottom of the screen, the part visible in the lab). The name is kept for compatibility."""
         self.bottom_panel = widget
-        self.left_split.addWidget(widget)
+        self.left_split.insertWidget(0, widget)
         self.left_split.setStretchFactor(0, 1)
         self.left_split.setStretchFactor(1, 1)
         QtCore.QTimer.singleShot(0, self.fit_left_split)
@@ -577,15 +581,15 @@ class AlignmentWidget(QtWidgets.QWidget):
         self._left_split_user = True
 
     def fit_left_split(self, force: bool = False):
-        """Motor cards get the height they need (at most 70 %), the automation buttons the rest."""
+        """Motor cards (bottom) get the height they need (at most 70 %), the automation buttons the rest."""
         if self.bottom_panel is None or (self._left_split_user and not force):
             return
         total = sum(self.left_split.sizes())
         if total <= 0:
             return
         need = self.card_container.sizeHint().height() + 6
-        top = max(min(need, int(total * 0.7)), 80)
-        self.left_split.setSizes([top, max(total - top, 60)])
+        cards = max(min(need, int(total * 0.7)), 80)
+        self.left_split.setSizes([max(total - cards, 60), cards])
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -727,16 +731,17 @@ class AlignmentWidget(QtWidgets.QWidget):
             self.card_grid.setRowStretch(r, 0)
         for c in range(self.card_grid.columnCount()):
             self.card_grid.setColumnStretch(c, 0)
+        # row 0 = empty stretch: the cards are packed at the bottom (keys 1… still read left to right)
+        self.card_grid.setRowStretch(0, 1)
         n = 0
         for card in self._cards:
             if card is None:
                 continue
-            self.card_grid.addWidget(card, n // cols, n % cols, QtCore.Qt.AlignTop)
+            self.card_grid.addWidget(card, 1 + n // cols, n % cols, QtCore.Qt.AlignBottom)
             n += 1
         for c in range(cols):
             self.card_grid.setColumnStretch(c, 1)
         QtCore.QTimer.singleShot(0, self.fit_left_split)
-        self.card_grid.setRowStretch((n + cols - 1) // cols, 1)
 
     def _build_detail(self):
         while self.detail_l.count():

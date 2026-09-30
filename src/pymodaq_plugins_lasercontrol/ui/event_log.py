@@ -18,11 +18,15 @@ LEVEL_NAMES = {Level.DEBUG: 'debug', Level.INFO: 'info', Level.WARNING: 'warning
 
 
 class EventLogWidget(QtWidgets.QWidget):
+    """Event journal (its own tab). Counts the warnings / alarms / errors not seen yet, so that the tab
+    title can show them while the operator works elsewhere."""
     MAX_ROWS = 3000
+    unseen_changed = QtCore.Signal(int)
 
     def __init__(self, events: 'EventBus', parent=None):
         super().__init__(parent)
         self.events = events
+        self.unseen = 0
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(2, 2, 2, 2)
         bar = QtWidgets.QHBoxLayout()
@@ -64,6 +68,15 @@ class EventLogWidget(QtWidgets.QWidget):
         self._timer.start()
         self._reload()
 
+    def mark_seen(self):
+        if self.unseen:
+            self.unseen = 0
+            self.unseen_changed.emit(0)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.mark_seen()
+
     def close_bus(self):
         self.events.unsubscribe(self._token)
         self._timer.stop()
@@ -84,6 +97,10 @@ class EventLogWidget(QtWidgets.QWidget):
         for ev in evs:
             if self._accept(ev):
                 self._append(ev)
+        new = 0 if self.isVisible() else sum(1 for ev in evs if ev.level >= Level.WARNING)
+        if new:
+            self.unseen += new
+            self.unseen_changed.emit(self.unseen)
         if self.table.rowCount() > self.MAX_ROWS:
             for _ in range(self.table.rowCount() - self.MAX_ROWS):
                 self.table.removeRow(0)
