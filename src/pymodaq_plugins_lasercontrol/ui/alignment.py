@@ -21,6 +21,8 @@ import pyqtgraph as pg
 from qtpy import QtCore, QtGui, QtWidgets
 
 from ..core.log import DedupLogger, module_logger
+from pymodaq_gui.parameter import Parameter, ParameterTree
+
 from .widgets import mono_font
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -67,7 +69,7 @@ def channel_label(ch: dict, ch_key: str) -> str:
 
 def lab_default_axes() -> list:
     """Axis list of the historical Tk GUI (same order, names, directions and speeds). Actuators
-    are left to 'None': assign roles once in the Configuration sub-tab (saved in the preset)."""
+    are left to 'None': assign roles once in the Axes tab (saved in the preset)."""
     pico = dict(slow=100, fast=1000, decimals=0)
     ha = dict(slow=0.1, fast=2.0)
     return [
@@ -146,6 +148,15 @@ class KeyPage(QtWidgets.QWidget):
     def hideEvent(self, e):
         self._owner.release_all_jogs()
         super().hideEvent(e)
+
+
+class _ShowAware(QtWidgets.QWidget):
+    """A page that tells when it is shown (its content is built only then)."""
+    shown = QtCore.Signal()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.shown.emit()
 
 
 class AxisHistoryPlot(QtWidgets.QWidget):
@@ -389,8 +400,6 @@ class AlignmentWidget(QtWidgets.QWidget):
     def _setup_ui(self):
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        self.inner_tabs = QtWidgets.QTabWidget()
-        outer.addWidget(self.inner_tabs)
         self.page = KeyPage(self)
         self.page.focus_changed.connect(self.focus_changed)
         page_l = QtWidgets.QVBoxLayout(self.page)
@@ -412,10 +421,6 @@ class AlignmentWidget(QtWidgets.QWidget):
         help_lbl.setStyleSheet('color: gray; font-style: italic;')
         status.addWidget(help_lbl)
         status.addStretch()
-        self.chk_hide = QtWidgets.QCheckBox('Hide unassigned')
-        self.chk_hide.setFocusPolicy(QtCore.Qt.NoFocus)
-        self.chk_hide.toggled.connect(self._on_hide_toggled)
-        status.addWidget(self.chk_hide)
         btn_read = QtWidgets.QPushButton('⟳ Read')
         btn_read.setToolTip('Read the position of every assigned actuator')
         btn_read.setFocusPolicy(QtCore.Qt.NoFocus)
@@ -470,97 +475,46 @@ class AlignmentWidget(QtWidgets.QWidget):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         splitter.setSizes([600, 500])
-        self.inner_tabs.addTab(self.page, '🕹️ Alignment')
+        outer.addWidget(self.page)
 
-        cfg = QtWidgets.QWidget()
+        # settings of the axes: a tab of their own (the Alignment tab is for execution only)
+        cfg = _ShowAware()
+        self.config_page = cfg
+        cfg.shown.connect(lambda: self._load_axis_form(self.axis_list.currentRow(), force=True))
         cfg_l = QtWidgets.QHBoxLayout(cfg)
         left = QtWidgets.QVBoxLayout()
-        left.addWidget(QtWidgets.QLabel('Axes (order = keys 1…9, 0):'))
+        left.addWidget(QtWidgets.QLabel('<b>Axes of the Alignment tab</b> (order = keys 1…9, 0):'))
         self.axis_list = QtWidgets.QListWidget()
         self.axis_list.currentRowChanged.connect(self._load_axis_form)
         left.addWidget(self.axis_list)
         row = QtWidgets.QHBoxLayout()
-        for text, slot in (('▲', lambda: self._move_axis(-1)), ('▼', lambda: self._move_axis(+1)),
-                           ('＋', self._add_axis), ('✕', self._remove_axis)):
+        for text, slot, tip in (('▲', lambda: self._move_axis(-1), 'Move up (key order)'),
+                                ('▼', lambda: self._move_axis(+1), 'Move down'),
+                                ('＋', self._add_axis, 'Add an axis'), ('✕', self._remove_axis, 'Remove the axis')):
             b = QtWidgets.QPushButton(text)
             b.setFixedWidth(40)
+            b.setToolTip(tip)
             b.clicked.connect(slot)
             row.addWidget(b)
         left.addLayout(row)
         b_reset = QtWidgets.QPushButton('Lab layout (Tk)')
         b_reset.clicked.connect(self._reset_layout)
         left.addWidget(b_reset)
+        self.chk_hide = QtWidgets.QCheckBox('Hide unassigned axes in Alignment')
+        self.chk_hide.toggled.connect(self._on_hide_toggled)
+        left.addWidget(self.chk_hide)
         cfg_l.addLayout(left, stretch=1)
-        form_w = QtWidgets.QWidget()
-        form_l = QtWidgets.QVBoxLayout(form_w)
-        name_row = QtWidgets.QHBoxLayout()
-        name_row.addWidget(QtWidgets.QLabel('Name:'))
-        self.f_name = QtWidgets.QLineEdit()
-        self.f_name.textEdited.connect(self._on_form_edited)
-        name_row.addWidget(self.f_name)
-        self.f_color = QtWidgets.QPushButton('Color…')
-        self.f_color.clicked.connect(self._pick_color)
-        name_row.addWidget(self.f_color)
-        form_l.addLayout(name_row)
-        self.f_ch = {}
-        ch_row = QtWidgets.QHBoxLayout()
-        for key, title in (('h', '↔ Horizontal channel (a − / d +)'), ('v', '↕ Vertical channel (s − / w +)')):
-            box = QtWidgets.QGroupBox(title)
-            box.setCheckable(True)
-            box.toggled.connect(self._on_form_edited)
-            fl = QtWidgets.QFormLayout(box)
-            w = {'box': box}
-            w['actuator'] = QtWidgets.QComboBox()
-            w['actuator'].currentTextChanged.connect(self._on_form_edited)
-            w['invert'] = QtWidgets.QCheckBox('invert direction')
-            w['invert'].toggled.connect(self._on_form_edited)
-            w['mode'] = QtWidgets.QComboBox()
-            w['mode'].addItems(JOG_MODES)
-            for i, m in enumerate(JOG_MODES):
-                w['mode'].setItemData(i, JOG_MODE_TIPS[m], QtCore.Qt.ToolTipRole)
-            w['mode'].currentTextChanged.connect(self._on_form_edited)
-            for k in ('slow', 'fast', 'min', 'max'):
-                w[k] = QtWidgets.QDoubleSpinBox()
-                w[k].setRange(-1e9, 1e9)
-                w[k].setDecimals(4)
-                w[k].valueChanged.connect(self._on_form_edited)
-            w['label'] = QtWidgets.QLineEdit()
-            w['label'].setPlaceholderText('short displayed name: X, Y, Horiz, Z…')
-            w['label'].textEdited.connect(self._on_form_edited)
-            w['decimals'] = QtWidgets.QSpinBox()
-            w['decimals'].setRange(0, 6)
-            w['decimals'].valueChanged.connect(self._on_form_edited)
-            w['speed_param'] = QtWidgets.QLineEdit()
-            w['speed_param'].setPlaceholderText('e.g. velocity  or  group/velocity (limit mode)')
-            w['speed_param'].textEdited.connect(self._on_form_edited)
-            w['warn'] = QtWidgets.QLabel('')
-            w['warn'].setWordWrap(True)
-            w['warn'].setStyleSheet('color: #c0392b;')
-            fl.addRow('Actuator (role):', w['actuator'])
-            fl.addRow('Label:', w['label'])
-            fl.addRow('Decimals:', w['decimals'])
-            fl.addRow('', w['invert'])
-            fl.addRow('Jog mode:', w['mode'])
-            fl.addRow('Slow:', w['slow'])
-            fl.addRow('Fast (Shift):', w['fast'])
-            fl.addRow('Min (limit mode):', w['min'])
-            fl.addRow('Max (limit mode):', w['max'])
-            fl.addRow('Speed parameter:', w['speed_param'])
-            fl.addRow(w['warn'])
-            ch_row.addWidget(box)
-            self.f_ch[key] = w
-        form_l.addLayout(ch_row)
+        self.axis_tree = ParameterTree()
+        self.axis_tree.header().setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
+        self.axis_tree.setColumnWidth(0, 230)
+        self.axis_params: Optional[Parameter] = None
+        right = QtWidgets.QVBoxLayout()
+        right.addWidget(self.axis_tree, 1)
         modes_help = QtWidgets.QLabel('<br>'.join(f'<b>{m}</b>: {t}' for m, t in JOG_MODE_TIPS.items()))
         modes_help.setWordWrap(True)
         modes_help.setStyleSheet('color: gray;')
-        form_l.addWidget(modes_help)
-        form_l.addStretch()
-        form_scroll = QtWidgets.QScrollArea()
-        form_scroll.setWidgetResizable(True)
-        form_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        form_scroll.setWidget(form_w)
-        cfg_l.addWidget(form_scroll, stretch=3)
-        self.inner_tabs.addTab(cfg, '⚙️ Configuration')
+        right.addWidget(modes_help)
+        cfg_l.addLayout(right, stretch=3)
         self._update_speed_label()
         self.set_keyboard_active(False)
         for b in self.findChildren(QtWidgets.QAbstractButton):
@@ -832,17 +786,16 @@ class AlignmentWidget(QtWidgets.QWidget):
                 btn_go.setMaximumWidth(60)
                 btn_go.setStyleSheet('background-color: #2980b9; color: white; font-weight: bold; padding: 1px 10px;')
                 btn_go.clicked.connect(lambda _, a=act, t=target: self.move_abs(a, t.value()))
-                step = self._spin(ch.get('rel_step', 5.0 if ch_key == 'h' else 1.0))
-                step.setMinimum(0)
-                step.setToolTip('Relative step for − / +')
-                step.valueChanged.connect(lambda v, c=ch: c.__setitem__('rel_step', v))
+                rel = float(ch.get('rel_step', 5.0 if ch_key == 'h' else 1.0))
+                step = QtWidgets.QLabel(f'{rel:g}')
+                step.setToolTip('Step of the − / + buttons (set in the Axes tab)')
                 b_m = QtWidgets.QPushButton('−')
                 b_p = QtWidgets.QPushButton('+')
                 for b in (b_m, b_p):
                     b.setFocusPolicy(QtCore.Qt.NoFocus)
                     b.setFixedWidth(28)
-                b_m.clicked.connect(lambda _, a=act, s=step: self.move_rel(a, -s.value()))
-                b_p.clicked.connect(lambda _, a=act, s=step: self.move_rel(a, +s.value()))
+                b_m.clicked.connect(lambda _, a=act, s=rel: self.move_rel(a, -s))
+                b_p.clicked.connect(lambda _, a=act, s=rel: self.move_rel(a, +s))
                 lt = QtWidgets.QLabel('go to')
                 lt.setStyleSheet('color: gray;')
                 ls = QtWidgets.QLabel('step')
@@ -892,15 +845,6 @@ class AlignmentWidget(QtWidgets.QWidget):
         self._rebuild()
         self.config_changed.emit()
         self.activate_keyboard()
-
-    def _pick_color(self):
-        row = self.axis_list.currentRow()
-        if not 0 <= row < len(self._axes):
-            return
-        c = QtWidgets.QColorDialog.getColor(QtGui.QColor(axis_color(self._axes[row], row)), self, 'Axis color')
-        if c.isValid():
-            self._axes[row]['color'] = c.name()
-            self._apply_config_edit()
 
     def _all_actuators(self) -> list:
         acts = []
@@ -957,7 +901,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.speed_label.setStyleSheet('color: #e67e22; font-weight: bold;' if self._fast else 'color: gray;')
 
     def activate_keyboard(self):
-        if self.inner_tabs.currentWidget() is self.page and self.page.isVisible():
+        if self.page.isVisible():
             self.page.setFocus(QtCore.Qt.OtherFocusReason)
 
     # ================================================================ axis select
@@ -1269,55 +1213,79 @@ class AlignmentWidget(QtWidgets.QWidget):
             self.axis_list.setCurrentRow(min(max(row, 0), len(self._axes) - 1))
         self._load_axis_form(self.axis_list.currentRow())
 
-    def _load_axis_form(self, row: int):
+    def _axis_tree(self, row: int) -> list:
+        ax = self._axes[row]
+        names = ['None'] + self.manual.actuator_roles()
+        groups = []
+        for key, title in (('h', '↔ Horizontal channel (a − / d +)'), ('v', '↕ Vertical channel (s − / w +)')):
+            used = bool(ax.get(key))
+            ch = ax.get(key) or _channel()
+            acts = names + ([ch['actuator']] if ch['actuator'] not in names else [])
+            groups.append({'title': title, 'name': key, 'type': 'group', 'children': [
+                {'title': 'Used:', 'name': 'on', 'type': 'bool', 'value': used},
+                {'title': 'Actuator (role):', 'name': 'actuator', 'type': 'list', 'limits': acts,
+                 'value': ch['actuator'], 'tip': 'a motor role, or SP:<PID> for the setpoint of a PID'},
+                {'title': 'Label:', 'name': 'label', 'type': 'str', 'value': ch.get('label', ''),
+                 'tip': 'short displayed name: X, Y, Horiz, Z…'},
+                {'title': 'Decimals:', 'name': 'decimals', 'type': 'int', 'value': int(ch.get('decimals', 4)),
+                 'min': 0, 'max': 6},
+                {'title': 'Invert direction:', 'name': 'invert', 'type': 'bool', 'value': bool(ch.get('invert'))},
+                {'title': 'Jog mode:', 'name': 'mode', 'type': 'list', 'limits': JOG_MODES,
+                 'value': ch.get('mode', 'auto'), 'tip': '\n'.join(f'{m}: {tip}' for m, tip in JOG_MODE_TIPS.items())},
+                {'title': 'Slow:', 'name': 'slow', 'type': 'float', 'value': float(ch.get('slow', 0.1)),
+                 'decimals': 4, 'tip': 'step (step mode) or speed (native) without Shift'},
+                {'title': 'Fast (Shift):', 'name': 'fast', 'type': 'float', 'value': float(ch.get('fast', 1.0)),
+                 'decimals': 4},
+                {'title': 'Button step (− / +):', 'name': 'rel_step', 'type': 'float', 'min': 0.0, 'decimals': 4,
+                 'value': float(ch.get('rel_step', 5.0 if key == 'h' else 1.0)),
+                 'tip': 'relative move of the − / + buttons of the active axis'},
+                {'title': 'Min (limit mode):', 'name': 'min', 'type': 'float', 'value': float(ch.get('min', 0.0)),
+                 'decimals': 4},
+                {'title': 'Max (limit mode):', 'name': 'max', 'type': 'float', 'value': float(ch.get('max', 25.0)),
+                 'decimals': 4},
+                {'title': 'Speed parameter:', 'name': 'speed_param', 'type': 'str', 'value': ch.get('speed_param', ''),
+                 'tip': 'e.g. velocity  or  group/velocity (limit mode)'}]})
+        return [{'title': 'Axis', 'name': 'axis', 'type': 'group', 'children': [
+                    {'title': 'Name:', 'name': 'name', 'type': 'str', 'value': ax.get('name', '')},
+                    {'title': 'Color:', 'name': 'color', 'type': 'color', 'value': axis_color(ax, row)}]}] + groups
+
+    def _load_axis_form(self, row: int, force: bool = False):
+        if not force and not self.config_page.isVisible():
+            return                                   # built when the Axes tab is shown
         self._loading = True
         try:
-            names = ['None'] + self.manual.actuator_roles()
-            ok = 0 <= row < len(self._axes)
-            ax = self._axes[row] if ok else {'name': ''}
-            self.f_name.setText(ax.get('name', ''))
-            for k, w in self.f_ch.items():
-                ch = ax.get(k)
-                w['box'].setChecked(bool(ch))
-                ch = ch or _channel()
-                combo = w['actuator']
-                combo.clear()
-                items = list(names)
-                if ch['actuator'] not in items:
-                    items.append(ch['actuator'])
-                combo.addItems(items)
-                combo.setCurrentText(ch['actuator'])
-                w['invert'].setChecked(bool(ch.get('invert')))
-                w['label'].setText(ch.get('label', ''))
-                w['decimals'].setValue(int(ch.get('decimals', 4)))
-                w['mode'].setCurrentText(ch.get('mode', 'auto'))
-                for f in ('slow', 'fast', 'min', 'max'):
-                    w[f].setValue(float(ch.get(f, 0.0)))
-                w['speed_param'].setText(ch.get('speed_param', ''))
-                w['warn'].setText(JOG_MODE_TIPS['limit'] if ch.get('mode') == 'limit' else '')
+            if not 0 <= row < len(self._axes):
+                self.axis_params = Parameter.create(name='axis', type='group', children=[])
+            else:
+                self.axis_params = Parameter.create(name='axis', type='group', children=self._axis_tree(row))
+                self.axis_params.sigTreeStateChanged.connect(self._on_form_edited)
+            self.axis_tree.setParameters(self.axis_params, showTop=False)
         finally:
             self._loading = False
 
     def _on_form_edited(self, *args):
-        if self._loading:
+        if self._loading or self.axis_params is None:
             return
         row = self.axis_list.currentRow()
         if not 0 <= row < len(self._axes):
             return
         ax = self._axes[row]
-        ax['name'] = self.f_name.text().strip() or ax['name']
-        for k, w in self.f_ch.items():
-            if not w['box'].isChecked():
+        p = self.axis_params
+        ax['name'] = p.child('axis', 'name').value().strip() or ax['name']
+        color = p.child('axis', 'color').value()
+        ax['color'] = QtGui.QColor(color).name() if color is not None else ax.get('color')
+        for k in ('h', 'v'):
+            g = p.child(k)
+            if not g.child('on').value():
                 ax[k] = None
                 continue
             ch = ax.get(k) or _channel()
-            ch.update({'actuator': w['actuator'].currentText() or 'None', 'invert': w['invert'].isChecked(),
-                       'mode': w['mode'].currentText(), 'slow': w['slow'].value(), 'fast': w['fast'].value(),
-                       'min': w['min'].value(), 'max': w['max'].value(),
-                       'speed_param': w['speed_param'].text().strip(), 'label': w['label'].text().strip(),
-                       'decimals': w['decimals'].value()})
+            ch.update({n: g.child(n).value() for n in ('actuator', 'invert', 'mode', 'slow', 'fast', 'min', 'max',
+                                                         'rel_step', 'label', 'decimals')})
+            ch['speed_param'] = g.child('speed_param').value().strip()
+            ch['label'] = ch['label'].strip()
+            ch['actuator'] = ch['actuator'] or 'None'
             ax[k] = ch
-            w['warn'].setText(JOG_MODE_TIPS['limit'] if ch['mode'] == 'limit' else '')
         item = self.axis_list.item(row)
         if item is not None:
             key = f'{AXIS_KEY_LABELS[row]})' if row < len(AXIS_KEY_LABELS) else '(no key)'

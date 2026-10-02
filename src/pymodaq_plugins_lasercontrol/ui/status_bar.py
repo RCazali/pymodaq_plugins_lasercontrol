@@ -19,10 +19,15 @@ if TYPE_CHECKING:  # pragma: no cover
     from .app import LaserControlApp
 
 ML_COLORS = {'unknown': '#7f8c8d', 'ML_ON': '#27ae60', 'ML_OFF': '#c0392b', 'UNSTABLE': '#f39c12'}
+#: the state of an automation chip is also given by a symbol (colours are hard to tell apart through goggles)
+STATE_MARKS = {AutoState.ARMED: '… ', AutoState.ACTIVE: '▶ ', AutoState.PAUSED: '‖ ', AutoState.HELD: '■ ',
+               AutoState.ERROR: '✖ '}
 
 
 class StatusBar(QtWidgets.QFrame):
     automation_clicked = QtCore.Signal(str)
+    CHIP_MAX_W = 190
+    CHIP_MIN_W = 110
 
     def __init__(self, app: 'LaserControlApp', parent=None):
         super().__init__(parent)
@@ -37,9 +42,19 @@ class StatusBar(QtWidgets.QFrame):
         self.global_badge.setMinimumWidth(170)
         lay.addWidget(self.global_badge)
 
-        self.auto_box = QtWidgets.QHBoxLayout()
+        # engaged automations: never widen the window (1300 px), the chips share the free space
+        self.auto_area = QtWidgets.QWidget()
+        self.auto_area.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
+        self.auto_box = QtWidgets.QHBoxLayout(self.auto_area)
+        self.auto_box.setContentsMargins(0, 0, 0, 0)
         self.auto_box.setSpacing(4)
-        lay.addLayout(self.auto_box)
+        self.more = QtWidgets.QLabel('')
+        self.more.setStyleSheet('font-weight: bold; border: 2px solid palette(text); border-radius: 4px; '
+                                'padding: 1px 4px;')
+        self.more.setVisible(False)
+        self.auto_box.addWidget(self.more)
+        self.auto_box.addStretch()
+        lay.addWidget(self.auto_area, 1)
         self._auto_badges: Dict[str, QtWidgets.QPushButton] = {}
 
         lay.addWidget(self._vline())
@@ -69,7 +84,6 @@ class StatusBar(QtWidgets.QFrame):
             self.ml_buttons[state] = b
             lay.addWidget(b)
 
-        lay.addStretch()
         self.btn_note = styled_button('📝 Note', None, 'Add a timestamped note to the log (T7.5)')
         self.btn_note.clicked.connect(self._on_note)
         lay.addWidget(self.btn_note)
@@ -134,6 +148,18 @@ class StatusBar(QtWidgets.QFrame):
         # only what is engaged: the list of PIDs / optimisations can be long (their buttons are in
         # the Alignment tab and their own tabs)
         autos = [a for a in core.automations.values() if a.state != AutoState.OFF]
+        # what needs attention first, then the routines (they drive the others); the chips share the free
+        # width, and what does not fit is summarised by a "+n" chip (tooltip: the list)
+        autos.sort(key=lambda a: (a.state not in (AutoState.HELD, AutoState.ERROR), a.kind != 'routine'))
+        fit = max(int((self.auto_area.width() + 4) // (self.CHIP_MIN_W + 4)), 1)
+        hidden = autos[fit - 1:] if len(autos) > fit else []
+        autos = autos[:fit - 1] if hidden else autos
+        chip_w = int(min(self.CHIP_MAX_W, max(self.CHIP_MIN_W, (self.auto_area.width() + 4)
+                                                / max(len(autos) + bool(hidden), 1) - 4)))
+        self.more.setVisible(bool(hidden))
+        self.more.setText(f'+{len(hidden)}')
+        self.more.setToolTip('\n'.join(f'{STATE_MARKS.get(a.state, "")}{a.label}: {STATE_LABELS.get(a.state, a.state)}'
+                                       for a in hidden))
         ids = [a.id for a in autos]
         for aid in list(self._auto_badges):
             if aid not in ids:
@@ -147,9 +173,11 @@ class StatusBar(QtWidgets.QFrame):
                 b.setFocusPolicy(QtCore.Qt.NoFocus)
                 b.clicked.connect(lambda _=False, i=a.id: self.automation_clicked.emit(i))
                 self._auto_badges[a.id] = b
-                self.auto_box.addWidget(b)
+                self.auto_box.insertWidget(self.auto_box.count() - 2, b)
+            b.setFixedWidth(chip_w)
             color = STATE_COLORS.get(a.state, '#7f8c8d')
-            b.setText(f'{a.label}')
+            text = f'{STATE_MARKS.get(a.state, "")}{a.label}'
+            b.setText(b.fontMetrics().elidedText(text, QtCore.Qt.ElideRight, chip_w - 16))
             b.setStyleSheet(f'QPushButton {{ background-color: {color}; color: white; font-weight: bold; '
                             f'border-radius: 4px; padding: 2px 6px; }}')
             b.setToolTip(f'{a.label}: {STATE_LABELS.get(a.state, a.state)}' + (f'\n{a.reason}' if a.reason else ''))

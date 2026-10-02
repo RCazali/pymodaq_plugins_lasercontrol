@@ -54,12 +54,12 @@ def test_preset_store_roundtrip_and_validation_mark(tmp_path):
     p['pids'].append({'id': 'H', 'signal': 'Cam1_x', 'motors': {'OC_H': 1.0}, 'settings': {'kp': 0.2}})
     store.save(p)
     q = store.load('Stab CW')
-    assert q['pids'][0]['settings']['kp'] == 0.2
+    assert q['pids'][0]['loops'][0]['kp'] == 0.2 and q['pids'][0]['loops'][0]['signal'] == 'Cam1_x'
     assert q['pids'][0]['settings']['period_s'] == 0.5
     store.mark_validated(q, by='romain', notes='OK en CW')
     store.save(q)
     assert store.list()[0].status == 'validated'
-    q['pids'][0]['settings']['kp'] = 0.3            # content change -> back to draft
+    q['pids'][0]['loops'][0]['kp'] = 0.3            # content change -> back to draft
     store.save(q)
     assert store.load('Stab CW')['status'] == 'draft'
 
@@ -136,12 +136,13 @@ def test_import_legacy_pid_profile(tmp_path):
     imp = LegacyImport(rm)
     p = imp.import_file(path)
     pid = p['pids'][0]
-    assert pid['motors'] == {'OC_H': 1.0, 'Pico_EM_H': -0.5}
-    assert pid['settings']['sign_kp'] == '-' and pid['settings']['period_s'] == 0.5
+    assert pid['motors'] == ['OC_H', 'Pico_EM_H']
+    assert pid['loops'][0]['weights'] == {'OC_H': 1.0, 'Pico_EM_H': -0.5}
+    assert pid['loops'][0]['sign'] == '-' and pid['settings']['period_s'] == 0.5
     lim = p['safety']['actuators']['OC_H']
     assert lim['abs_min'] == -80 and lim['abs_max'] == 100          # most restrictive
     assert lim['max_step'] is None                                  # never invented
-    assert rm.channel_for(pid['signal']) == 'LECO_B/Cam1'
+    assert rm.channel_for(pid['loops'][0]['signal']) == 'LECO_B/Cam1'
 
 
 def test_import_legacy_opt_and_xy(tmp_path):
@@ -293,13 +294,27 @@ def test_simulator_demo_preset(tmp_path, monkeypatch):
     assert rep.ok, rep.text()
     assert {a for a in rep.automations} == {'PID:Beam_H', 'PID:Beam_V', 'PID:Cam1_X_OC', 'PID:Cam1_Y_OC',
                                             'PID:Cpl_X', 'PID:Cpl_Y', 'PID:BW_Near_X', 'PID:BW_Far_X',
-                                            'PID:BW_Near_Y', 'PID:BW_Far_Y',
-                                            'OPT:Optim_PD', 'OPT:Track_PD', 'OPT:Optim_OC'}
+                                            'PID:BW_Near_Y', 'PID:BW_Far_Y', 'PID:Pointing_X', 'PID:Pointing_Y',
+                                            'OPT:Optim_PD', 'OPT:Track_PD', 'OPT:Optim_OC', 'OPT:Optim_HA',
+                                            'RTN:HA_opt', 'RTN:Keep_aligned', 'RTN:Walk_X'}
     assert not rep.warnings, rep.text()           # 'SP:Beam_H' setpoint axes are not taken for motor roles
     assert all(rm.module_for(r) in modules for r in rm.actuators)
     path = sim_preset.write_demo_preset()
     assert path is not None and sim_preset.write_demo_preset() is None
     assert PresetStore(tmp_path / 'presets').load(sim_preset.DEMO_PRESET)['optimizers'][1]['button_action'] == 'periodic'
+
+
+def test_simulator_dashboard_preset_with_more_than_ten_actuators():
+    """PyMoDAQ 5.1 names the 11th actuator 'move10' twice (its index parser skips a digit): worked around."""
+    pytest.importorskip('pymodaq')
+    from pmd_helpers import app
+    from pymodaq_plugins_lasercontrol.tools import sim_preset
+    app()
+    assert len(sim_preset.DEFAULT_MOVES) > 11
+    p = sim_preset.build_preset_51('t', sim_preset.DEFAULT_MOVES, sim_preset.DEFAULT_DETECTORS)
+    names = [c.name() for c in p.child('Moves').children()]
+    assert len(set(names)) == len(sim_preset.DEFAULT_MOVES)
+    assert [c.child('name').value() for c in p.child('Moves').children()] == [t for t, _ in sim_preset.DEFAULT_MOVES]
 
 
 def test_simulator_coupled_benches_follow_their_matrix():
@@ -315,13 +330,23 @@ def test_simulator_coupled_benches_follow_their_matrix():
         sim.move_to(axis, value)
     t[0] = 10.0
     f = sim.frame()
-    pos = {'CPL_A': 2.0, 'CPL_B': -1.0, 'BW1_H': 1.0, 'BW2_H': 2.0, 'BW1_V': -3.0, 'BW2_V': 0.0}
+    pos = {'CPL_A': 2.0, 'CPL_B': -1.0, 'BW1_H': 1.0, 'BW2_H': 2.0, 'BW1_V': -3.0, 'BW2_V': 0.0, 'HA_X': 0.0,
+           'HA_Y': 0.0}
     for matrix in (COUPLED_SIMPLE, BEAM_WALK):
         for key, row in matrix.items():
             data, label = key.split('/')
             assert f[data][label] == pytest.approx(sum(g * pos[a] for a, g in row.items()), abs=1e-9)
     assert f['Coupled']['x'] == pytest.approx(2.0 - 0.35)
     assert f['Far']['x'] == pytest.approx(1.0 + 3.0 + 0.0)
+    # the hard aperture: flux maximum when it is centred and the beam angle (far field) is 0
+    sim.move_to('HA_X', 3.0)
+    for axis in ('BW1_H', 'BW2_H', 'BW1_V'):
+        sim.move_to(axis, 0.0)
+    t[0] = 20.0
+    f = sim.frame()
+    assert f['Near']['x'] == pytest.approx(0.6)                 # the aperture shifts the position (near field)
+    assert f['Far']['x'] == pytest.approx(0.0)                  # not the angle
+    assert f['HA']['flux'] == pytest.approx(10.0 * np.exp(-9.0 / 72.0))
 
 
 def test_schema_v1_single_optimizer_is_migrated():
@@ -331,7 +356,7 @@ def test_schema_v1_single_optimizer_is_migrated():
                         'motors': [{'role': 'Jet_X', 'max_step': 1, 'probe_step': 0.1}],
                         'signals': [{'role': 'XUV_flux', 'mode': 'Maximize', 'weight': 1}]}}
     p = normalize(v1)
-    assert p['schema_version'] == 2 and 'optimizer' not in p
+    assert p['schema_version'] == 3 and 'optimizer' not in p
     assert p['optimizers'][0]['id'] == 'Optimizer' and p['optimizers'][0]['show_in_alignment'] is False
     assert p['optimizers'][0]['config']['run_mode'] == 'Nelder-Mead (simplex)'
     assert p['pids'][0]['show_in_alignment'] is False

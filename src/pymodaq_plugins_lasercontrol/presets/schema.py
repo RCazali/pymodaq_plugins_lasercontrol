@@ -20,9 +20,10 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from ..core.roles import RoleMap
 from ..core.safety import SafetyConfig
 from ..engines.optimizer.automation import DEFAULT_OPT_CONFIG
-from ..engines.pid import PIDSettings
+from ..engines.pid import COMMON_KEYS, PIDSettings, default_loop, normalize_loop
+from ..engines.routine import Routine, validate_routine
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 META_KEYS = ('name', 'description', 'status', 'validated_on', 'validated_by', 'validation_notes',
              'validated_hash', 'created', 'modified', 'schema_version')
 STATUSES = ('draft', 'validated')
@@ -52,9 +53,72 @@ OPT_BUTTON_ACTIONS = ('single', 'periodic', 'full')
 OPT_BUTTON_ACTION_LABELS = {'single': 'one pass', 'periodic': 'periodic', 'full': 'full optimization'}
 
 
+def default_common() -> dict:
+    s = PIDSettings()
+    return {k: getattr(s, k) for k in COMMON_KEYS}
+
+
 def default_pid(pid_id: str = 'PID_1') -> dict:
-    return {'id': pid_id, 'label': '', 'in_stabilization': True, 'show_in_alignment': False, 'signal': '',
-            'motors': {}, 'settings': PIDSettings().to_dict(), 'calibration': {}}
+    """A PID: one or several loops (one signal each, its setpoint, gains and motor weights), the motors
+    it may use, common settings, and the calibration (``{signal: {motor: result}}`` = sensitivity matrix)."""
+    return {'id': pid_id, 'label': '', 'in_stabilization': True, 'show_in_alignment': False,
+            'loops': [default_loop()], 'motors': [], 'settings': default_common(), 'calibration': {}}
+
+
+def _is_result(d) -> bool:
+    return isinstance(d, dict) and 'g' in d
+
+
+def normalize_pid(pid: dict, fallback_id: str = 'PID_1') -> dict:
+    """A PID of the preset in the current format. Schema 2 PIDs (one ``signal``, ``motors`` = weights,
+    ``settings`` = PIDSettings, calibration ``{motor: result}``) are converted to one loop."""
+    pid = copy.deepcopy(pid or {})
+    d = default_pid(str(pid.get('id') or fallback_id))
+    for k in ('label', 'in_stabilization', 'show_in_alignment'):
+        if k in pid:
+            d[k] = pid[k]
+    d['label'] = str(d['label'] or '')
+    st = pid.get('settings', {}) or {}
+    if 'loops' in pid:
+        loops = [normalize_loop(l) for l in pid.get('loops') or []] or [default_loop()]
+        motors = [str(m) for m in (pid.get('motors') or [])]
+        cal = {str(s): {str(m): dict(r) for m, r in (rows or {}).items() if _is_result(r)}
+               for s, rows in (pid.get('calibration') or {}).items() if isinstance(rows, dict)}
+    else:                                                     # schema 2: one signal
+        old = PIDSettings.from_dict(st)
+        weights = {str(r): float(w) for r, w in (pid.get('motors') or {}).items()}
+        loops = [normalize_loop({'signal': pid.get('signal', ''), 'setpoint': old.setpoint,
+                                 'setpoint_mode': old.setpoint_mode, 'sign': old.sign_kp, 'kp': old.kp,
+                                 'ki': old.ki, 'kd': old.kd, 'deadband': old.deadband, 'weights': weights})]
+        motors = [r for r, w in weights.items() if w]
+        old_cal = {str(m): dict(r) for m, r in (pid.get('calibration') or {}).items() if _is_result(r)}
+        cal = {loops[0]['signal']: old_cal} if old_cal and loops[0]['signal'] else {}
+    common = PIDSettings.from_dict(st)
+    d['settings'] = {k: getattr(common, k) for k in COMMON_KEYS}
+    for l in loops:
+        for m, w in l['weights'].items():
+            if w and m not in motors:
+                motors.append(m)
+        l['weights'] = {m: float(l['weights'].get(m, 0.0)) for m in motors}
+    d['loops'], d['motors'], d['calibration'] = loops, motors, cal
+    return d
+
+
+def merge_group(members: List[dict]) -> dict:
+    """Schema 2 "PID group" (decoupled PIDs sharing motors) → one PID with one loop per member."""
+    first = members[0]
+    d = copy.deepcopy(first)
+    d['label'] = ' + '.join(m['label'] or m['id'] for m in members)
+    d['show_in_alignment'] = any(m['show_in_alignment'] for m in members)
+    d['in_stabilization'] = any(m['in_stabilization'] for m in members)
+    d['loops'] = [l for m in members for l in m['loops']]
+    d['motors'] = list(dict.fromkeys(r for m in members for r in m['motors']))
+    for l in d['loops']:
+        l['weights'] = {r: float(l['weights'].get(r, 0.0)) for r in d['motors']}
+    d['calibration'] = {}
+    for m in members:
+        d['calibration'].update(m['calibration'])
+    return d
 
 
 def default_optimizer(opt_id: str = 'Optim_1') -> dict:
@@ -79,6 +143,7 @@ def default_preset(name: str = 'New preset') -> dict:
         'safety': SafetyConfig().to_dict(),
         'pids': [],
         'optimizers': [],
+        'routines': [],
         'scan': {'role': '', 'start': -10.0, 'stop': 10.0, 'step': 1.0, 'dwell': 0.2, 'samples': 1,
                  'channels': [], 'relative': True, 'return_to_start': True, 'check_intensity': False},
         'recording': default_recording(),
@@ -101,14 +166,7 @@ def normalize(preset: dict) -> dict:
     p = migrate(copy.deepcopy(preset or {}))
     _deep_fill(p, default_preset(p.get('name', 'preset')))
     p['safety'] = SafetyConfig.from_dict(p.get('safety', {})).to_dict()
-    pids = []
-    for i, pid in enumerate(p.get('pids', []) or []):
-        d = default_pid(f'PID_{i + 1}')
-        d.update({k: v for k, v in pid.items() if k != 'settings'})
-        d['settings'] = PIDSettings.from_dict(pid.get('settings', {})).to_dict()
-        d['motors'] = {str(r): float(w) for r, w in (pid.get('motors', {}) or {}).items()}
-        pids.append(d)
-    p['pids'] = pids
+    p['pids'] = [normalize_pid(pid, f'PID_{i + 1}') for i, pid in enumerate(p.get('pids', []) or [])]
     opts = []
     for i, opt in enumerate(p.get('optimizers', []) or []):
         d = default_optimizer(f'Optim_{i + 1}')
@@ -123,6 +181,7 @@ def normalize(preset: dict) -> dict:
             d['button_action'] = 'single'
         opts.append(d)
     p['optimizers'] = opts
+    p['routines'] = [Routine.from_dict(r).to_dict() for r in p.get('routines', []) or []]
     if p.get('status') not in STATUSES:
         p['status'] = 'draft'
     return p
@@ -143,6 +202,21 @@ def migrate(p: dict) -> dict:
                 d.update({k: old[k] for k in ('config', 'motors', 'signals') if k in old})
                 p['optimizers'].append(d)
     p.pop('optimizer', None)
+    if version < 3:
+        # v2 had one signal per PID and "groups" of decoupled PIDs; v3 has PIDs with several loops:
+        # a group becomes one PID (the id of its first member), a lone PID becomes a PID with one loop
+        pids, groups = [], {}
+        for i, raw in enumerate(p.get('pids', []) or []):
+            d = normalize_pid(raw, f'PID_{i + 1}')
+            g = str((raw or {}).get('group') or '')
+            if g:
+                if g not in groups:
+                    groups[g] = []
+                    pids.append(('group', g))
+                groups[g].append(d)
+            else:
+                pids.append(('pid', d))
+        p['pids'] = [merge_group(groups[x]) if kind == 'group' else x for kind, x in pids]
     p['schema_version'] = SCHEMA_VERSION
     return p
 
@@ -157,9 +231,10 @@ def content_hash(preset: dict) -> str:
 def roles_used(preset: dict) -> Dict[str, List[str]]:
     acts, sigs = set(), set()
     for pid in preset.get('pids', []):
-        acts.update(r for r, w in (pid.get('motors') or {}).items() if w)
-        if pid.get('signal'):
-            sigs.add(pid['signal'])
+        for loop in pid.get('loops', []) or []:
+            acts.update(r for r, w in (loop.get('weights') or {}).items() if w)
+            if loop.get('signal'):
+                sigs.add(loop['signal'])
     for opt in preset.get('optimizers', []) or []:
         acts.update(m['role'] for m in opt.get('motors', []) if m.get('role'))
         sigs.update(s['role'] for s in opt.get('signals', []) if s.get('role'))
@@ -179,6 +254,15 @@ def roles_used(preset: dict) -> Dict[str, List[str]]:
         for k in ('actuator_x', 'actuator_y'):
             if g.get(k) not in (None, '', 'None') and not str(g[k]).startswith('SP:'):
                 acts.add(g[k])
+    for r in preset.get('routines', []) or []:
+        for s in r.get('steps', []) or []:
+            if s.get('action') == 'move' and s.get('target'):
+                acts.add(s['target'])
+            for c in s.get('until', []) or []:
+                if c.get('kind') == 'travel' and c.get('target'):
+                    acts.add(c['target'])
+                elif c.get('kind') == 'signal' and c.get('target'):
+                    sigs.add(c['target'])
     return {'actuators': sorted(acts), 'signals': sorted(sigs)}
 
 
@@ -258,12 +342,19 @@ def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
             rep.errors.append(f"duplicate PID identifier: {pid.get('id')}")
         ids.add(aid)
         probs = []
-        if not pid.get('signal'):
+        loops = pid.get('loops', []) or []
+        sigs = [l.get('signal', '') for l in loops]
+        if not loops or '' in sigs:
             probs.append("no signal selected")
-        probs += signal_problems(pid.get('signal', ''))
-        motors = [r for r, w in (pid.get('motors') or {}).items() if w]
-        if not motors:
-            probs.append("no motor (non-zero weight)")
+        if len(set(sigs)) != len(sigs):
+            probs.append("the same signal is used by two loops")
+        motors = []
+        for l in loops:
+            probs += signal_problems(l.get('signal', ''))
+            used = [r for r, w in (l.get('weights') or {}).items() if w]
+            if not used:
+                probs.append(f"{l.get('signal') or 'a loop'}: no motor (non-zero weight)")
+            motors += [r for r in used if r not in motors]
         for r in motors:
             probs += actuator_problems(r) + limits_problems(r)
         probs += guard_problems
@@ -284,6 +375,28 @@ def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
         if not [s for s in opt.get('signals', []) if float(s.get('weight', 0) or 0) != 0]:
             probs.append("no objective signal")
         probs += guard_problems
+        rep.automations[aid] = probs
+
+    for r in preset.get('routines', []) or []:
+        aid = f"RTN:{r.get('id')}"
+        if aid in ids:
+            rep.errors.append(f"duplicate routine identifier: {r.get('id')}")
+        ids.add(aid)
+        routine = Routine.from_dict(r)
+        probs = validate_routine(routine)
+        for i, s in enumerate(routine.steps, start=1):
+            names = s.targets() if s.action in ('start', 'stop', 'pause', 'resume') else []
+            names += [c.target for c in s.until if c.kind in ('locked', 'finished') and c.target]
+            for t in dict.fromkeys(names):
+                if t.startswith(('PID:', 'OPT:')) and t not in ids:
+                    probs.append(f"step {i}: {t} is not in this preset")
+            if s.action == 'move':
+                probs += [f"step {i}: {p}" for p in actuator_problems(s.target) + limits_problems(s.target)]
+            for c in s.until:
+                if c.kind == 'signal':
+                    probs += [f"step {i}: {p}" for p in signal_problems(c.target)]
+                elif c.kind == 'travel':
+                    probs += [f"step {i}: {p}" for p in actuator_problems(c.target)]
         rep.automations[aid] = probs
 
     dup = roles.duplicate_modules()

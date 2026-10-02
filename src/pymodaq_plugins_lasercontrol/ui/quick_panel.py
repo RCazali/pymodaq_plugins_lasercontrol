@@ -1,5 +1,5 @@
-"""Automation buttons of the Alignment tab: the PIDs and optimisations marked "Button in
-Alignment" in their tab, one card each, under the motor cards.
+"""Automation buttons of the Alignment tab: the PIDs, optimisations and routines marked "Button in
+Alignment" in their tab, one card each, under the motor cards (band PID / OPT / SEQ).
 
 One click does it, without confirmation (the automation settings were chosen in their own tab):
 stopped -> start, frozen by a safety rule (HELD) -> resume, otherwise -> stop. Right click: the other
@@ -54,7 +54,7 @@ class QuickCard(QtWidgets.QFrame):
         h = QtWidgets.QHBoxLayout(self)
         h.setContentsMargins(0, 0, 6, 0)
         h.setSpacing(7)
-        self.band = QtWidgets.QLabel('PID' if item['kind'] == 'pid' else 'OPT')
+        self.band = QtWidgets.QLabel({'pid': 'PID', 'routine': 'SEQ'}.get(item['kind'], 'OPT'))
         self.band.setObjectName('quickBand')
         self.band.setAlignment(QtCore.Qt.AlignCenter)
         self.band.setFixedWidth(34)
@@ -156,7 +156,8 @@ class QuickPanel(QtWidgets.QFrame):
         self.scroll.setWidget(self.container)
         lay.addWidget(self.scroll, 1)
         self.empty = QtWidgets.QLabel('No button: tick "Button in Alignment" in the settings of a PID '
-                                      '(PID tab) or of an optimization (Optimization tab).')
+                                      '(PID tab), of an optimization (Optimization tab) or of a routine '
+                                      '(Routines tab).')
         self.empty.setWordWrap(True)
         self.empty.setStyleSheet('color: gray; font-style: italic;')
         lay.addWidget(self.empty)
@@ -248,7 +249,11 @@ class QuickPanel(QtWidgets.QFrame):
         what = OPT_BUTTON_ACTION_LABELS.get(item.get('action'), 'one pass') if is_opt else ''
         if state == AutoState.OFF:
             line = 'Stopped'
-            if is_opt and a is not None and getattr(a, 'pass_count', 0) and a.status:
+            if item.get('kind') == 'routine' and a is not None and a.outcome:
+                line = {'done': '✔ Done', 'failed': '✖ Failed', 'stopped': '■ Stopped'}.get(a.outcome, 'Stopped')
+                if a.outcome == 'failed':
+                    line += ' · ' + full_reason.replace('failed at ', '')
+            elif is_opt and a is not None and getattr(a, 'pass_count', 0) and a.status:
                 line += f' · {a.status}'
             elif a is not None and full_reason and full_reason not in ('started', 'stopped from Alignment',
                                                                        'manual stop'):
@@ -261,10 +266,15 @@ class QuickPanel(QtWidgets.QFrame):
         if state == AutoState.ERROR:
             return f'Error: {reason}', 'click: stop'
         if state == AutoState.PAUSED:
+            if a is not None and getattr(a, 'pause_kind', '') == 'manual':
+                return f'Paused: {reason}', 'click: resume · right click: stop'
             return f'Paused: {reason}', 'click: stop · right click: resume'
         if state == AutoState.ARMED:
             return 'Arming…', 'click: stop'
         # ACTIVE
+        if item.get('kind') == 'routine':
+            n = len(a.routine.steps)
+            return f'▶ Step {min(a.index + 1, n)}/{n}: {a.status}', 'click: stop'
         if is_opt:
             if a.in_pass:
                 line = f'Pass running · it. {a.iteration}'
@@ -272,8 +282,10 @@ class QuickPanel(QtWidgets.QFrame):
                 left = a.seconds_to_next_pass(self.app.core.clock.now())
                 line = 'Active' if left is None else f'Next pass in {int(left) // 60:02d}:{int(left) % 60:02d}'
             return line, 'click: stop'
-        t = a.controller.last
-        line = 'Active' if not math.isfinite(t.error) else f'Active · error {fmt(t.error, 3)}'
-        if getattr(t, 'in_deadband', False):
+        errs = [l.controller.last for l in a.loops]
+        if not all(math.isfinite(t.error) for t in errs):
+            return 'Active', 'click: stop'
+        line = 'Active · error ' + ' / '.join(fmt(t.error, 3) for t in errs)
+        if all(t.in_deadband for t in errs):
             line += ' (deadband)'
         return line, 'click: stop'

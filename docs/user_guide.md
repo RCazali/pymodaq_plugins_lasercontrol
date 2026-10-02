@@ -16,7 +16,7 @@
 | Item | Meaning |
 |---|---|
 | Large badge on the left | **Idle** (nothing engaged) · **Running** · **Safety hold** (an automation is held) · **EMERGENCY STOP** · **Error** |
-| Automation buttons | one per **engaged** automation (PID, optimization, scan). Color = state. A click opens the matching tab. |
+| Automation buttons | one per **engaged** automation (PID, optimization, routine, scan). Symbol + color = state (▶ active, ‖ paused, ■ held, ✖ error). Held ones and routines first; "+n" = more (tooltip). A click opens the matching tab. |
 | Detector light (e.g. `LECO_B 0.3 s`) | age of the last frame: green = fresh, orange = late, red = stale (the automations are held). |
 | `I …` | intensity (S2 guard) and % of the reference: green = above threshold, red = below threshold (hold), gray = unknown. "guard DISABLED" in orange if the guard is switched off in the configuration. |
 | ML ON / ML OFF / Unstable | mode-lock state, **to be clicked by you**: it is timestamped and recorded. |
@@ -35,6 +35,11 @@ cannot be activated. **Check on this machine** runs the check again.
 
 ## 4. Working from the Alignment tab
 
+**Settings and execution are separate.** The Alignment tab only *runs* things: keyboard jog, go to, the
+buttons of the PIDs, optimizations and routines. Everything is *set* in its own tab, as a PyMoDAQ
+parameter tree: **🕹 Axes** (axes, keys, jog steps, − / + button steps), **⚙️ PID**, **📈 Optimization**,
+**🧭 Routines**.
+
 ![Alignment tab: automation buttons above the motors, history](images/alignment.png)
 
 The tab is laid out **from the bottom up** (in the lab only the lower half of the screen is visible
@@ -42,7 +47,8 @@ through the setup): the last line holds the keyboard state and **■ STOP ALIGNM
 motor cards (left) and the active axis (right); the automation buttons and the history plot fill the
 top.
 
-Above the motors, **one button per chosen automation**: in the PID or Optimization tab, give a short
+Above the motors, **one button per chosen automation** (routines first, band SEQ; see 4b): in the PID,
+Optimization or Routines tab, give a short
 **Display name** ("Optim HA", "Stab. OC_X"…) and tick **Button in Alignment**. For an optimization,
 **Button action**: *one pass* (stops by itself), *periodic* (one pass every N minutes until stopped) or
 *full optimization*.
@@ -50,7 +56,8 @@ Above the motors, **one button per chosen automation**: in the PID or Optimizati
 | Button | One click | Color |
 |---|---|---|
 | Stopped | starts, **without confirmation** | gray |
-| Active, arming, paused, error | stops (the motors stay where they are) | green, blue, orange, purple |
+| Active, arming, paused by another automation, error | stops (the motors stay where they are) | green, blue, orange, purple |
+| Paused by a routine | resumes | orange |
 | Held (safety) | resumes, if the cause is gone | red |
 
 - Right click: start, resume, stop, **Open settings**.
@@ -64,12 +71,52 @@ Above the motors, **one button per chosen automation**: in the PID or Optimizati
   keyboard stops the automation that drives it (§ 5).
 - Two automations on the same motor: the last one started takes over, the other one pauses and
   resumes by itself afterwards (for example a PID during an optimization pass).
-- **PID setpoints as axes**: in Alignment → Configuration, an axis channel can be `SP:<PID id>` (the
-  setpoint of that PID) instead of a motor. Selected with its key (1…9, 0), it moves with `a`/`d` and
+- **PID setpoints as axes**: in the Axes tab, an axis channel can be `SP:<PID id>` (the setpoint of
+  that PID; `SP:<PID id>/2` for the second signal of a coupled PID) instead of a motor. Selected with its key (1…9, 0), it moves with `a`/`d` and
   `s`/`w` like a motor (Slow / Fast = setpoint step; use the `step` or `auto` jog mode). The PID keeps
   running and moves its motors to follow: once the PIDs are well tuned, optimizing on the setpoints is
   more reliable than moving the motors by hand.
 - The height of the button area is adjusted with the handle between the motors and the buttons.
+
+## 4b. Routines (🧭 Routines tab): sequences of actions
+
+A **routine** chains high-level steps: *start A, wait until it converges, pause B, optimise C, resume
+B…*. It is programmed once in the **Routines** tab (one group per step in the parameter tree; ▲ ▼ ⧉ ✖ act
+on the selected step) and started from its button in Alignment (band **SEQ**, shown first) or with
+**▶ Run**. A routine only **executes**: it never changes a setting (setpoints, gains, decoupling are set
+in the PID tab).
+
+Each **step** = one **action**, then **wait until** one of its conditions is true; the first true condition
+decides where to go (**next**, **go to step n**, **end**, **fail**). No condition: the next step comes as
+soon as the action is done. A **timeout** is the last resort (→ fail by default).
+
+| Action | Does |
+|---|---|
+| Start / Stop | a PID or an optimization (one pass, periodic, full) |
+| Pause / Resume | nothing moves while paused, and a paused automation **does not resume by itself**: a Resume step (or its button: one click = resume) restarts it. A PID *held* by a safety rule is never resumed by a routine. |
+| Move motor | relative or absolute, in bounded steps with the safety limits; a PID using this motor pauses during the move and resumes by itself |
+| Note / Wait only | writes in the log / only waits |
+
+| Condition | True when |
+|---|---|
+| Time (s) | the delay has elapsed since the end of the action |
+| PID converged | \|error\| ≤ value (0 = the deadband) for *Hold* s — every signal of the PID |
+| Signal | signal `<`, `>`, `\|x\|<`, `\|x\|>` value for *Hold* s |
+| Motor travel | the motor moved by ≥ value since the step began (e.g. "too far: hand over to the other motor") |
+| Finished | the automation ended by itself (one optimization pass) |
+| Step count | the step was entered ≥ n times (guard for loops made with "go to") |
+
+- What a routine **starts** is watched: held, error or stopped by somebody else → the routine **fails**. On a
+  failure or a stop, what it started is stopped (option *On failure / stop: stop what it started*); what
+  it paused stays paused, the log says so.
+- A routine ends with its last step: what it started keeps running (e.g. PIDs locked).
+- Editing is locked while it runs (a run uses the steps as they were at its start). The running step is
+  marked **▶**; the run history is on the right.
+- "go to" numbers follow their step when steps are moved, inserted or deleted.
+
+Simulator examples ("Simulator demo" preset): *HA optimization (PIDs paused)* (hard aperture optimised with
+the coupled near / far field PIDs paused, then re-locked), *Keep aligned (HA every 2 min)* (loop), *Beam walk
+x, one mirror at a time* (travel limit + loop guard).
 
 ## 5. Activating / deactivating the stabilization (Overview)
 

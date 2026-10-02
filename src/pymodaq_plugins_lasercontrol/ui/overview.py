@@ -292,16 +292,17 @@ class OverviewTab(QtWidgets.QWidget):
         pids = app.stabilization_pids()
         lines = []
         for cfg in pids:
-            a = app.core.get(f"PID:{cfg['id']}")
+            a = app.pid_driver(cfg['id'])
             state = a.state.value if a is not None else 'OFF'
-            mot = ', '.join(f"{r}×{w:+g}" for r, w in cfg.get('motors', {}).items() if w)
+            sigs = ' + '.join(l.get('signal') or '?' for l in cfg.get('loops', []))
+            mot = ', '.join(cfg.get('motors', []))
             reason = f" — <i>{a.reason}</i>" if a is not None and a.state in (AutoState.HELD, AutoState.PAUSED,
                                                                              AutoState.ERROR) and a.reason else ''
-            lines.append(f"• <b>{cfg.get('label') or cfg['id']}</b> [{state}]: {cfg.get('signal')} → {mot}{reason}")
+            lines.append(f"• <b>{cfg.get('label') or cfg['id']}</b> [{state}]: {sigs} → {mot}{reason}")
         self.summary.setText('<br>'.join(lines) if lines else
                              '<i>No PID marked "stabilization" in the preset.</i>')
-        running = any(app.core.get(f"PID:{c['id']}") is not None and
-                      app.core.get(f"PID:{c['id']}").state != AutoState.OFF for c in pids)
+        running = any(app.pid_driver(c['id']) is not None and
+                      app.pid_driver(c['id']).state != AutoState.OFF for c in pids)
         self.btn_on.setEnabled(bool(pids) and not app.core.estop)
         self.btn_resume.setEnabled(bool(app.held_stabilization()) and not app.core.estop)
         self.btn_off.setEnabled(running)

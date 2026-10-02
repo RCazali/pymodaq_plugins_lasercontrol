@@ -22,7 +22,7 @@ from ..core.events import EventKind, Level
 from ..core.log import DedupLogger, add_rotating_file_handler, module_logger
 from ..core.safety import SafetyConfig
 from ..core.states import AutoState, ENGAGED_STATES
-from ..engines import CalibrationAutomation, OptimizerAutomation, PIDAutomation, PIDSettings
+from ..engines import CalibrationAutomation, OptimizerAutomation, PIDAutomation, Routine, RoutineAutomation
 from ..hardware.pymodaq_ports import discover_ports
 from ..hardware.shaker import PiezoShaker
 from ..presets import (LegacyImport, PresetStore, SessionStore, content_hash, default_preset, normalize,
@@ -34,8 +34,8 @@ from .widgets import ask_yes_no, info, warn
 
 logger = DedupLogger(module_logger(__file__))
 
-TAB_TITLES = {'overview': '🏠 Overview', 'alignment': '🎯 Alignment', 'xy': '✥ XY', 'pid': '⚙️ PID',
-              'optimizer': '📈 Optimization', 'scan': '📊 1D Scan', 'recording': '⏺ Recording',
+TAB_TITLES = {'overview': '🏠 Overview', 'alignment': '🎯 Alignment', 'xy': '✥ XY', 'axes': '🕹 Axes', 'pid': '⚙️ PID',
+              'optimizer': '📈 Optimization', 'routines': '🧭 Routines', 'scan': '📊 1D Scan', 'recording': '⏺ Recording',
               'presets': '📂 Presets', 'config': '🔧 Configuration', 'log': '📜 Log'}
 
 try:
@@ -102,47 +102,67 @@ def git_version() -> str:
         return 'unknown'
 
 
+def setpoint_name(pid_id: str, k: int = 0) -> str:
+    """Virtual actuator of the setpoint of loop ``k`` of a PID: ``SP:<id>`` (first signal), ``SP:<id>/2``…"""
+    return f'{VIRTUAL_PREFIX}{pid_id}' + (f'/{k + 1}' if k else '')
+
+
 class PIDSetpoints(VirtualActuators):
-    """The setpoint of every PID, as a virtual actuator ``SP:<pid id>`` of the Alignment / XY tabs.
-    The value shown is the one the PID uses (captured setpoint included); a change goes through the
-    PID tab field, so it is applied live, saved in the preset and the tab stays in sync."""
+    """The setpoint of every signal of every PID, as a virtual actuator of the Alignment / XY tabs
+    (``SP:<pid id>`` for its first signal, ``SP:<pid id>/2`` for the second…). The value shown is the one
+    the PID uses (captured setpoint included); a change goes through the PID tab field, so it is applied
+    live, saved in the preset and the tab stays in sync."""
 
     def __init__(self, app: 'LaserControlApp'):
         self.app = app
 
-    def _widget(self, name: str):
+    def _resolve(self, name: str):
+        """(PID widget, loop index) or (None, 0)."""
         tab = self.app.tabs.get('pid')
-        return tab.widgets.get(name[len(VIRTUAL_PREFIX):]) if tab is not None else None
+        key = name[len(VIRTUAL_PREFIX):]
+        pid_id, _, k = key.partition('/')
+        w = tab.widgets.get(pid_id) if tab is not None else None
+        try:
+            k = int(k) - 1 if k else 0
+        except ValueError:
+            return None, 0
+        if w is None or not 0 <= k < len(w.loops()):
+            return None, 0
+        return w, k
 
     def names(self) -> List[str]:
         tab = self.app.tabs.get('pid')
-        ids = tab._order if tab is not None else [p['id'] for p in self.app.preset.get('pids', [])]
-        return [VIRTUAL_PREFIX + i for i in ids]
+        if tab is None:
+            return [setpoint_name(p['id'], k) for p in self.app.preset.get('pids', [])
+                    for k in range(len(p.get('loops', [])) or 1)]
+        return [setpoint_name(i, k) for i in tab._order for k in range(len(tab.widgets[i].loops()))]
 
     def value(self, name: str) -> Optional[float]:
-        a = self.app.core.get('PID:' + name[len(VIRTUAL_PREFIX):])
-        if a is not None and a.state in ENGAGED_STATES:
-            return float(a.settings.setpoint)
-        w = self._widget(name)
-        return float(w._param('setpoint').value()) if w is not None else None
+        w, k = self._resolve(name)
+        if w is None:
+            return None
+        a = self.app.core.get(w.auto_id)
+        if isinstance(a, PIDAutomation) and a.state in ENGAGED_STATES and k < len(a.loops):
+            return float(a.loops[k].settings.setpoint)
+        return float(w.loops()[k]['setpoint'])
 
     def set_value(self, name: str, value: float) -> Tuple[bool, str]:
-        w = self._widget(name)
+        w, k = self._resolve(name)
         if w is None:
             return False, 'PID not found'
         if not math.isfinite(value):
             return False, 'invalid value'
-        w._param('setpoint').setValue(float(value))
+        w.set_setpoint(k, float(value))
         return True, ''
 
     def units(self, name: str) -> str:
-        w = self._widget(name)
-        sig = self.app.core.roles.signals.get(w.combo_signal.currentText()) if w is not None else None
+        w, k = self._resolve(name)
+        sig = self.app.core.roles.signals.get(w.loops()[k]['signal']) if w is not None else None
         return sig.units if sig is not None else ''
 
     def label(self, name: str) -> str:
-        w = self._widget(name)
-        return f'setpoint of {w.label()}' if w is not None else 'setpoint'
+        w, k = self._resolve(name)
+        return f"setpoint of {w.label()} ({w.loops()[k]['signal'] or '?'})" if w is not None else 'setpoint'
 
 
 class LaserControlApp(QtCore.QObject):
@@ -247,6 +267,7 @@ class LaserControlApp(QtCore.QObject):
         from .xy import XYTab
         from .pid_tab import PIDTab
         from .optimizer_tab import OptimizerTab
+        from .routines_tab import RoutinesTab
         from .scan_tab import ScanTab
         from .recording_tab import RecordingTab
         from .presets_tab import PresetsTab
@@ -263,8 +284,10 @@ class LaserControlApp(QtCore.QObject):
         self.quick_panel = QuickPanel(self)
         self.tabs['alignment'].set_bottom_panel(self.quick_panel)
         self.tabs['xy'] = XYTab(self)
+        self.tabs['axes'] = self.tabs['alignment'].config_page      # settings of the Alignment axes
         self.tabs['pid'] = PIDTab(self)
         self.tabs['optimizer'] = OptimizerTab(self)
+        self.tabs['routines'] = RoutinesTab(self)
         self.tabs['scan'] = ScanTab(self)
         self.tabs['recording'] = RecordingTab(self)
         self.tabs['presets'] = PresetsTab(self)
@@ -356,6 +379,9 @@ class LaserControlApp(QtCore.QObject):
         elif auto_id.startswith('OPT:'):
             self.tab_widget.setCurrentWidget(self.tabs['optimizer'])
             self.tabs['optimizer'].select(auto_id)
+        elif auto_id.startswith('RTN:'):
+            self.tab_widget.setCurrentWidget(self.tabs['routines'])
+            self.tabs['routines'].select(auto_id)
         elif auto_id == 'SCAN':
             self.tab_widget.setCurrentWidget(self.tabs['scan'])
         elif auto_id.startswith('XYSCAN:'):
@@ -380,33 +406,37 @@ class LaserControlApp(QtCore.QObject):
 
     # ================================================================== automations
     def ensure_pid(self, cfg: dict) -> PIDAutomation:
+        """The automation of the PID ``cfg`` (preset format), created or updated. Engaged: only the live
+        settings (gains, setpoints, common settings) are applied, never the signals or the weights."""
         aid = f"PID:{cfg['id']}"
         a = self.core.get(aid)
-        settings = PIDSettings.from_dict(cfg.get('settings', {}))
-        label = cfg.get('label') or f"PID {cfg['id']}"
-        if a is None or not isinstance(a, PIDAutomation):
-            a = PIDAutomation(cfg['id'], cfg.get('signal', ''), cfg.get('motors', {}), settings, label,
-                              cfg.get('in_stabilization', True))
-            self.core.add_automation(a)
-        elif a.state == AutoState.OFF:
-            a.signal_role = cfg.get('signal', '')
-            a.motors = {r: float(w) for r, w in (cfg.get('motors') or {}).items()}
-            a.set_settings(settings)
-            a.label = label
-            a.in_stabilization = cfg.get('in_stabilization', True)
+        if not isinstance(a, PIDAutomation):
+            if a is not None:
+                self.core.remove_automation(aid)
+            a = self.core.add_automation(PIDAutomation.from_config(cfg))
+        else:
+            a.configure(cfg, structure=a.state == AutoState.OFF)
         return a
 
+    def pid_driver(self, pid: str) -> Optional[PIDAutomation]:
+        """The automation of the PID ``pid`` (id or 'PID:<id>')."""
+        a = self.core.get(pid if pid.startswith('PID:') else f'PID:{pid}')
+        return a if isinstance(a, PIDAutomation) else None
+
+    def pid_state(self, a) -> AutoState:
+        return a.state if a is not None else AutoState.OFF
+
     def start_pid(self, cfg: dict) -> Tuple[bool, str]:
-        a = self.ensure_pid(cfg)
-        return self.core.start(a.id)
+        return self.core.start(self.ensure_pid(cfg).id)
 
     def calibration(self, pid_id: str) -> Optional[CalibrationAutomation]:
         a = self.core.get(f'CAL:{pid_id}')
         return a if isinstance(a, CalibrationAutomation) else None
 
-    def start_calibration(self, cfg: dict) -> Tuple[bool, str]:
-        """Calibrate the motors of the PID ``cfg`` (one after the other, the others still). A previous
-        run is replaced; nothing changes in the PID settings until the user applies the proposal."""
+    def start_calibration(self, cfg: dict, cycles: int = 3) -> Tuple[bool, str]:
+        """Measure every motor of the PID ``cfg`` on every one of its signals (one motor at a time, the
+        others still, back to the start positions): the sensitivity matrix of the PID. A previous run is
+        replaced; nothing changes in the PID until the user applies the proposal."""
         aid = f"CAL:{cfg['id']}"
         old = self.core.get(aid)
         if old is not None:
@@ -416,49 +446,21 @@ class LaserControlApp(QtCore.QObject):
         pid = self.core.get(f"PID:{cfg['id']}")
         if pid is not None and pid.state in ENGAGED_STATES:
             return False, 'stop the PID before calibrating its motors'
-        st = PIDSettings.from_dict(cfg.get('settings', {}))
-        roles = [r for r, w in (cfg.get('motors') or {}).items() if w]
+        signals = [l.get('signal', '') for l in cfg.get('loops', [])]
+        if not signals or '' in signals or len(set(signals)) != len(signals):
+            return False, 'each signal of the PID must be chosen, and different'
+        roles = list(cfg.get('motors') or [])
+        if not roles:
+            return False, 'choose the motors of the PID first'
+        if len(roles) < len(signals):
+            return False, f'{len(roles)} motor(s) for {len(signals)} signals: at least as many motors as signals'
+        st = cfg.get('settings', {}) or {}
         label = cfg.get('label') or cfg['id']
-        cal = CalibrationAutomation(cfg.get('signal', ''), roles, settle_s=st.settle_s, period_s=st.period_s,
+        cal = CalibrationAutomation(signals[0], roles, cycles=cycles, extra_signals=signals[1:],
+                                    settle_s=float(st.get('settle_s', 0.0)), period_s=float(st.get('period_s', 0.5)),
                                     auto_id=aid, label=f'Calibration {label}')
         self.core.add_automation(cal)
         return self.core.start(aid)
-
-    DECOUPLING_ID = 'DEC'
-
-    def decoupling(self) -> Optional[CalibrationAutomation]:
-        a = self.core.get(self.DECOUPLING_ID)
-        return a if isinstance(a, CalibrationAutomation) else None
-
-    def start_decoupling(self, cfgs: List[dict], cycles: int = 3) -> Tuple[bool, str]:
-        """Measure every motor of the PIDs ``cfgs`` on every one of their signals (one run, one motor at
-        a time, back to the start positions). Nothing changes in the PIDs until the user applies the
-        proposed weights (engines/decoupling.py)."""
-        if len(cfgs) < 2:
-            return False, 'choose at least two PIDs'
-        signals = [c.get('signal', '') for c in cfgs]
-        if '' in signals or len(set(signals)) != len(signals):
-            return False, 'each PID needs its own signal (two PIDs on the same signal cannot be decoupled)'
-        motors = list(dict.fromkeys(r for c in cfgs for r, w in (c.get('motors') or {}).items() if w))
-        if len(motors) < len(signals):
-            return False, (f'{len(motors)} motors for {len(signals)} signals: add motors to the PIDs '
-                           f'(at least as many motors as signals)')
-        for c in cfgs:
-            for aid in (f"PID:{c['id']}", f"CAL:{c['id']}"):
-                a = self.core.get(aid)
-                if a is not None and a.state in ENGAGED_STATES:
-                    return False, f'stop {a.label} first'
-        old = self.core.get(self.DECOUPLING_ID)
-        if old is not None:
-            if old.state in ENGAGED_STATES:
-                return False, 'a decoupling measurement is already running'
-            self.core.remove_automation(self.DECOUPLING_ID)
-        settle = max(PIDSettings.from_dict(c.get('settings', {})).settle_s for c in cfgs)
-        labels = ' / '.join(c.get('label') or c['id'] for c in cfgs)
-        cal = CalibrationAutomation(signals[0], motors, cycles=cycles, extra_signals=signals[1:], settle_s=settle,
-                                    auto_id=self.DECOUPLING_ID, label=f'Decoupling {labels}')
-        self.core.add_automation(cal)
-        return self.core.start(self.DECOUPLING_ID)
 
     def optimizer(self, opt_id: str) -> Optional[OptimizerAutomation]:
         a = self.core.get(f'OPT:{opt_id}')
@@ -483,26 +485,46 @@ class LaserControlApp(QtCore.QObject):
         opt.label = label + (' (full)' if cfg['config'].get('full_optimization') else '')
         return self.core.start(opt.id)
 
+    def routine(self, routine_id: str) -> Optional[RoutineAutomation]:
+        a = self.core.get(routine_id if routine_id.startswith('RTN:') else f'RTN:{routine_id}')
+        return a if isinstance(a, RoutineAutomation) else None
+
+    def start_routine(self, cfg: dict) -> Tuple[bool, str]:
+        """Start the routine ``cfg`` (Routines tab). Rebuilt from the current steps at each start (a copy:
+        editing the steps never changes a running routine); its history of runs is kept."""
+        from .routine_host import AppRoutineHost
+        aid = f"RTN:{cfg['id']}"
+        old = self.core.get(aid)
+        if old is not None and old.state in ENGAGED_STATES:
+            return False, f'{old.label} is already running'
+        new = RoutineAutomation(Routine.from_dict(copy.deepcopy(cfg)), AppRoutineHost(self))
+        if old is not None:
+            new.history = old.history
+            self.core.remove_automation(aid)
+        self.core.add_automation(new)
+        return self.core.start(aid)
+
     # ================================================================== Alignment buttons
     def quick_items(self) -> List[dict]:
-        """Automations shown as buttons in the Alignment tab ('Button in Alignment' ticked), in the
-        order of the PID then Optimization tabs: [{'id', 'kind', 'key', 'label', 'action'}]."""
+        """Automations shown as buttons in the Alignment tab ('Button in Alignment' ticked): the routines
+        first (the highest-level actions of the day), then the PIDs and the optimisations, in the order of
+        their tabs: [{'id', 'kind', 'key', 'label', 'action'}]."""
         out = []
-        pid_tab = self.tabs.get('pid')
-        if pid_tab is not None:
-            out += pid_tab.quick_items()
-        opt_tab = self.tabs.get('optimizer')
-        if opt_tab is not None:
-            out += opt_tab.quick_items()
+        for key in ('routines', 'pid', 'optimizer'):
+            tab = self.tabs.get(key)
+            if tab is not None:
+                out += tab.quick_items()
         return out
 
     def quick_click(self, auto_id: str, action: str = 'toggle') -> Tuple[bool, str]:
         """One click on an Alignment button, no confirmation: OFF -> start, HELD -> resume, engaged -> stop.
-        ``action`` forces 'start' / 'stop' / 'resume' (context menu). Refusals go to the journal."""
+        ``action`` forces 'start' / 'stop' / 'resume' (context menu). Refusals go to the journal.
+        A PID paused on purpose (routine) resumes on a click."""
         a = self.core.get(auto_id)
         state = a.state if a is not None else AutoState.OFF
         if action == 'toggle':
-            action = 'resume' if state == AutoState.HELD else ('stop' if state in ENGAGED_STATES else 'start')
+            resumable = state == AutoState.HELD or (state == AutoState.PAUSED and a.pause_kind == 'manual')
+            action = 'resume' if resumable else ('stop' if state in ENGAGED_STATES else 'start')
         if action == 'stop':
             self.core.stop(auto_id, 'stopped from Alignment')
             return True, ''
@@ -532,6 +554,14 @@ class LaserControlApp(QtCore.QObject):
             how = cfg.get('button_action', 'single')
             cfg['config']['full_optimization'] = how == 'full'
             return self.start_optimizer(cfg, single_shot=how != 'periodic')
+        if auto_id.startswith('RTN:'):
+            cfg = self.tabs['routines'].config_of(auto_id)
+            if cfg is None:
+                return False, 'routine not found'
+            ok, msg = self.start_routine(cfg)
+            if not ok:
+                self.core.events.publish(EventKind.AUTOMATION_START, auto_id, f'Start refused: {msg}', Level.WARNING)
+            return ok, msg
         return False, f'unknown automation: {auto_id}'
 
     def stabilization_pids(self) -> List[dict]:
@@ -539,15 +569,18 @@ class LaserControlApp(QtCore.QObject):
         cfgs = pid_tab.configs() if pid_tab is not None else self.preset.get('pids', [])
         return [c for c in cfgs if c.get('in_stabilization', True)]
 
+    def stabilization_drivers(self) -> list:
+        """Automations to run for the stabilization: one per stabilization PID."""
+        return [self.ensure_pid(cfg) for cfg in self.stabilization_pids()]
+
     def stabilization_problems_text(self) -> str:
         problems = []
-        for cfg in self.stabilization_pids():
-            a = self.core.get(f"PID:{cfg['id']}")
-            if a is not None and a.state in ENGAGED_STATES:
-                continue
-            try:
-                a = self.ensure_pid(cfg)
-            except RuntimeError:
+        try:
+            drivers = self.stabilization_drivers()
+        except RuntimeError:
+            return ''
+        for a in drivers:
+            if a.state in ENGAGED_STATES:
                 continue
             errs = self.core.validate(a)
             if errs:
@@ -560,7 +593,7 @@ class LaserControlApp(QtCore.QObject):
         if not cfgs:
             info(parent, 'Stabilization', 'No PID marked "stabilization" in the preset.')
             return
-        autos = [self.ensure_pid(c) for c in cfgs]
+        autos = self.stabilization_drivers()
         todo = [a for a in autos if a.state not in ENGAGED_STATES]
         errors = {a.label: self.core.validate(a) for a in todo}
         errors = {k: v for k, v in errors.items() if v}
@@ -601,8 +634,8 @@ class LaserControlApp(QtCore.QObject):
         """Stabilisation PIDs frozen by the safety supervisor (HELD, waiting for a manual resume, O10-A)."""
         out = []
         for cfg in self.stabilization_pids():
-            a = self.core.get(f"PID:{cfg['id']}")
-            if a is not None and a.state == AutoState.HELD:
+            a = self.pid_driver(cfg['id'])
+            if a is not None and a.state == AutoState.HELD and a not in out:
                 out.append(a)
         return out
 
@@ -619,8 +652,9 @@ class LaserControlApp(QtCore.QObject):
     def deactivate_stabilization(self):
         names = []
         for cfg in self.stabilization_pids():
-            if self.core.stop(f"PID:{cfg['id']}", 'stabilization deactivated'):
-                names.append(cfg.get('label') or cfg['id'])
+            d = self.pid_driver(cfg['id'])
+            if d is not None and self.core.stop(d.id, 'stabilization deactivated'):
+                names.append(d.label)
         if names:
             self.core.events.publish(EventKind.AUTOMATION_STOP, 'UI', f"Stabilization deactivated ({', '.join(names)})")
 
@@ -724,7 +758,7 @@ class LaserControlApp(QtCore.QObject):
         self.preset = p
         self.core.set_safety_config(SafetyConfig.from_dict(p['safety']))
         for a in list(self.core.automations.values()):
-            if a.kind in ('pid', 'optimizer', 'calibration'):
+            if a.kind in ('pid', 'optimizer', 'calibration', 'routine'):
                 self.core.remove_automation(a.id)
         for cfg in p.get('pids', []):
             self.ensure_pid(cfg)

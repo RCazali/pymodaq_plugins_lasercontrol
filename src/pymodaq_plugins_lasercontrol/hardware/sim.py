@@ -30,6 +30,15 @@ Two coupled test benches, to try coupled (MIMO) control (see ``COUPLED_SIMPLE`` 
   near-field and a far-field camera. Both mirrors move both cameras (condition number ≈ 6 per plane)
   and a slightly rotated mount adds an H ↔ V cross-coupling. Independent PIDs pairing one mirror with
   one camera fight each other (slow, may oscillate): this is the case the coupled PID is made for.
+
+A hard aperture on the beam of the beam walk, to try the routines (pause the PIDs, optimise, resume):
+
+* **hard aperture (HA)**: ``HA/flux`` (mW) = 10 · exp(−(HA_X² + HA_Y²) / 2·6²) · exp(−(far x² + far y²) / 2·4²),
+  with HA_X / HA_Y its position (drifting optimum) and far x / y the angle of the beam. Optimising it raises
+  the flux but shifts the **position** of the beam a little (near field, 0.2 µm per µm: ``Near/x``,
+  ``Near/y``), not its angle (far field). So the near / far PID re-locks after an HA optimisation, and a PID
+  correcting during the optimisation would change the flux the optimiser measures: it runs with the PID
+  paused.
 """
 from __future__ import annotations
 
@@ -41,20 +50,25 @@ from typing import Dict, Optional
 import numpy as np
 
 AXES = ['OC_H', 'OC_V', 'EM_H', 'EM_V', 'AP_X', 'AP_Y', 'JET_X', 'JET_Y', 'JET_Z', 'KERR',
-        'STEER_H', 'STEER_V', 'PD_X', 'PD_Y', 'CPL_A', 'CPL_B', 'BW1_H', 'BW1_V', 'BW2_H', 'BW2_V']
+        'STEER_H', 'STEER_V', 'PD_X', 'PD_Y', 'CPL_A', 'CPL_B', 'BW1_H', 'BW1_V', 'BW2_H', 'BW2_V',
+        'HA_X', 'HA_Y']
 #: drift amplitude of each axis, relative to ``drift_amplitude`` (0.3 for the axes not listed)
 DRIFT_FACTOR = {'OC_H': 1.0, 'OC_V': 1.0, 'EM_H': 1.0, 'EM_V': 1.0,
                 'STEER_H': 1.3, 'STEER_V': 1.0, 'PD_X': 0.8, 'PD_Y': 0.8,
-                'CPL_A': 1.0, 'CPL_B': 0.8, 'BW1_H': 0.8, 'BW1_V': 0.6, 'BW2_H': 0.6, 'BW2_V': 0.8}
+                'CPL_A': 1.0, 'CPL_B': 0.8, 'BW1_H': 0.8, 'BW1_V': 0.6, 'BW2_H': 0.6, 'BW2_V': 0.8,
+                'HA_X': 1.2, 'HA_Y': 1.0}
 #: sensitivity matrices of the coupled benches: {signal: {axis: gain}} (µm of spot per µm of screw)
 COUPLED_SIMPLE = {'Coupled/x': {'CPL_A': 1.0, 'CPL_B': 0.35},
                   'Coupled/y': {'CPL_A': -0.25, 'CPL_B': 1.0}}
-BEAM_WALK = {'Near/x': {'BW1_H': 1.0, 'BW2_H': 0.8, 'BW1_V': 0.15},
+BEAM_WALK = {'Near/x': {'BW1_H': 1.0, 'BW2_H': 0.8, 'BW1_V': 0.15, 'HA_X': 0.2},
              'Far/x': {'BW1_H': 1.0, 'BW2_H': 1.5, 'BW2_V': 0.15},
-             'Near/y': {'BW1_V': 1.0, 'BW2_V': 0.8, 'BW1_H': -0.15},
+             'Near/y': {'BW1_V': 1.0, 'BW2_V': 0.8, 'BW1_H': -0.15, 'HA_Y': 0.2},
              'Far/y': {'BW1_V': 1.0, 'BW2_V': 1.5, 'BW2_H': -0.15}}
 PD_WIDTH = 12.0             # µm
 PD_MAX = 2.0                # mA
+HA_MAX = 10.0               # mW, flux through the hard aperture when it is centred on the mode
+HA_WIDTH = 6.0              # µm, tolerance of the hard aperture position (HA_X, HA_Y)
+HA_POINTING_WIDTH = 4.0     # µm, tolerance on the beam angle (far field)
 UNITS = 'µm'
 
 
@@ -200,5 +214,9 @@ class LaserSimModel:
                     data, label = key.split('/')
                     value = sum(g * m[a] for a, g in row.items()) + float(self.rng.normal(0, 0.15 * n))
                     out.setdefault(data, {})[label] = value
+            far = [sum(g * m[a] for a, g in BEAM_WALK[k].items()) for k in ('Far/x', 'Far/y')]
+            ha = HA_MAX * math.exp(-(m['HA_X'] ** 2 + m['HA_Y'] ** 2) / (2 * HA_WIDTH ** 2)
+                                   - (far[0] ** 2 + far[1] ** 2) / (2 * HA_POINTING_WIDTH ** 2))
+            out['HA'] = {'flux': max(ha * (1 + float(self.rng.normal(0, 0.01 * n))), 0.0)}
             self._last_frame = out
             return {k: dict(v) for k, v in out.items()}

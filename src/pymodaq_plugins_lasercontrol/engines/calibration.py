@@ -1,4 +1,4 @@
-"""Automatic calibration of the motors of a PID (docs/pid_roadmap.md § 1).
+"""Automatic calibration of the motors of a PID.
 
 For each motor (the others still): noise at rest, then a bipolar symmetric pattern
 ``0 → +δ → 0 → −δ → 0`` repeated R times. Each plateau is the mean of fresh frames taken after the

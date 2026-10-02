@@ -22,7 +22,7 @@ from typing import Dict, List, Tuple
 from ..core.roles import RoleMap, sanitize_role_name
 from ..core.safety import ActuatorLimits, SafetyConfig
 from ..engines.pid import PIDSettings
-from .schema import default_optimizer, default_pid, default_preset, normalize
+from .schema import default_optimizer, default_preset, normalize, normalize_pid
 from .store import read_json
 
 
@@ -69,9 +69,10 @@ class LegacyImport:
         for pid_name, cfg in (data or {}).items():
             if not isinstance(cfg, dict):
                 continue
-            pid = default_pid(sanitize_role_name(cfg.get('pid_id', pid_name)))
-            pid['label'] = str(pid_name)
-            pid['signal'] = self.signal_role(cfg.get('detector', ''))
+            # schema 2 form (one signal): normalize_pid converts it to a PID with one loop
+            pid = {'id': sanitize_role_name(cfg.get('pid_id', pid_name)), 'label': str(pid_name),
+                   'in_stabilization': True, 'show_in_alignment': False,
+                   'signal': self.signal_role(cfg.get('detector', ''))}
             motors = {}
             for act, w in (cfg.get('weights') or {}).items():
                 role = self.actuator_role(act)
@@ -85,8 +86,8 @@ class LegacyImport:
             pid['motors'] = motors
             old = dict(cfg.get('config') or {})
             pid['settings'] = PIDSettings.from_dict(old).to_dict()
-            pids.append(pid)
             self.report.append(f"PID imported: {pid['id']} ({pid['signal']} → {', '.join(motors)})")
+            pids.append(normalize_pid(pid))
         return pids
 
     def optimizer_from_profile(self, data: dict) -> dict:

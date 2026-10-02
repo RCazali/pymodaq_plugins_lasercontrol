@@ -80,6 +80,26 @@ def test_calibration_errors_are_reported_as_possible_coupling():
     assert any('remaining coupling' in n for n in res.notes)
 
 
+def test_decoupling_proposal_for_a_coupled_pid():
+    """Settings of every loop from the measured matrix; refused when the errors allow too much coupling."""
+    from pymodaq_plugins_lasercontrol.engines.decoupling import decoupling_proposal
+    J = {'S': {'M1': 1.0, 'M2': 0.8}, 'S2': {'M1': 1.0, 'M2': 1.5}}
+
+    def results(stderr):
+        return {s: {m: CalibrationResult(g=g, stderr=stderr, noise_sigma=0.1, settle_s=0.3, ok=True)
+                    for m, g in row.items()} for s, row in J.items()}
+    prop, res, problems = decoupling_proposal(results(0.005), ['S', 'S2'], ['M1', 'M2'])
+    assert prop is not None and not problems
+    for k, s in enumerate(('S', 'S2')):
+        w = prop[s]['weights']
+        resp = {x: sum(J[x][m] * w[m] for m in w) for x in J}
+        other = 'S2' if s == 'S' else 'S'
+        assert abs(resp[other]) < 1e-3 and prop[s]['kp'] == pytest.approx(0.5 / resp[s], rel=1e-3)
+        assert prop[s]['sign_kp'] == '+' and prop[s]['deadband'] == pytest.approx(0.2)
+    prop, res, problems = decoupling_proposal(results(0.3), ['S', 'S2'], ['M1', 'M2'], max_coupling=0.25)
+    assert prop is None and any('remaining coupling' in p for p in problems)
+
+
 def test_calibration_measures_every_signal_at_once():
     """One run: each motor measured on S and S2 (one column of J each), motors back to the start."""
     rig = Rig(max_step=0.5)

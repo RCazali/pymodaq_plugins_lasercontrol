@@ -70,8 +70,8 @@ def ext(tmp_path_factory):
 def test_01_nothing_started_and_tabs(ext):
     e, win, model, data = ext
     a = e.app
-    assert set(a.tabs) == {'overview', 'alignment', 'xy', 'pid', 'optimizer', 'scan', 'recording', 'presets', 'config',
-                           'log'}
+    assert set(a.tabs) == {'overview', 'alignment', 'xy', 'axes', 'pid', 'optimizer', 'routines', 'scan',
+                           'recording', 'presets', 'config', 'log'}
     # the journal is a tab: its title counts the warnings not seen yet, cleared when it is shown
     from pymodaq_plugins_lasercontrol.core.events import EventKind, Level
     log_index = a.tab_widget.indexOf(a.tabs['log'])
@@ -149,27 +149,29 @@ def test_03_pid_from_tab_and_stabilisation(ext):
     assert 'frozen' not in w.stats.text()
     assert w._param('kp').value() == 0.5 and w._param('setpoint').value() == 0.0
     assert 'RMS error' in w.stats.text()
-    # one loop sign: inverting it is applied live to the three terms
-    w._on_invert()
+    # one loop sign (parameter tree): applied live to the three terms
+    w._param('loop_sign').setValue('-')
     assert pid.settings.gains()[0] < 0 and pid.settings.sign_ki == '-' and pid.settings.sign_kd == '-'
-    w._on_invert()
+    w._param('loop_sign').setValue('+')
     assert pid.settings.gains()[0] > 0
-    # only the used motors are listed; add / remove motors (on a stopped PID)
+    # while it runs, the motors and the signal cannot be changed
+    assert not w.settings.child('motors').opts['enabled']
+    # motors ticked in the tree (on a stopped PID): the weights follow
     assert list(w.motor_weights()) == ['Sim_OC_H']
     cfg = dict(w.get_config(), id='V', label='Centroid V')
     v = pid_tab._add_widget(cfg)
-    v.combo_add.setCurrentText('Sim_OC_V')
-    v._on_add_motor()
-    assert v.get_config()['motors'] == {'Sim_OC_H': 1.0, 'Sim_OC_V': 1.0}
-    v._on_remove_motor('Sim_OC_H')
-    assert v.get_config()['motors'] == {'Sim_OC_V': 1.0}
-    assert 'Sim_OC_H' in [v.combo_add.itemText(i) for i in range(v.combo_add.count())]
+    v.settings.child('motors').setValue(['Sim_OC_H', 'Sim_OC_V'])
+    run(0.2)
+    assert v.get_config()['motors'] == ['Sim_OC_H', 'Sim_OC_V']
+    assert v.get_config()['loops'][0]['weights'] == {'Sim_OC_H': 1.0, 'Sim_OC_V': 1.0}
+    v.settings.child('motors').setValue(['Sim_OC_V'])
+    run(0.2)
+    assert v.get_config()['loops'][0]['weights'] == {'Sim_OC_V': 1.0}
+    assert v.settings.child('signals', 'loop0', 'weights', 'Sim_OC_V').value() == 1.0
     pid_tab.select('PID:V')
     run(0.3)
     assert pid_tab.overview.rowCount() == 2 and pid_tab._current() is v
-    pid_tab.widgets.pop('V')
-    pid_tab._order.remove('V')
-    pid_tab.stack.removeWidget(v)
+    pid_tab.remove_widget('V')
     pid_tab.select('PID:H')
 
 
@@ -324,7 +326,7 @@ def test_06_scan_tab(ext):
 
 
 def test_06b_pid_calibration_from_the_tab(ext):
-    """The PID tab collects a finished calibration, keeps it in the preset and applies the proposal."""
+    """Calibration of a one-signal PID: results kept in the preset, proposal applied from the tree."""
     from pymodaq_plugins_lasercontrol.engines import CalibrationAutomation
     from pymodaq_plugins_lasercontrol.presets import normalize
     e, win, model, data = ext
@@ -334,97 +336,250 @@ def test_06b_pid_calibration_from_the_tab(ext):
             a.core.stop(x.id, 'test')
     pid_tab = a.tabs['pid']
     w = pid_tab._add_widget({'id': 'C', 'label': 'Cal', 'in_stabilization': False, 'signal': 'Cam1_x',
-                             'motors': {'Sim_OC_H': 1.0},
-                             'settings': {'setpoint': 0.0, 'kp': 0.01, 'period_s': 0.2}})
+                             'motors': {'Sim_OC_H': 1.0}, 'settings': {'setpoint': 0.0, 'kp': 0.01, 'period_s': 0.2}})
     a.tab_widget.setCurrentWidget(pid_tab)
     pid_tab.select('PID:C')
     run(0.3)
-    assert 'No calibration' in w.cal_text.text() and not w.btn_apply_cal.isEnabled()
+    assert 'No measurement' in w.settings.child('calib', 'result').value()
+    assert not w.settings.child('calib', 'max_coupling').opts['visible']          # one signal: no decoupling
     cal = CalibrationAutomation('Cam1_x', ['Sim_OC_H'], cycles=1, samples=2, noise_samples=6, auto_id='CAL:C',
                                 label='Calibration Cal')
     a.core.add_automation(cal)
     ok, msg = a.core.start(cal.id)
     assert ok, msg
     run(0.3)
-    assert 'Stop calibration' in w.btn_calibrate.text() and not w.btn_apply_cal.isEnabled()
+    assert 'Stop measurement' in w.settings.child('calib', 'measure').opts['title']
     t0 = time.time()
     while time.time() - t0 < 90 and cal.state.value != 'OFF':
         run(0.2)
     assert cal.completed, cal.reason
     run(0.5)
-    assert 'Sim_OC_H' in w.cal_text.text() and w.btn_calibrate.text() == '🎯 Calibrate'
-    stored = w.get_config()['calibration']['Sim_OC_H']
+    assert 'Sim_OC_H' in w.settings.child('calib', 'result').value()
+    assert w.settings.child('calib', 'measure').opts['title'] == '🎯 Measure'
+    stored = w.get_config()['calibration']['Cam1_x']['Sim_OC_H']
     assert stored['date'] and math.isfinite(stored['g'])
-    assert normalize({'pids': [w.get_config()]})['pids'][0]['calibration']['Sim_OC_H'] == stored
+    assert normalize({'pids': [w.get_config()]})['pids'][0]['calibration']['Cam1_x']['Sim_OC_H'] == stored
     if stored['ok']:
-        assert w.btn_apply_cal.isEnabled()
         w._on_apply_calibration()
-        assert w._param('kp').value() == pytest.approx(0.5 / abs(stored['g']), abs=1e-4)      # the field keeps 4 decimals
+        assert w._param('kp').value() == pytest.approx(0.5 / abs(stored['g']), abs=1e-4)
         assert w._param('loop_sign').value() == ('+' if stored['g'] > 0 else '-')
-    pid_tab.widgets.pop('C')
-    pid_tab._order.remove('C')
-    pid_tab.stack.removeWidget(w)
-    w.deleteLater()
-    pid_tab._rebuild_overview()
+    pid_tab.remove_widget('C')
     a.core.remove_automation(cal.id)
 
 
-def test_06c_decoupling_window(ext):
-    """Decouple PIDs: refusals, measurement start / stop, then a finished measurement (known matrix) gives
-    each PID the combination that moves only its own signal, with the loop settings of that combination."""
+def test_06c_coupled_pid_decoupling_in_its_settings(ext):
+    """A PID with two signals: measure (start / stop), then Apply gives each signal the combination of motors
+    that moves only that signal; it runs as one automation, one order per motor."""
     from pymodaq_plugins_lasercontrol.engines import CalibrationAutomation, CalibrationResult
     e, win, model, data = ext
     a = e.app
     pid_tab = a.tabs['pid']
-    wx = pid_tab._add_widget({'id': 'DX', 'label': 'Dec x', 'in_stabilization': False, 'signal': 'Cam1_x',
-                              'motors': {'Sim_OC_H': 1.0}, 'settings': {'kp': 0.1, 'period_s': 0.2}})
-    wy = pid_tab._add_widget({'id': 'DY', 'label': 'Dec y', 'in_stabilization': False, 'signal': 'Cam1_y',
-                              'motors': {'Sim_OC_V': 1.0}, 'settings': {'kp': 0.1, 'period_s': 0.2}})
-    ok, msg = a.start_decoupling([wx.get_config()])
-    assert not ok and 'two PIDs' in msg
-    ok, msg = a.start_decoupling([wx.get_config(), dict(wy.get_config(), signal='Cam1_x')])
-    assert not ok and 'own signal' in msg
-    pid_tab.open_decoupling()
-    dlg = pid_tab.decoupling_dialog
-    dlg.set_selected(['DX', 'DY'])
+    w = pid_tab._add_widget({'id': 'DXY', 'label': 'Dec', 'in_stabilization': False,
+                             'motors': ['Sim_OC_H', 'Sim_OC_V'], 'settings': {'period_s': 0.2},
+                             'loops': [{'signal': 'Cam1_x', 'kp': 0.1, 'weights': {'Sim_OC_H': 1.0}},
+                                       {'signal': 'Cam1_y', 'kp': 0.1, 'weights': {'Sim_OC_V': 1.0}}]})
+    pid_tab.select('PID:DXY')
+    a.tab_widget.setCurrentWidget(pid_tab)
     run(0.4)
-    assert dlg.btn_measure.isEnabled() and not dlg.btn_apply.isEnabled()
-    dlg._on_measure()                                   # really starts, then stopped by the user
+    assert w.settings.child('calib', 'max_coupling').opts['visible']
+    assert w.settings.child('calib').opts['title'] == 'Calibration & decoupling'
+    w._on_calibrate()                                   # really starts, then stopped by the user
     run(0.5)
-    assert a.decoupling().state.value == 'ACTIVE' and 'Stop measurement' in dlg.btn_measure.text()
-    dlg._on_measure()
+    assert a.calibration('DXY').state.value == 'ACTIVE'
+    assert a.calibration('DXY').signals == ['Cam1_x', 'Cam1_y']
+    w._on_calibrate()
     run(0.5)
-    assert a.decoupling().state.value == 'OFF' and 'stopped' in dlg.report.toPlainText()
-    assert a.core.position('Sim_OC_H') is not None
+    assert a.calibration('DXY').state.value == 'OFF' and 'stopped' in w.settings.child('calib', 'status').value()
     # a finished measurement with a known coupled matrix (x = H + 0.5 V, y = −0.2 H + V)
     J = {'Cam1_x': {'Sim_OC_H': 1.0, 'Sim_OC_V': 0.5}, 'Cam1_y': {'Sim_OC_H': -0.2, 'Sim_OC_V': 1.0}}
-    a.core.remove_automation('DEC')
-    done = CalibrationAutomation('Cam1_x', ['Sim_OC_H', 'Sim_OC_V'], extra_signals=['Cam1_y'], auto_id='DEC')
+    a.core.remove_automation('CAL:DXY')
+    done = CalibrationAutomation('Cam1_x', ['Sim_OC_H', 'Sim_OC_V'], extra_signals=['Cam1_y'], auto_id='CAL:DXY')
     done.results_by = {s: {m: CalibrationResult(g=g, stderr=0.01, noise_sigma=0.1, settle_s=0.2, ok=True)
                            for m, g in row.items()} for s, row in J.items()}
     done.completed = True
     a.core.add_automation(done)
-    dlg._run = [('DX', 'Cam1_x'), ('DY', 'Cam1_y')]
     run(0.5)
-    assert dlg.result is not None and dlg.result.ok, dlg.report.toPlainText()
-    assert 'coupling now' in dlg.report.toPlainText() and dlg.btn_apply.isEnabled()
-    dlg._on_apply()
-    for w, sig, other in ((wx, 'Cam1_x', 'Cam1_y'), (wy, 'Cam1_y', 'Cam1_x')):
-        weights = w.get_config()['motors']
-        assert set(weights) == {'Sim_OC_H', 'Sim_OC_V'}
+    assert 'Proposed weights' in w.settings.child('calib', 'result').value()
+    w._on_apply_calibration()
+    cfg = w.get_config()
+    for k, (sig, other) in enumerate((('Cam1_x', 'Cam1_y'), ('Cam1_y', 'Cam1_x'))):
+        weights = cfg['loops'][k]['weights']
         resp = {s: sum(J[s][m] * v for m, v in weights.items()) for s in J}
         assert abs(resp[other]) < 1e-3 * abs(resp[sig])        # moves only its own signal
-        assert w._param('kp').value() == pytest.approx(0.5 / resp[sig], abs=1e-4)
-        assert w._param('loop_sign').value() == '+'
-        assert set(w.get_config()['calibration']) == {'Sim_OC_H', 'Sim_OC_V'}
-    dlg.close()
-    a.core.remove_automation('DEC')
-    for w in (wx, wy):
-        pid_tab.widgets.pop(w.pid_id)
-        pid_tab._order.remove(w.pid_id)
-        pid_tab.stack.removeWidget(w)
-        w.deleteLater()
-    pid_tab._rebuild_overview()
+        assert cfg['loops'][k]['kp'] == pytest.approx(0.5 / resp[sig], abs=1e-4)
+        assert cfg['loops'][k]['sign'] == '+'
+        assert w.loop_param(k, 'kp').value() == pytest.approx(cfg['loops'][k]['kp'])
+    for k in range(2):
+        w.loop_param(k, 'setpoint').setValue(a.core.signals.value(a.core.roles.channel_for(cfg['loops'][k]['signal'])))
+        w.loop_param(k, 'deadband').setValue(0.5)
+    assert 'SP:DXY/2' in a.manual.actuator_roles()                 # a setpoint axis per signal
+    pid_tab._on_row_action('DXY')
+    run(2.0)
+    pid = a.core.get('PID:DXY')
+    assert pid.state.value == 'ACTIVE', pid.reason
+    assert all(l.iterations > 0 for l in pid.loops)
+    assert '/' in pid_tab.overview.item(pid_tab._order.index('DXY'), 4).text()      # two errors
+    a.core.stop(pid.id, 'test')
+    pid_tab.remove_widget('DXY')
+    a.core.remove_automation('CAL:DXY')
+
+
+def test_06d_routines_tab_and_alignment_button(ext):
+    """A routine programmed in the Routines tab (parameter tree), started from its Alignment button: start a
+    PID, wait until it converges, pause it, resume it; the running step is marked; editing is locked."""
+    from pymodaq_plugins_lasercontrol.engines.routine import Condition, Routine, Step
+    e, win, model, data = ext
+    a = e.app
+    for x in list(a.core.automations.values()):
+        if x.state.value != 'OFF':
+            a.core.stop(x.id, 'test')
+    tab = a.tabs['routines']
+    w = a.tabs['pid'].widgets['H']
+    w._param('setpoint').setValue(a.core.signals.value('SimB/Cam1/x'))
+    w._param('deadband').setValue(0.3)
+    r = Routine('UI', 'UI routine', steps=[
+        Step('start', 'PID:H', until=[Condition('locked', 'PID:H', value=1.0, hold_s=1.0)], timeout_s=30),
+        Step('pause', 'PID:H'),
+        Step('none', until=[Condition('delay', value=1.0)]),
+        Step('resume', 'PID:H', until=[Condition('locked', 'PID:H', value=1.0, hold_s=0.5, then='end')],
+             timeout_s=30)])
+    tab.load_from_preset({'routines': [r.to_dict()]})
+    a.tab_widget.setCurrentWidget(tab)
+    run(0.4)
+    steps = tab.settings.child('steps')
+    assert len([c for c in steps.children() if c.type() == 'group']) == 4
+    assert 'converged' in steps.child('s0', 'until', 'c0').opts['title']
+    assert not tab.problems.isVisible()
+    steps.child('s2', 'until', 'c0', 'value').setValue(1.5)          # edit a condition in the tree
+    assert tab.routines[0].steps[2].until[0].value == 1.5
+    steps.child('s2', 'until', 'c0', 'value').setValue(1.0)
+    tab._on_add_step()
+    run(0.2)
+    assert len(tab.routines[0].steps) == 5
+    tab.select_step(4)
+    tab._on_delete_step()
+    run(0.2)
+    assert len(tab.routines[0].steps) == 4
+    a.tab_widget.setCurrentWidget(a.tabs['alignment'])
+    run(0.6)
+    panel = a.quick_panel
+    assert 'RTN:UI' in panel.cards and panel.cards['RTN:UI'].band.text() == 'SEQ'
+    panel._on_click('RTN:UI')
+    rt = a.routine('UI')
+    assert rt is not None and rt.state.value == 'ACTIVE', rt.reason if rt else ''
+    pid = a.core.get('PID:H')
+    paused = False
+    t0 = time.time()
+    while time.time() - t0 < 60 and rt.state.value != 'OFF':
+        run(0.2)
+        paused = paused or (pid.state.value == 'PAUSED' and pid.pause_kind == 'manual')
+        if rt.state.value == 'ACTIVE':
+            assert 'Step' in panel.cards['RTN:UI'].line.text()
+    assert rt.outcome == 'done', (rt.reason, list(rt.history)[-4:])
+    assert paused and pid.state.value == 'ACTIVE'                   # left running after a successful end
+    run(0.4)
+    assert 'Done' in panel.cards['RTN:UI'].line.text()
+    a.tab_widget.setCurrentWidget(tab)
+    run(0.4)
+    assert 'Finished' in tab.status.text() and 'step 2' in tab.history.toPlainText()
+    a.core.stop('PID:H', 'test')
+
+
+
+def test_06e_settings_trees(ext):
+    """Settings are edited in their tabs (parameter trees): Axes tab, signals of a PID, routine steps; a
+    running routine cannot be edited; a second-signal setpoint is an Alignment axis."""
+    from pymodaq_plugins_lasercontrol.engines.routine import Condition, Routine, Step
+    e, win, model, data = ext
+    a = e.app
+    align = a.tabs['alignment']
+    saved = align.get_config()
+    # --- Axes tab: the tree edits the axis of the Alignment tab (nothing editable left in Alignment)
+    a.tab_widget.setCurrentWidget(a.tabs['axes'])
+    align.axis_list.setCurrentRow(0)
+    run(0.3)
+    h = align.axis_params.child('h')
+    h.child('on').setValue(True)
+    h.child('actuator').setValue('Sim_OC_H')
+    h.child('rel_step').setValue(2.5)
+    h.child('slow').setValue(0.25)
+    align.axis_params.child('axis', 'name').setValue('Test axis')
+    run(0.8)                                              # applied after a short delay
+    ax = align.get_config()['axes'][0]
+    assert ax['name'] == 'Test axis' and ax['h']['actuator'] == 'Sim_OC_H'
+    assert ax['h']['rel_step'] == 2.5 and ax['h']['slow'] == 0.25
+    a.tab_widget.setCurrentWidget(align)
+    align.select_axis(0)
+    run(0.3)
+    spins = [w for w in align.detail.findChildren(QtWidgets.QDoubleSpinBox)]
+    assert len(spins) == 1 or all(s.toolTip() == 'Absolute target' for s in spins)   # only "go to" is typed
+    labels = [l.text() for l in align.detail.findChildren(QtWidgets.QLabel)]
+    assert '2.5' in labels                                                           # the − / + step, read-only
+    align.chk_hide.setChecked(True)
+    assert align.get_config()['hide_unassigned'] is True
+    align.chk_hide.setChecked(False)
+    # --- PID: add then remove a second signal; its setpoint is the axis SP:<id>/2
+    pid_tab = a.tabs['pid']
+    w = pid_tab._add_widget({'id': 'T2', 'label': 'Two signals', 'in_stabilization': False, 'signal': 'Cam1_x',
+                             'motors': {'Sim_OC_H': 1.0}})
+    a.tab_widget.setCurrentWidget(pid_tab)
+    pid_tab.select('PID:T2')
+    run(0.3)
+    w._on_add_loop()
+    run(0.2)
+    assert len(w.loops()) == 2 and w.settings.child('signals').opts['title'] == 'Signals (coupled PID)'
+    w.loop_param(1, 'signal').setValue('Cam1_y')
+    run(0.2)
+    assert w.get_config()['loops'][1]['signal'] == 'Cam1_y'
+    assert w.get_config()['loops'][1]['weights'] == {'Sim_OC_H': 0.0}          # to be set by the decoupling
+    assert 'SP:T2/2' in a.manual.actuator_roles()
+    assert a.manual.move_abs('SP:T2/2', 3.0)
+    run(0.3)
+    assert w.get_config()['loops'][1]['setpoint'] == 3.0 and w.loop_param(1, 'setpoint').value() == 3.0
+    ok, msg = a.start_pid(w.get_config())
+    assert not ok and 'no motor' in msg                                          # Cam1_y has no weight yet
+    w._on_remove_loop(1)
+    run(0.2)
+    assert len(w.loops()) == 1 and 'SP:T2/2' not in a.manual.actuator_roles()
+    pid_tab.remove_widget('T2')
+    # --- Routines: change an action, add / remove a condition, locked while running
+    tab = a.tabs['routines']
+    r = Routine('E', 'Edit test', steps=[Step('none', until=[Condition('delay', value=30.0)])])
+    tab.load_from_preset({'routines': [r.to_dict()]})
+    a.tab_widget.setCurrentWidget(tab)
+    run(0.3)
+    s0 = tab.settings.child('steps', 's0')
+    s0.child('action').setValue('start')
+    run(0.2)
+    s0 = tab.settings.child('steps', 's0')
+    assert tab.routines[0].steps[0].action == 'start' and s0.child('target').opts['visible']
+    s0.child('target').setValue('PID:H')
+    run(0.2)
+    assert tab.routines[0].steps[0].target == 'PID:H'
+    tab._on_add_condition(0)
+    run(0.2)
+    assert len(tab.routines[0].steps[0].until) == 2
+    c1 = tab.settings.child('steps', 's0', 'until', 'c1')
+    c1.child('kind').setValue('signal')
+    run(0.2)
+    c1 = tab.settings.child('steps', 's0', 'until', 'c1')
+    assert c1.child('op').opts['visible'] and c1.child('hold_s').opts['visible']
+    tab._on_remove_condition(0, 1)
+    run(0.2)
+    assert len(tab.routines[0].steps[0].until) == 1
+    tab.settings.child('steps', 's0', 'action').setValue('none')                 # wait only: 30 s
+    run(0.2)
+    tab._on_run()
+    run(0.5)
+    assert a.routine('E').state.value == 'ACTIVE'
+    assert tab.settings.child('routine', 'label').opts['readonly']                # locked while it runs
+    assert not tab.settings.child('steps', 'add').opts['enabled']
+    tab._on_stop()
+    run(0.5)
+    assert not tab.settings.child('routine', 'label').opts['readonly']
+    a.core.remove_automation('RTN:E')
+    tab.load_from_preset({'routines': []})
+    align.load_config(saved)
 
 
 def test_07_recording_and_presets(ext):
@@ -447,7 +602,9 @@ def test_07_recording_and_presets(ext):
     assert p['pids'][0]['id'] == 'H'
     assert p['safety']['actuators']['Sim_OC_H']['max_step'] == 1.0
     assert p['alignment']['axes'][0]['h']['actuator'] == 'Sim_OC_H'
+    t0 = time.time()
     ok, msg = a.apply_preset(p)
+    assert time.time() - t0 < 1.0                          # loading must not freeze the interface
     assert ok, msg
     assert a.core.get('PID:H').state.value == 'OFF'       # S9: loading never starts anything
 

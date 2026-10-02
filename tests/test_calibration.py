@@ -1,4 +1,4 @@
-"""Automatic calibration (docs/pid_roadmap.md § 1): pure fit, suggested settings, automation on the rig."""
+"""Automatic calibration: pure fit, suggested settings, automation on the rig."""
 import math
 import random
 

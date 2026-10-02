@@ -1,4 +1,4 @@
-"""Decoupling of several PIDs that share motors (docs/pid_roadmap.md § 3, identification level a).
+"""Decoupling of several PIDs that share motors (docs/roadmap.md).
 
 The calibration of every motor on every signal gives the sensitivity matrix ``J`` (signals × motors):
 ``Δs = J·Δm``. A PID moves its motors by ``output × weights``. With the weights ``w_k`` = column k of
@@ -111,6 +111,31 @@ def decouple(results_by: Dict[str, Dict[str, CalibrationResult]], signals: List[
             res.notes.append(f'{s}: the calibration errors allow ~{100 * res.crosstalk_err[s]:.0f} % of '
                              f'remaining coupling (calibrate again with more cycles or a larger step)')
     return res
+
+
+def decoupling_proposal(results_by: Dict[str, Dict[str, CalibrationResult]], signals: List[str],
+                        motors: List[str], max_coupling: float = 0.25, alpha: float = 0.5
+                        ) -> Tuple[Optional[Dict[str, dict]], DecouplingResult, List[str]]:
+    """Settings of every loop of a coupled PID from the measured matrix: ``{signal: {'weights', 'sign_kp',
+    'kp', 'deadband', 'settle_s'}}`` (Kp = α / loop gain of the decoupled combination), or None with the
+    reasons: matrix refused, a loop gain not significant, or a remaining coupling allowed by the errors of
+    the measurement above ``max_coupling``."""
+    from .calibration import suggest_pid_settings
+    res = decouple(results_by, signals, motors)
+    if not res.ok:
+        return None, res, list(res.notes) or ['no decoupling possible']
+    problems, out = [], {}
+    for s in signals:
+        st, notes = suggest_pid_settings(results_by.get(s, {}), res.weights[s], alpha)
+        if st is None:
+            problems.append(f"{s}: " + '; '.join(notes))
+            continue
+        out[s] = dict(st, weights=dict(res.weights[s]))
+    worst = max(res.crosstalk_err.values(), default=0.0)
+    if worst > max_coupling:
+        problems.append(f'the measurement errors allow {100 * worst:.0f} % of remaining coupling (> '
+                        f'{100 * max_coupling:g} %): measure again with more cycles')
+    return (None if problems else out), res, problems
 
 
 def current_crosstalk(J: np.ndarray, signals: List[str], motors: List[str],

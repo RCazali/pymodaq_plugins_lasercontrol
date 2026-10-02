@@ -14,7 +14,9 @@ existing roles are never modified), with the same role names as in the lab examp
 (``docs/examples/roles_lab.toml``) so that presets made at the office load in the lab.
 
 A Laser Control preset "Simulator demo" is written too: PIDs and optimisations with a button in
-the Alignment tab, safety limits, alignment axes.
+the Alignment tab, safety limits, alignment axes, and routines (Routines tab, buttons in Alignment) on the
+beam walk + hard aperture bench (coupled near / far field PIDs "Pointing x / y"): HA optimisation with the
+PIDs paused, periodic HA optimisation, automated beam walk one mirror at a time.
 
 Usage::
 
@@ -37,7 +39,8 @@ DEFAULT_MOVES: Tuple[Tuple[str, str], ...] = (
     ('Sim JET_X', 'JET_X'), ('Sim JET_Y', 'JET_Y'),
     ('Sim STEER_H', 'STEER_H'), ('Sim STEER_V', 'STEER_V'), ('Sim PD_X', 'PD_X'), ('Sim PD_Y', 'PD_Y'),
     ('Sim CPL_A', 'CPL_A'), ('Sim CPL_B', 'CPL_B'),
-    ('Sim BW1_H', 'BW1_H'), ('Sim BW1_V', 'BW1_V'), ('Sim BW2_H', 'BW2_H'), ('Sim BW2_V', 'BW2_V'))
+    ('Sim BW1_H', 'BW1_H'), ('Sim BW1_V', 'BW1_V'), ('Sim BW2_H', 'BW2_H'), ('Sim BW2_V', 'BW2_V'),
+    ('Sim HA_X', 'HA_X'), ('Sim HA_Y', 'HA_Y'))
 DEFAULT_DETECTORS: Tuple[str, ...] = ('SimB',)
 PLUGIN = 'LaserSim'
 DEMO_PRESET = 'Simulator demo'
@@ -78,10 +81,21 @@ def _fix_none_values(param):
         _fix_none_values(child)
 
 
+def _find_last_index(list_children=(), name_prefix='', format_string='02.0f'):
+    """Next free index of the children ``<prefix>NN``. PyMoDAQ 5.1's own version skips the first digit of
+    the index ('move10' is read as 0), so an 11th actuator gets an existing name ('Already have child
+    named move10')."""
+    idx = [int(c.name()[len(name_prefix):]) for c in list_children
+           if c.name().startswith(name_prefix) and c.name()[len(name_prefix):].isdigit()]
+    return f'{(max(idx) + 1) if idx else 0:{format_string}}'
+
+
 def build_preset_51(name: str, moves: Sequence[Tuple[str, str]], detectors: Iterable[str]):
     """Dashboard preset of PyMoDAQ 5.0 / 5.1 (what the preset editor would produce)."""
     from pymodaq_gui.parameter import Parameter
-    import pymodaq.utils.managers.preset_manager_utils  # noqa: F401  (registers groupmove / groupdet)
+    import pymodaq.utils.managers.preset_manager_utils as pmu  # registers groupmove / groupdet
+    if hasattr(pmu, 'find_last_index'):
+        pmu.find_last_index = _find_last_index
     p = Parameter.create(title='Preset', name='Preset', type='group', children=[
         {'title': 'Filename:', 'name': 'filename', 'type': 'str', 'value': name},
         {'title': 'Model Settings:', 'name': 'model_settings', 'type': 'group', 'visible': False, 'children': []},
@@ -168,12 +182,15 @@ DEMO_ACTUATOR_ROLES = {'Steer_H': ('Sim STEER_H', 'Test bench: steering mirror, 
                        'BW1_H': ('Sim BW1_H', 'Beam walk (strong coupling): mirror 1, H'),
                        'BW1_V': ('Sim BW1_V', 'Beam walk (strong coupling): mirror 1, V'),
                        'BW2_H': ('Sim BW2_H', 'Beam walk (strong coupling): mirror 2, H'),
-                       'BW2_V': ('Sim BW2_V', 'Beam walk (strong coupling): mirror 2, V')}
+                       'BW2_V': ('Sim BW2_V', 'Beam walk (strong coupling): mirror 2, V'),
+                       'HA_X': ('Sim HA_X', 'Hard aperture, X (also shifts the near field x, 0.2 µm/µm)'),
+                       'HA_Y': ('Sim HA_Y', 'Hard aperture, Y (also shifts the near field y, 0.2 µm/µm)')}
 DEMO_SIGNAL_ROLES = {'Beam_x': ('SimB/Beam/x', 'µm'), 'Beam_y': ('SimB/Beam/y', 'µm'),
                      'PD_current': ('SimB/PD/current', 'mA'),
                      'Cpl_x': ('SimB/Coupled/x', 'µm'), 'Cpl_y': ('SimB/Coupled/y', 'µm'),
                      'Near_x': ('SimB/Near/x', 'µm'), 'Near_y': ('SimB/Near/y', 'µm'),
-                     'Far_x': ('SimB/Far/x', 'µm'), 'Far_y': ('SimB/Far/y', 'µm')}
+                     'Far_x': ('SimB/Far/x', 'µm'), 'Far_y': ('SimB/Far/y', 'µm'),
+                     'HA_flux': ('SimB/HA/flux', 'mW')}
 
 
 def _sim_paths():
@@ -223,17 +240,92 @@ def _axis(name, h=None, v=None, slow=0.5, fast=5.0, labels=('H', 'V')):
     return {'name': name, 'h': ch(h, labels[0]) if h else None, 'v': ch(v, labels[1]) if v else None}
 
 
+def coupled_pointing_pids(pid) -> list:
+    """Coupled PIDs of the beam walk, one per plane: near field + far field with both mirrors, already
+    decoupled (as after "Calibration & decoupling › Apply"): weights = columns of the pseudo-inverse of the
+    BEAM_WALK matrix (largest weight ±1), Kp = 0.5 / loop gain. The H ↔ V cross-coupling (0.15) is left to
+    the loops; measure and apply again in the PID tab to see the procedure."""
+    import numpy as np
+    from ..hardware.sim import BEAM_WALK
+    out = []
+    for plane, (m1, m2) in (('x', ('BW1_H', 'BW2_H')), ('y', ('BW1_V', 'BW2_V'))):
+        sigs = (f'Near/{plane}', f'Far/{plane}')
+        J = np.array([[BEAM_WALK[s].get(m, 0.0) for m in (m1, m2)] for s in sigs])
+        W = np.linalg.pinv(J)
+        d = pid(f'Pointing_{plane.upper()}', f'Pointing {plane} (near + far)', f'Near_{plane}', m1, stab=False)
+        d['motors'] = [m1, m2]
+        d['loops'] = []
+        for k, role in enumerate((f'Near_{plane}', f'Far_{plane}')):
+            w = W[:, k] / np.max(np.abs(W[:, k]))
+            gain = float((J @ w)[k])
+            d['loops'].append({'signal': role, 'setpoint': 0.0, 'setpoint_mode': 'fixed', 'sign': '+',
+                               'kp': round(0.5 / gain, 4), 'ki': 0.0, 'kd': 0.0, 'deadband': 0.1,
+                               'weights': {m1: round(float(w[0]), 4), m2: round(float(w[1]), 4)}})
+        out.append(d)
+    return out
+
+
+def demo_routines() -> list:
+    """Routines of the simulator (execution only): HA optimisation with the PIDs paused, periodic HA, beam walk."""
+    from ..engines.routine import Condition as C, Routine, Step
+
+    def locked(pid_id, then='next', goto=1, tol=0.4, hold=3.0):
+        return C('locked', f'PID:{pid_id}', value=tol, hold_s=hold, then=then, goto=goto)
+
+    def lock_both(then_last='next', goto=1):
+        return [Step('none', until=[locked('Pointing_X')], timeout_s=60),
+                Step('none', until=[locked('Pointing_Y', then=then_last, goto=goto)], timeout_s=60)]
+
+    def ha_block():
+        return [Step('pause', 'PID:Pointing_X', text='the PIDs must not move during the HA measurement'),
+                Step('pause', 'PID:Pointing_Y'),
+                Step('start', 'OPT:Optim_HA', option='single', until=[C('finished', 'OPT:Optim_HA')], timeout_s=240),
+                Step('resume', 'PID:Pointing_X', text='the aperture shifted the near field: re-lock'),
+                Step('resume', 'PID:Pointing_Y')]
+
+    start_locked = [Step('start', 'PID:Pointing_X'), Step('start', 'PID:Pointing_Y')] + lock_both()
+    routines = [
+        Routine('HA_opt', 'HA optimization (PIDs paused)',
+                description='Lock the pointing, pause it, optimise the hard aperture, resume and re-lock.',
+                steps=start_locked + ha_block() + lock_both('end')),
+        Routine('Keep_aligned', 'Keep aligned (HA every 2 min)',
+                description='Lock the pointing, then every 2 minutes: pause, optimise HA, resume, re-lock. '
+                            'Runs until stopped.',
+                steps=start_locked + [Step('none', text='next HA optimisation',
+                                           until=[C('delay', value=120.0)])] + ha_block() + lock_both('goto', 5)),
+        Routine('Walk_X', 'Beam walk x, one mirror at a time',
+                description='Classic manual beam walk, automated: near field with mirror 1, far field with mirror '
+                            '2, again until both are centred. A mirror that travels too far hands over to the other '
+                            'one. Compare with the coupled PID "Pointing x".',
+                steps=[Step('stop', 'PID:Pointing_X', text='the coupled PID uses the same mirrors'),
+                       Step('start', 'PID:BW_Near_X', until=[locked('BW_Near_X', tol=0.3, hold=2.0),
+                                                             C('travel', 'BW1_H', value=15.0)],
+                            timeout_s=30, on_timeout='next'),
+                       Step('stop', 'PID:BW_Near_X'),
+                       Step('start', 'PID:BW_Far_X', until=[locked('BW_Far_X', tol=0.3, hold=2.0),
+                                                            C('travel', 'BW2_H', value=15.0)],
+                            timeout_s=30, on_timeout='next'),
+                       Step('stop', 'PID:BW_Far_X'),
+                       Step('none', text='both centred?',
+                            until=[C('count', value=8, then='fail'),
+                                   C('signal', 'Near_x', '|x|>', 0.6, then='goto', goto=2),
+                                   C('signal', 'Far_x', '|x|>', 0.6, then='goto', goto=2),
+                                   C('delay', value=0.5, then='end')])]),
+    ]
+    return [r.to_dict() for r in routines]
+
+
 def demo_preset() -> dict:
     """Laser Control preset of the simulator: what the Alignment buttons need to be tried."""
     from ..presets import default_optimizer, default_pid, default_preset, normalize
 
     def pid(pid_id, label, signal, motor, show=True, max_step=2.0, kp=0.6, stab=True):
         d = default_pid(pid_id)
-        d.update({'label': label, 'show_in_alignment': show, 'in_stabilization': stab, 'signal': signal,
-                  'motors': {motor: 1.0}})
         # the motor integrates the steps already: P alone removes the error (Ki > 0: slow unwinding after a big error)
-        d['settings'].update({'setpoint': 0.0, 'setpoint_mode': 'fixed', 'kp': kp, 'sign_kp': '+', 'ki': 0.0,
-                              'sign_ki': '+', 'kd': 0.0, 'max_step': max_step, 'period_s': 0.5, 'deadband': 0.1})
+        d.update({'label': label, 'show_in_alignment': show, 'in_stabilization': stab, 'motors': [motor],
+                  'loops': [{'signal': signal, 'setpoint': 0.0, 'setpoint_mode': 'fixed', 'sign': '+', 'kp': kp,
+                             'ki': 0.0, 'kd': 0.0, 'deadband': 0.1, 'weights': {motor: 1.0}}]})
+        d['settings'].update({'max_step': max_step, 'period_s': 0.5})
         return d
 
     def opt(opt_id, label, motors, signal, action='single', max_step=4.0, probe=2.0, interval=1.0):
@@ -252,13 +344,15 @@ def demo_preset() -> dict:
     p['description'] = ('Simulator: "pointing" test bench (Steer_H/V → Beam_x/y, stabilized by PID), '
                         '"photodiode" test bench (PD_X/Y → PD_current, optimized), two coupled benches '
                         '(coupled mount Cpl_A/B → Cpl_x/y, moderate coupling; beam walk BW1/BW2 → Near/Far x/y, '
-                        'strong coupling) driven here by independent PIDs, plus the simulated laser (OC, EM, jet).')
+                        'strong coupling, as independent PIDs and as coupled PIDs "Pointing x / y"), a hard '
+                        'aperture on that beam (HA_X/Y → HA_flux) and routines combining them, plus the simulated '
+                        'laser (OC, EM, jet).')
     lim = {'Steer_H': (3.0, 40.0, 200.0), 'Steer_V': (3.0, 40.0, 200.0), 'PD_X': (5.0, 40.0, 300.0),
            'PD_Y': (5.0, 40.0, 300.0), 'OC_H': (2.0, 30.0, 150.0), 'OC_V': (2.0, 30.0, 150.0),
            'EM_H': (2.0, 30.0, 150.0), 'EM_V': (2.0, 30.0, 150.0), 'Jet_X': (2.0, 30.0, 150.0),
            'Jet_Y': (2.0, 30.0, 150.0), 'Cpl_A': (3.0, 40.0, 200.0), 'Cpl_B': (3.0, 40.0, 200.0),
-           'BW1_H': (3.0, 40.0, 200.0), 'BW1_V': (3.0, 40.0, 200.0), 'BW2_H': (3.0, 40.0, 200.0),
-           'BW2_V': (3.0, 40.0, 200.0)}
+           'BW1_H': (3.0, 40.0, 300.0), 'BW1_V': (3.0, 40.0, 300.0), 'BW2_H': (3.0, 40.0, 300.0),
+           'BW2_V': (3.0, 40.0, 300.0), 'HA_X': (3.0, 40.0, 300.0), 'HA_Y': (3.0, 40.0, 300.0)}
     p['safety']['actuators'] = {r: {'max_step': a, 'max_excursion': b, 'abs_min': None, 'abs_max': None,
                                     'rate_window_s': 60.0, 'rate_max': c, 'resolution': 0.01}
                                 for r, (a, b, c) in lim.items()}
@@ -269,16 +363,20 @@ def demo_preset() -> dict:
                  pid('Cam1_X_OC', 'Cam1 X ← OC_H', 'Cam1_x', 'OC_H', max_step=1.5),
                  pid('Cam1_Y_OC', 'Cam1 Y ← OC_V', 'Cam1_y', 'OC_V', show=False, max_step=1.5),
                  # coupled benches driven by independent PIDs: works (simple) / slow, fighting (beam walk)
-                 pid('Cpl_X', 'Coupled x', 'Cpl_x', 'Cpl_A', stab=False),
-                 pid('Cpl_Y', 'Coupled y', 'Cpl_y', 'Cpl_B', stab=False),
+                 pid('Cpl_X', 'Coupled x', 'Cpl_x', 'Cpl_A', show=False, stab=False),
+                 pid('Cpl_Y', 'Coupled y', 'Cpl_y', 'Cpl_B', show=False, stab=False),
                  pid('BW_Near_X', 'BW near x', 'Near_x', 'BW1_H', show=False, stab=False),
                  pid('BW_Far_X', 'BW far x', 'Far_x', 'BW2_H', show=False, kp=0.4, stab=False),
                  pid('BW_Near_Y', 'BW near y', 'Near_y', 'BW1_V', show=False, stab=False),
                  pid('BW_Far_Y', 'BW far y', 'Far_y', 'BW2_V', show=False, kp=0.4, stab=False)]
+    p['pids'] += coupled_pointing_pids(pid)
     p['optimizers'] = [opt('Optim_PD', 'Photodiode optim', ['PD_X', 'PD_Y'], 'PD_current'),
                        opt('Track_PD', 'Photodiode tracking', ['PD_X', 'PD_Y'], 'PD_current',
                            action='periodic', interval=0.5),
-                       opt('Optim_OC', 'OC power optim', ['OC_H', 'OC_V'], 'Laser_power', max_step=2.0)]
+                       opt('Optim_OC', 'OC power optim', ['OC_H', 'OC_V'], 'Laser_power', max_step=2.0),
+                       opt('Optim_HA', 'Hard aperture optim', ['HA_X', 'HA_Y'], 'HA_flux', max_step=3.0, probe=1.5)]
+    p['optimizers'][-1]['show_in_alignment'] = False        # driven by the routines
+    p['routines'] = demo_routines()
     p['alignment'] = {'axes': [_axis('Pointing', 'Steer_H', 'Steer_V'),
                                _axis('Photodiode', 'PD_X', 'PD_Y', labels=('X', 'Y')),
                                _axis('OC', 'OC_H', 'OC_V', labels=('Horiz', 'Vert')),
@@ -287,10 +385,11 @@ def demo_preset() -> dict:
                                _axis('Coupled mount', 'Cpl_A', 'Cpl_B', labels=('A', 'B')),
                                _axis('Beam walk M1', 'BW1_H', 'BW1_V'),
                                _axis('Beam walk M2', 'BW2_H', 'BW2_V'),
+                               _axis('Hard aperture', 'HA_X', 'HA_Y', labels=('X', 'Y')),
                                _axis('Beam setpoint', 'SP:Beam_H', 'SP:Beam_V', slow=0.2, fast=2.0,
                                      labels=('x', 'y'))],
                       'active': 0, 'hide_unassigned': False}
-    p['overview'] = {'plot_roles': ['Beam_x', 'Beam_y', 'PD_current']}
+    p['overview'] = {'plot_roles': ['Beam_x', 'Beam_y', 'PD_current', 'Near_x', 'Far_x', 'HA_flux']}
     return normalize(p)
 
 

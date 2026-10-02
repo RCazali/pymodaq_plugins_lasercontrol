@@ -280,7 +280,34 @@ class LaserCore:
             logger.error(f'{a.id} on_hold failed: {e}')
         self._set_state(a, AutoState.HELD, violation.message, Level.ALARM, EventKind.SAFETY_HOLD)
 
-    def resume(self, auto_id: str) -> Tuple[bool, str]:
+    def pause(self, auto_id: str, reason: str = 'paused', by: Optional[str] = None) -> Tuple[bool, str]:
+        """Deliberate pause (a routine pausing the PIDs during another optimisation): nothing moves, the
+        motors are released, and unlike a preemption the automation does NOT resume by itself — only
+        :meth:`resume` restarts it (integral reset). A preempted automation becomes deliberately paused."""
+        a = self.automations.get(auto_id)
+        if a is None:
+            return False, f"unknown automation: {auto_id}"
+        if a.state == AutoState.PAUSED and a.pause_kind == 'confirm':
+            return False, f"{a.label}: a move confirmation is pending"
+        if a.state == AutoState.PAUSED:
+            a.pause_kind = 'manual'
+            a.paused_by = by
+            a.reason = reason
+            return True, ''
+        if a.state != AutoState.ACTIVE:
+            return False, f"{a.label} is not active ({a.state.value})"
+        try:
+            a.on_pause(self)
+        except Exception as e:  # pragma: no cover
+            logger.error(f'{a.id} on_pause failed: {e}')
+        self.ownership.release(a.id)
+        a.pause_kind = 'manual'
+        a.paused_by = by
+        self._set_state(a, AutoState.PAUSED, reason)
+        self._try_resume_paused()
+        return True, ''
+
+    def resume(self, auto_id: str, reason: str = 'manual resume') -> Tuple[bool, str]:
         """Manual resume after a safety hold (O10-A) or after an error-free pause."""
         a = self.automations.get(auto_id)
         if a is None:
@@ -316,7 +343,7 @@ class LaserCore:
             self.error(a, e)
             return False, str(e)
         a.next_due = self.clock.now()
-        self._set_state(a, AutoState.ACTIVE, 'manual resume', Level.INFO, EventKind.SAFETY_RESUME)
+        self._set_state(a, AutoState.ACTIVE, reason, Level.INFO, EventKind.SAFETY_RESUME)
         return True, ''
 
     def reset_reference(self, auto_id: str) -> bool:

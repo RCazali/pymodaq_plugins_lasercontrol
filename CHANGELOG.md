@@ -5,6 +5,35 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 ## [Unreleased]
 
 ### Added
+- **Settings separated from execution**: the Alignment tab only runs things (keyboard, go to, buttons);
+  everything is set in its own tab as a PyMoDAQ parameter tree — ⚙️ PID, 🧭 Routines, 📈 Optimization, and
+  the new **🕹 Axes** tab (the former Alignment › Configuration sub-tab, with the step of the − / +
+  buttons, which is no longer editable in Alignment; "Hide unassigned" moved there too).
+- **Coupled PID**: a PID regulates one or several signals ("loops": setpoint, sign, Kp, Ki, Kd, deadband
+  and motor weights each) with the motors ticked in its settings; common max step / period / settle. At
+  each period the contributions of the loops are summed, the step vector is scaled (direction kept) and
+  one order per motor is sent. Its decoupling is part of its settings (*Calibration & decoupling*):
+  🎯 Measure (every motor on every signal of the PID), matrix ± errors, κ, coupling now → after, ✔ Apply
+  (weights = columns of J⁺, Kp = 0.5 / loop gain, deadband, settle; refused when the errors of the
+  measurement allow more remaining coupling than the threshold). One Alignment setpoint axis per signal
+  (`SP:<pid>`, `SP:<pid>/2`).
+- **Routines** (new "🧭 Routines" tab, `engines/routine.py`), execution only: start / stop / pause / resume
+  a PID or an optimization, move a motor, note, wait — each followed by conditions (time, PID converged
+  for a hold time — every signal of the PID —, signal test, motor travel since the step began,
+  automation finished, step count) whose first true one decides the next step (next, go to n, end,
+  fail), plus a timeout. Runs as an automation `RTN:<id>` in the core tick; what it starts is watched
+  (held / error / stopped by somebody else = failure) and stopped on failure (option); it never resumes a
+  safety hold. Stored in the preset (`routines`), buttons in the Alignment tab (band SEQ, listed first).
+- **Deliberate pause** (`LaserCore.pause`): nothing moves, motors released, no automatic resume (unlike a
+  preemption); one click on the button, the Resume button or a routine step resumes it.
+- Simulator: **hard aperture** (`HA_X`, `HA_Y` → `HA_flux`) on the beam of the beam walk: the flux
+  depends on the aperture position and on the beam angle, and moving the aperture shifts the near field.
+  "Simulator demo": coupled PIDs "Pointing x / y" (near + far field), optimization `Optim_HA`, and three
+  demo routines (HA with the PIDs paused, periodic HA, automated beam walk with a travel limit). Run
+  `tools.sim_preset --force` to get them (it also works around the PyMoDAQ 5.1 naming bug above 10
+  actuators).
+- `docs/roadmap.md` replaces `docs/pid_roadmap.md` and `docs/alignment_roadmap.md` (only their display
+  constraints are kept).
 - **Automatic PID calibration** (`engines/calibration.py`, PID tab "🎯 Calibrate"): each motor of the PID
   is moved by small bipolar steps (the others still, back to the start position), a drift-robust least
   squares fit gives the sensitivity, its error, the noise and the settling time. Refused: a response
@@ -15,25 +44,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
   weight·g), deadband (2σ) and settle time after confirmation. Results are kept in the preset
   (`pids[].calibration`). Checked on the simulator coupled benches: gains within a few % of the known
   matrices, single motors and combinations.
-- **Decoupling of PIDs** (PID tab "🔀 Decouple PIDs…", `engines/decoupling.py`): the calibration now
-  measures each motor on several signals at once (`CalibrationAutomation(extra_signals=…)`), which gives
-  the sensitivity matrix J of a group of PIDs. Each PID is proposed the combination of motors that moves
-  only its own signal (column of J⁺, largest weight ±1), with its condition number, the coupling now →
-  after and the coupling still allowed by the errors of J; "✔ Apply weights" sets the weights, keeps the
-  calibration in the preset and sets sign / Kp / deadband / settle of the new combination. Non-modal
-  window (E-STOP reachable), cycles per motor adjustable. A motor with no clear effect on a signal no
+- **Sensitivity matrix**: the calibration measures each motor on several signals at once
+  (`CalibrationAutomation(extra_signals=…)`); `engines/decoupling.py` gives the combination of motors
+  that moves only one signal (column of J⁺, largest weight ±1), the condition number, the coupling now →
+  after and the coupling still allowed by the errors of J. A motor with no clear effect on a signal no
   longer blocks the Kp proposal of a combination: the significance is checked on the total loop gain.
-  **Limit:** decoupled PIDs share their motors, so they cannot run at the same time yet (single owner
-  per motor, the last started pauses the other).
 - **Log in its own tab** ("📜 Log", last tab) instead of a dock under the tabs; the tab title counts the
   warnings / alarms not read yet. The window now fits 1300 × 700 (minimum height 775 → 663 px).
 - **Alignment tab laid out from the bottom up** (only the lower half of the screen is visible in the
   lab): keyboard state and STOP ALIGNMENT on the last line, motor cards and active axis just above, the
   automation buttons and the history plot at the top. Inner tab headers stay at the top.
-- PID tab on small screens (1300 × 700): the "2. Settings" column and the calibration results scroll
-  instead of forcing the window height (minimum height of the tab 561 → 340 px).
-- `docs/alignment_roadmap.md`: plan for the alignment cockpit (layout, goggles palette, configurable keys,
-  PIDs as jogged items, step-dither extremum seeking).
 - **PID setpoints in the Alignment tab**: each PID setpoint is a virtual axis `SP:<pid id>` that can be
   assigned to an axis channel (h / v) like a motor, and moved with the keyboard (step mode, 10 steps/s,
   Slow / Fast = setpoint step). Moving a setpoint does not stop the PID (it is not a motor); the value
@@ -41,15 +61,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 - Simulator: two coupled benches with known matrices — coupled mount (`Cpl_A/B` → `Cpl_x/y`, moderate
   coupling) and beam walk (`BW1_H/V`, `BW2_H/V` → `Near_x/y`, `Far_x/y`, strong coupling), driven in the
   demo preset by independent PIDs. Run `tools.sim_preset --force` to get them.
-- `docs/pid_roadmap.md`: design of the calibration, the loop state indicator and the coupled PID.
 
 ### Changed
-- **PID tab redesigned**: overview table of every PID (state, signal → motors, error, RMS error,
-  worst envelope use, start / stop / resume button) with the details of the selected PID below.
-  Only the motors used by the PID are listed ("➕ Add motor", ✕ to remove). Settings in two levels
-  (essential / Advanced) with a single **loop sign** and an "⇄ Invert sign" button. Two linked plots:
-  measurement + setpoint with move markers, error + P / I / D terms; time window and statistics
-  (RMS error, σ of the measurement, iterations, moves).
+- Status bar: the chips of the engaged automations share the free width (the window stays at 1300 px),
+  show their state by a symbol too (▶ ‖ ■ ✖), held ones and routines first, "+n" for the rest.
+- **PID tab redesigned**: overview table of every PID (state, signals → motors, errors, RMS errors,
+  worst envelope use, start / stop / resume button) with the selected PID below: its settings in one
+  parameter tree (General, Motors, Signals, Calibration & decoupling, Timing & limits; a single **loop
+  sign** per signal) and two linked plots for the chosen signal: measurement + setpoint with move
+  markers, error + P / I / D terms; time window and statistics (RMS error, σ of the measurement,
+  iterations, moves). Preset schema 3 (PIDs with loops); schema 2 PIDs and PID groups are converted.
 - PID engine: the trace keeps every iteration (`TracePoint`: error, P / I / D, output, moves sent);
   `error_stats()` helper.
 - The whole plugin (user interface, messages, logs, docstrings, documentation) is now in English.

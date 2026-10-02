@@ -1,12 +1,15 @@
 # PID tuning guide — Laser Control (T11.4)
 
-A PID regulates **one 0D signal** (e.g. `Cam1_x`, a centroid in pixels) by moving **a combination of
-motors** (e.g. `OC_H` with a weight of 1). At each period (0.5 s = 2 Hz):
+A PID regulates **one 0D signal** (e.g. `Cam1_x`, a centroid in pixels) — or several at once, see § 3 —
+by moving **a combination of motors** (e.g. `OC_H` with a weight of 1). The PID tab is for its
+**settings** (a PyMoDAQ parameter tree); it is **run** from its button in the Alignment tab (or by a
+routine). At each period (0.5 s = 2 Hz):
 
 ```
 error = setpoint − measurement
 output = Kp·error + Ki·∫error·dt + Kd·d(measurement)/dt          (each term with its + / − sign)
-step of motor i = output × weight_i, bounded to ± "Max step / iteration", then to ± max_step of the role (S3)
+step of motor i = output × weight_i; the whole step vector is scaled down so that no motor exceeds
+"Max step / iteration" (its direction is kept), then ± max_step of the role (S3)
 ```
 
 - A **fresh measurement** is needed at each iteration (S1). A measurement already used is not reused.
@@ -27,8 +30,9 @@ the rate (S5) limit the damage, then hold the PID.
    or decrease?
 2. If a `+` step **increases** the signal, then to correct a positive error (measurement too low) a
    positive step is needed: **Loop sign = +** and positive weight.
-3. If a `+` step **decreases** the signal: **Loop sign = −** (or **⇄ Invert sign**, applied live), or
-   a negative weight. Choose one or the other, not both.
+3. If a `+` step **decreases** the signal: **Loop sign = −** (applied live), or a negative weight.
+   Choose one or the other, not both. Simpler: **Calibration › 🎯 Measure**, then **✔ Apply** sets the
+   sign, Kp, deadband and settle time from the measured response.
 4. The loop sign applies to the P, I and D terms together. A preset with different Kp / Ki / Kd signs
    (older versions) is unified to the Kp sign when loaded, with a warning in the log.
 5. Write the direction in the role note (Configuration → Roles), for example "+ = beam to the right
@@ -58,23 +62,33 @@ used, start / stop). Below, for the selected PID: measurement and setpoint with 
 then the error with the P, I, D contributions, over a chosen window (30 s, 2 min, 10 min, all), with
 the RMS error and the standard deviation of the measurement: use them to compare two settings.
 When the PID is not active (stopped, paused, held), the plots freeze on the last iteration. The
-setpoint and Kp are large fields; every other setting is under **Advanced**.
+tree has five groups: **General** (name, button in Alignment, stabilization), **Motors** (tick the
+motors the PID may move), **Signals** (per signal: setpoint, sign, Kp, Ki, Kd, deadband, motor
+weights), **Calibration** and **Timing & limits** (max step, period, settle, confirmation). While the PID
+runs, the gains and setpoints stay editable (applied live), not the signals, motors or weights.
 
 ## 3. Weights (several motors for one signal)
 
 - The PID output is multiplied by the weight of each ticked motor. With `OC_H × 1` and `EM_H × −0.5`,
   a step of +1 on OC_H comes with −0.5 on EM_H.
-- The max step applies **after** weighting, motor by motor.
+- The max step applies **after** weighting (the step vector is scaled, its direction kept).
 - Two PIDs must not drive the same motor at the same time (D4: the last activated one takes over, the
   other one pauses).
-- **Decoupling** ("🔀 Decouple PIDs…" in the PID tab): when the motors of one PID also move the
-  signal of another one (rotated mount, beam walk near / far field), tick these PIDs and **Measure**:
-  every motor is moved by small bipolar steps and every signal is recorded, which gives the sensitivity
-  matrix. The report proposes for each PID the weights that move **only its own signal** (coupling
-  now → after), the condition number κ (< 10 good, > 100 refused: two motors do the same thing) and the
-  coupling still allowed by the measurement errors (if large: more cycles per motor). **Apply weights**
-  sets the weights and the loop settings of each PID. Each PID then needs every motor of the group:
-  until PID groups exist, run them one at a time (D4).
+
+### Coupled PID (two signals, e.g. near field + far field)
+
+When the same motors move two signals (beam walk: two mirrors move both the near field and the far
+field), put both signals in **one PID**: **Signals › ➕ Add a signal (coupled PID)**, and tick at least
+as many motors as signals. Then **Calibration & decoupling › 🎯 Measure**: every motor is moved by small
+bipolar steps (the others still, back to the start position) and every signal is recorded, which gives
+the sensitivity matrix. The result shows the matrix ± its errors, the condition number κ (< 10 good,
+> 100 refused: two motors do the same thing), and for each signal the combination of motors that moves
+**only that signal** (coupling now → after, and the coupling still allowed by the measurement errors).
+**✔ Apply** writes these weights and, for each signal, the sign, Kp (0.5 / loop gain), deadband and the
+settle time — refused if the errors allow more remaining coupling than *Max remaining coupling* (then
+measure again with more cycles per motor). The PID then corrects both signals at once, one order per
+motor per period; each signal keeps its own setpoint (also as an Alignment axis `SP:<pid>` and
+`SP:<pid>/2`), gains and plot (choose it above the plots).
 
 ## 4. Envelopes and limits (Configuration → Safety)
 
