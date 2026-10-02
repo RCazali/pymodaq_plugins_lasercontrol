@@ -95,6 +95,12 @@ SIGNAL_COLS = ['Active', 'Signal (role)', 'Mode', 'Weight', 'Exponent p', 'Targe
 class SingleOptimizerWidget(QtWidgets.QWidget):
     """One named optimisation (automation ``OPT:<id>``)."""
 
+    def showEvent(self, e):
+        super().showEvent(e)
+        if not self._tree_filled:
+            self._tree_filled = True
+            self.tree.setParameters(self.settings, showTop=False)
+
     def __init__(self, app: 'LaserControlApp', cfg: dict, parent=None):
         super().__init__(parent)
         self.app = app
@@ -109,7 +115,7 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
         left.setContentsMargins(0, 0, 0, 0)
         self.settings = Parameter.create(name='optimizer', type='group', children=opt_params())
         self.tree = ParameterTree()
-        self.tree.setParameters(self.settings, showTop=False)
+        self._tree_filled = False                 # filled when first shown (fast preset loading)
         self.tree.setMinimumHeight(340)
         self.settings.sigTreeStateChanged.connect(self._on_changed)
         left.addWidget(QtWidgets.QLabel('<b>1. Settings</b>'))

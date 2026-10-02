@@ -327,6 +327,14 @@ class RoutineHost:
         a = self.automation(target)
         return (False, f'{target} does not exist') if a is None else self.core.resume(a.id, reason)
 
+    def set_setpoint(self, target: str, k: int, value: float) -> Tuple[bool, str]:
+        """Setpoint of signal ``k`` of a PID (execution data: positions and ramps of a program)."""
+        p = self.pid(target)
+        if p is None or not 0 <= k < len(p.loops):
+            return False, f'{target}: no signal {k + 1}'
+        p.loops[k].settings.setpoint = float(value)
+        return True, ''
+
 # ====================================================================== runner
 class RoutineAutomation(Automation):
     kind = 'routine'

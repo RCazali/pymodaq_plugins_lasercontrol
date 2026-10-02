@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 ## [Unreleased]
 
 ### Added
+- **Structured routines — engine** (`engines/program.py`, not yet used by the Routines tab): nested blocks
+  instead of "go to" — steps, `repeat` (forever or n×), `foreach` position (setpoints of the PIDs, per signal),
+  `ramp` of the setpoints at a given speed that waits while a PID is out of its own tolerance, and
+  background `every N s` blocks that interrupt the main sequence at any moment (its ramp and its timers are
+  frozen meanwhile). Outcomes next / repeat / break / end / fail; "PID converged" with one tolerance per
+  PID; `hold` until stopped. Step routines are converted automatically (backward "go to" → `repeat`).
+  Checked on the simulator with the "beam transport" program (lock, ramp P1 → Final interrupted by the HA
+  optimisation every 30 s, PIDs paused during it, lock on each position), on 10 random seeds.
+- Optimization tab: its parameter tree is filled when first shown (preset loading ≈ 0.3 s faster).
 - **Settings separated from execution**: the Alignment tab only runs things (keyboard, go to, buttons);
   everything is set in its own tab as a PyMoDAQ parameter tree — ⚙️ PID, 🧭 Routines, 📈 Optimization, and
   the new **🕹 Axes** tab (the former Alignment › Configuration sub-tab, with the step of the − / +

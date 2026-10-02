@@ -40,6 +40,15 @@ class AppRoutineHost(RoutineHost):
                 self.app.ensure_pid(cfg)
         return self.core.get(target)
 
+    def set_setpoint(self, target: str, k: int, value: float) -> Tuple[bool, str]:
+        """Through the PID tab (applied live, shown, kept in the preset like the SP: axes)."""
+        tab = self.app.tabs.get('pid')
+        w = tab.widgets.get(target.split(':', 1)[-1]) if tab is not None else None
+        if w is None or not 0 <= k < len(w.loops()):
+            return False, f'{target}: no signal {k + 1}'
+        w.set_setpoint(k, float(value))
+        return True, ''
+
     def start(self, target: str, option: str = '') -> Tuple[bool, str]:
         if target.startswith('PID:'):
             cfg = self._pid_cfg(target)

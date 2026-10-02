@@ -5,3 +5,4 @@ from .calibration import CalibrationAutomation, CalibrationResult, fit_sensitivi
 from .scan import Scan1DAutomation, XYScanAutomation, scan_positions, snake_pattern
 from .optimizer import OptimizerAutomation, DEFAULT_OPT_CONFIG, RUN_MODES
 from .routine import Condition, Routine, RoutineAutomation, RoutineHost, Step
+from .program import Cond, Every, Node, Position, Program, ProgramAutomation, from_routine, validate_program

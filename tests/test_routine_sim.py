@@ -33,8 +33,10 @@ class SimBench:
         for cfg in self.preset['pids']:
             self.core.add_automation(PIDAutomation.from_config(cfg))
         for o in self.preset['optimizers']:
-            self.core.add_automation(OptimizerAutomation(o['config'], o['motors'], o['signals'],
-                                                         auto_id=f"OPT:{o['id']}", label=o['label']))
+            opt = OptimizerAutomation(o['config'], o['motors'], o['signals'], auto_id=f"OPT:{o['id']}",
+                                      label=o['label'])
+            opt.rng.seed(seed)                                    # reproducible probe directions
+            self.core.add_automation(opt)
         self.host = RoutineHost(self.core)
         self.step()
 

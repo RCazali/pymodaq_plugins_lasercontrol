@@ -105,8 +105,9 @@ each flux measurement waits until every PID is back within its tolerance (otherw
 correction).
 
 ### Implementation steps (each: green tests, commit by the user)
-1. Engine: nested blocks (step, repeat, for each, ramp, every with interruption), conversion of the current
-   routines, tests on the simulator (beam transport program).
+1. **Done** — engine: nested blocks (step, repeat, for each, ramp, every with interruption), conversion of
+   the current routines, tests on the simulator (beam transport program): `engines/program.py`,
+   `tests/test_program.py`.
 2. "Confirm at maximum" algorithm in the optimiser (pure estimator + automation), tests with noise, drift
    and a moving optimum; operator wait (Continue / Check again / Stop) in Alignment.
 3. Block editor in the Routines tab (layout D, 1300 × 700, goggles rules), positions table, live run view
