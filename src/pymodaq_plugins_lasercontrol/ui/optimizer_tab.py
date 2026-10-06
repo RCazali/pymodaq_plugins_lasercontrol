@@ -68,6 +68,21 @@ def opt_params() -> list:
             {'title': 'Deadband scale:', 'name': 'full_opt_deadband_scale', 'type': 'float',
              'value': d['full_opt_deadband_scale'], 'min': 0.0001},
         ]},
+        {'title': 'Confirm maximum (extremum seeking)', 'name': 'confirm_group', 'type': 'group', 'expanded': False,
+         'children': [
+             {'title': 'Max tries per motor:', 'name': 'confirm_tries', 'type': 'int', 'value': d['confirm_tries'],
+              'min': 1, 'tip': 'probes (+ − − + around the centre) before giving up: then a routine asks the operator'},
+             {'title': 'Tolerated loss (%):', 'name': 'confirm_max_loss', 'type': 'float',
+              'value': 100 * d['confirm_max_loss'], 'min': 0.0, 'max': 50.0,
+              'tip': '"at the maximum" = the estimated signal lost by not being exactly at the top is below this '
+                     '(the top itself moves: a strict "gradient = 0" would never be reached)'},
+             {'title': 'Pattern repeats:', 'name': 'confirm_cycles', 'type': 'int', 'value': d['confirm_cycles'],
+              'min': 1, 'max': 6, 'tip': 'more = more robust to slow changes of the signal, longer'},
+             {'title': 'Frames per plateau:', 'name': 'confirm_samples', 'type': 'int', 'value': d['confirm_samples'],
+              'min': 1},
+             {'title': 'Significance (σ):', 'name': 'confirm_z', 'type': 'float', 'value': d['confirm_z'], 'min': 1.0,
+              'tip': 'a gradient is significant above this many standard errors'},
+         ]},
         {'title': 'Measurement', 'name': 'measure_group', 'type': 'group', 'expanded': False, 'children': [
             {'title': 'Frames for the noise:', 'name': 'noise_samples', 'type': 'int', 'value': d['noise_samples'],
              'min': 2},
@@ -86,7 +101,12 @@ FLAT_KEYS = {  # config key -> parameter path
     'full_opt_stall_patience': ('full_opt_group', 'full_opt_stall_patience'),
     'full_opt_deadband_scale': ('full_opt_group', 'full_opt_deadband_scale'),
     'noise_samples': ('measure_group', 'noise_samples'), 'probe_samples': ('measure_group', 'probe_samples'),
+    'confirm_tries': ('confirm_group', 'confirm_tries'), 'confirm_max_loss': ('confirm_group', 'confirm_max_loss'),
+    'confirm_cycles': ('confirm_group', 'confirm_cycles'), 'confirm_samples': ('confirm_group', 'confirm_samples'),
+    'confirm_z': ('confirm_group', 'confirm_z'),
 }
+#: shown in % in the tree, stored as a fraction
+PERCENT_KEYS = ('confirm_max_loss',)
 
 MOTOR_COLS = ['Motor (role)', 'Max step', 'Probe step', 'Order']
 SIGNAL_COLS = ['Active', 'Signal (role)', 'Mode', 'Weight', 'Exponent p', 'Target', 'Auto']
@@ -295,6 +315,9 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
                 cfg[key] = self.settings.child(*path).value()
             except Exception:
                 pass
+        for key in PERCENT_KEYS:
+            if key in cfg:
+                cfg[key] = float(cfg[key]) / 100.0
         motors = []
         for r in range(self.table_motors.rowCount()):
             it = self.table_motors.item(r, 0)
@@ -331,7 +354,8 @@ class SingleOptimizerWidget(QtWidgets.QWidget):
             for key, path in FLAT_KEYS.items():
                 if key in opt.get('config', {}):
                     try:
-                        self.settings.child(*path).setValue(opt['config'][key])
+                        v = opt['config'][key]
+                        self.settings.child(*path).setValue(100.0 * float(v) if key in PERCENT_KEYS else v)
                     except Exception:
                         pass
         finally:

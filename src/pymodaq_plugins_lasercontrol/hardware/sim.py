@@ -56,7 +56,7 @@ AXES = ['OC_H', 'OC_V', 'EM_H', 'EM_V', 'AP_X', 'AP_Y', 'JET_X', 'JET_Y', 'JET_Z
 DRIFT_FACTOR = {'OC_H': 1.0, 'OC_V': 1.0, 'EM_H': 1.0, 'EM_V': 1.0,
                 'STEER_H': 1.3, 'STEER_V': 1.0, 'PD_X': 0.8, 'PD_Y': 0.8,
                 'CPL_A': 1.0, 'CPL_B': 0.8, 'BW1_H': 0.8, 'BW1_V': 0.6, 'BW2_H': 0.6, 'BW2_V': 0.8,
-                'HA_X': 1.2, 'HA_Y': 1.0}
+                'HA_X': 0.4, 'HA_Y': 0.3}      # HA: slow thermal drift, small compared with its 6 µm width
 #: sensitivity matrices of the coupled benches: {signal: {axis: gain}} (µm of spot per µm of screw)
 COUPLED_SIMPLE = {'Coupled/x': {'CPL_A': 1.0, 'CPL_B': 0.35},
                   'Coupled/y': {'CPL_A': -0.25, 'CPL_B': 1.0}}

@@ -293,5 +293,7 @@ register_algorithm('nelder-mead', 'Nelder-Mead (simplex)',
 register_algorithm('gradient', 'Gradient / Newton-lite (local descent)',
                    lambda: GeneratorAlgorithm('gradient', 'Gradient / Newton-lite (local descent)', gradient_pass))
 
+from . import confirm  # noqa: E402,F401  (registers 'Confirm maximum (extremum seeking)')
+
 RUN_MODES = ['Joint (all motors at once)', 'Sequential (one motor at a time)', 'Nelder-Mead (simplex)',
-             'Gradient / Newton-lite (local descent)']
+             'Gradient / Newton-lite (local descent)', confirm.LABEL]

@@ -15,6 +15,8 @@ import random
 from collections import deque
 from typing import TYPE_CHECKING, Deque, Dict, List, Optional, Tuple
 
+import numpy as np
+
 from ...core.automation import Automation
 from ...core.events import EventKind, Level
 from ...core.safety import SafetyPolicy
@@ -44,6 +46,12 @@ DEFAULT_OPT_CONFIG = {
     'full_optimization': False,
     'noise_samples': 5,
     'probe_samples': 2,
+    # 'Confirm maximum (extremum seeking)'
+    'confirm_tries': 5,
+    'confirm_max_loss': 0.01,
+    'confirm_cycles': 2,
+    'confirm_samples': 5,
+    'confirm_z': 3.0,
 }
 
 PASS_PHASES = ('settle', 'noise', 'moving', 'dwell', 'sampling')
@@ -84,6 +92,8 @@ class OptimizerAutomation(Automation):
         self.finished = False
         self._aborted = False
         self.rng = random.Random()
+        self.last_result: dict = {}              # conclusion of the last pass (e.g. {'confirmed': True})
+        self.run_mode_override: Optional[str] = None   # e.g. 'confirm' for one start (routine), settings kept
 
     # ------------------------------------------------------------------ description
     @property
@@ -222,17 +232,21 @@ class OptimizerAutomation(Automation):
         self.phase = 'settle'                           # wait until PIDs' last moves are finished
         core.acquire(self)                              # D4: pauses the PIDs sharing a motor
         self.sequencer = MoveSequencer(core, self)
+        self.last_result = {}
         self.ctx = OptContext(motors=[{'role': m['role'], 'max_step': float(m['max_step']),
                                        'probe_step': float(m['probe_step']), 'order': int(m.get('order', 0))}
                                       for m in self.motors_cfg],
                               config=dict(self.config), rng=self.rng)
-        self.algo = create_algorithm(self.config.get('run_mode', 'joint'))
+        self.algo = create_algorithm(self.run_mode_override or self.config.get('run_mode', 'joint'))
         self.status = 'estimating noise…'
         self.pass_best_cost = math.nan
         core.events.publish(EventKind.OPTIMIZER, self.id,
                             f"Optimization pass {self.pass_count + 1} ({self.algo.label})", Level.INFO)
 
     def _end_pass(self, core: 'LaserCore', now: float, message: str = ''):
+        self.last_result = dict(self.ctx.result) if self.ctx is not None else {}
+        if self.last_result.get('message') and not message:
+            message = self.last_result['message']
         self._close_algo()
         self.pass_count += 1
         self.status = message or f"pass finished (cost {self.last_cost:.4g})"
@@ -307,8 +321,10 @@ class OptimizerAutomation(Automation):
             if core.any_busy(self.motor_roles()):
                 return
             self.phase = 'noise'
-            self._begin_sampling(core, int(self.config.get('noise_samples', 5)),
-                                 now + float(self.config.get('dwell', 0.1)))
+            n_noise = int(self.config.get('noise_samples', 5))
+            if self.run_mode_override == 'confirm' or 'confirm' in str(self.config.get('run_mode', '')).lower():
+                n_noise = max(n_noise, 12)             # its decisions rely on the noise: estimate it well
+            self._begin_sampling(core, n_noise, now + float(self.config.get('dwell', 0.1)))
             return
         if self.phase == 'noise':
             if not self._collect(core):
@@ -316,6 +332,9 @@ class OptimizerAutomation(Automation):
             scale = self.config.get('full_opt_deadband_scale', 0.1) if self.config.get('full_optimization') \
                 else self.config.get('deadband_scale', 1.0)
             self.ctx.deadband = self.cost_model.estimate(self._buf, float(scale))
+            n = min((len(b) for b in self._buf.values()), default=0)
+            costs = [self.cost_model.cost({r: b[i] for r, b in self._buf.items()}) for i in range(n)]
+            self.ctx.cost_sigma = float(np.std(costs, ddof=1)) if len(costs) >= 2 else math.nan
             self.algo.start(self.ctx)
             self._advance(core, now, None)
             return

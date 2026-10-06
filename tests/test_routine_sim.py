@@ -4,8 +4,8 @@ import pytest
 
 from pymodaq_plugins_lasercontrol.core import FakeClock, LaserCore, RoleMap, SafetyConfig, AutoState
 from pymodaq_plugins_lasercontrol.core.fakes import FakeActuator, FakeDetector
-from pymodaq_plugins_lasercontrol.engines import (OptimizerAutomation, PIDAutomation, Routine, RoutineAutomation,
-                                                  RoutineHost)
+from pymodaq_plugins_lasercontrol.engines import (OptimizerAutomation, PIDAutomation, Program, ProgramAutomation,
+                                                  RoutineHost, validate_program)
 from pymodaq_plugins_lasercontrol.hardware.sim import LaserSimModel
 from pymodaq_plugins_lasercontrol.tools import sim_preset
 
@@ -42,7 +42,7 @@ class SimBench:
 
     def routine(self, rid):
         cfg = next(r for r in self.preset['routines'] if r['id'] == rid)
-        r = RoutineAutomation(Routine.from_dict(cfg), self.host)
+        r = ProgramAutomation(Program.from_dict(cfg), self.host)
         self.core.add_automation(r)
         return r
 
@@ -70,31 +70,35 @@ class SimBench:
         return False
 
 
-def test_ha_optimisation_with_the_pids_paused():
-    """The hard aperture is optimised with the coupled near / far PIDs paused, then they re-lock."""
+def test_ha_check_with_the_pids_paused():
+    """The hard aperture is confirmed at its maximum (it climbs back first) with the coupled near / far PIDs
+    paused, then they re-lock."""
     bench = SimBench()
-    bench.acts['Sim HA_X'].external_move(7.0)                         # aperture badly placed
+    top = bench.model.optimum(bench.clock.now())
+    bench.acts['Sim HA_X'].external_move(top['HA_X'] + 3.0)            # aperture a bit off its top
+    bench.acts['Sim HA_Y'].external_move(top['HA_Y'])
     bench.step()
     r = bench.routine('HA_opt')
     assert bench.core.start(r.id)[0], bench.core.validate(r)
     groups = [bench.core.get('PID:Pointing_X'), bench.core.get('PID:Pointing_Y')]
     opt = bench.core.get('OPT:Optim_HA')
-    seen = []
+    seen, end = [], []
 
     def spy():
         if opt.state == AutoState.ACTIVE and opt.in_pass:
             seen.append(tuple(g.state for g in groups))
+        if opt.last_result and not end:                                # off the top at the end of the check
+            end.append(bench.core.position('HA_X') - bench.model.optimum(bench.clock.now())['HA_X'])
 
-    bench.run(60, until=lambda: opt.state == AutoState.ACTIVE)         # pointing locked first
-    ha_before = bench.value('HA_flux')
     assert bench.run(900, until=lambda: r.state == AutoState.OFF, spy=spy)
     assert r.outcome == 'done', (r.reason, list(r.history)[-5:])
+    assert r.question is None and opt.last_result['confirmed'], opt.last_result
     assert seen and all(s == (AutoState.PAUSED, AutoState.PAUSED) for s in seen)     # paused during the pass
-    assert opt.reason == 'finished'
     assert all(g.state == AutoState.ACTIVE for g in groups)                         # resumed and locked again
     for role in ('Near_x', 'Far_x', 'Near_y', 'Far_y'):
         assert abs(bench.value(role)) < 1.0, role
-    assert bench.value('HA_flux') > max(ha_before + 1.0, 7.0), ha_before
+    assert end and abs(end[0]) < 2.0, end
+    assert opt.last_result['motors']['HA_X']['tries'] >= 2               # it climbed back first
 
 
 def test_beam_walk_one_mirror_at_a_time():
@@ -103,7 +107,8 @@ def test_beam_walk_one_mirror_at_a_time():
     assert bench.core.start(r.id)[0]
     assert bench.run(900, until=lambda: r.state == AutoState.OFF)
     assert r.outcome == 'done', (r.reason, list(r.history)[-8:])
-    assert r.visits[6] >= 2                                     # walked more than once
+    loop = r.program.main[1]
+    assert loop.type == 'repeat' and r.visits[loop.body[0].uid] >= 2      # walked more than once
     assert abs(bench.value('Near_x')) < 1.0 and abs(bench.value('Far_x')) < 1.0
     assert bench.core.get('PID:BW_Near_X').state == AutoState.OFF
     assert bench.core.get('PID:BW_Far_X').state == AutoState.OFF
@@ -167,19 +172,21 @@ def test_keep_aligned_loops_until_stopped():
     assert bench.core.start(r.id)[0]
     opt = bench.core.get('OPT:Optim_HA')
     assert not bench.run(560, until=lambda: r.state == AutoState.OFF)     # never ends by itself
-    assert r.state == AutoState.ACTIVE and r.visits.get(8, 0) >= 3        # a cycle ≈ 2 min wait + HA + re-lock
-    assert opt.pass_count >= 3
+    assert r.state == AutoState.ACTIVE and r.interruptions >= 3           # every 2 min: the HA check
+    confirm = next(n for n in r.program.background[0].body if n.action == 'confirm')
+    assert r.visits[confirm.uid] >= 3 and opt.pass_count >= 3
+    assert r.main.node.action == 'hold'                                    # the main sequence holds the beam
     bench.core.stop(r.id, 'user')
     assert r.outcome == 'stopped'
     assert all(bench.core.get(p).state == AutoState.OFF for p in ('PID:Pointing_X', 'PID:Pointing_Y'))
 
 
 def test_demo_routines_are_valid():
-    from pymodaq_plugins_lasercontrol.engines.routine import validate_routine
     for cfg in sim_preset.demo_routines():
-        assert validate_routine(Routine.from_dict(cfg)) == [], cfg['id']
+        assert 'steps' not in cfg and validate_program(Program.from_dict(cfg)) == [], cfg['id']
     bench = SimBench()
+    assert [r['id'] for r in bench.preset['routines']] == ['HA_opt', 'Keep_aligned', 'Transport', 'Walk_X']
     for cfg in bench.preset['routines']:
-        r = RoutineAutomation(Routine.from_dict(cfg), bench.host)
+        r = ProgramAutomation(Program.from_dict(cfg), bench.host)
         errs = [e for e in r.validate(bench.core)]
         assert errs == [], (cfg['id'], errs)

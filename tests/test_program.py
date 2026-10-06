@@ -51,19 +51,39 @@ def test_round_trip_and_validation():
 
 
 def test_step_routines_are_converted_to_blocks():
-    progs = {d['id']: Program.from_dict(d) for d in demo_routines()}       # old format -> program
-    ha = progs['HA_opt']
-    assert all(n.type == 'step' for n in ha.main) and len(ha.main) == 11
-    keep = progs['Keep_aligned']
-    assert [n.type for n in keep.main] == ['step'] * 4 + ['repeat']
-    loop = keep.main[4]
-    assert loop.times == 0 and len(loop.body) == 8
+    X = 'PID:Pointing_X'
+    old = [   # step routines ("go to" model) as saved by the previous versions
+        Routine('Straight', steps=[Step('start', X), Step('pause', X),
+                                   Step('resume', X, until=[Condition('locked', X, value=0.5, hold_s=3.0)])]),
+        Routine('Keep', steps=[Step('start', X), Step('none', until=[Condition('delay', value=120.0)]),
+                               Step('pause', X), Step('resume', X),
+                               Step('none', until=[Condition('locked', X, value=0.5, then='goto', goto=2)],
+                                    timeout_s=60.0)]),
+        Routine('Walk_X', steps=[
+            Step('stop', X),
+            Step('start', 'PID:BW_Near_X', until=[Condition('locked', 'PID:BW_Near_X', value=0.3, hold_s=2.0),
+                                                  Condition('travel', 'BW1_H', value=15.0)],
+                 timeout_s=30.0, on_timeout='next'),
+            Step('stop', 'PID:BW_Near_X'),
+            Step('start', 'PID:BW_Far_X', until=[Condition('locked', 'PID:BW_Far_X', value=0.3, hold_s=2.0)],
+                 timeout_s=30.0, on_timeout='next'),
+            Step('none', until=[Condition('count', value=8, then='fail'),
+                                Condition('signal', 'Near_x', '|x|>', 0.6, then='goto', goto=2),
+                                Condition('signal', 'Far_x', '|x|>', 0.6, then='goto', goto=2),
+                                Condition('delay', value=0.5, then='end')])])]
+    progs = {r.id: Program.from_dict(r.to_dict()) for r in old}           # old format -> program
+    assert all(n.type == 'step' for n in progs['Straight'].main) and len(progs['Straight'].main) == 3
+    keep = progs['Keep']
+    assert [n.type for n in keep.main] == ['step', 'repeat']
+    loop = keep.main[1]
+    assert loop.times == 0 and len(loop.body) == 4
     last = loop.body[-1]
     assert [c.outcome for c in last.until] == ['next'] and last.on_timeout == 'fail'   # locked -> loop again
+    assert [n.origin for n in progs['Keep'].walk()][-4:] == [1, 2, 3, 4]
     walk = progs['Walk_X']
     assert [n.type for n in walk.main] == ['step', 'repeat']
     body = walk.main[1].body
-    assert len(body) == 5 and [c.outcome for c in body[-1].until] == ['fail', 'next', 'next', 'end']
+    assert len(body) == 4 and [c.outcome for c in body[-1].until] == ['fail', 'next', 'next', 'end']
     assert body[0].on_timeout == 'next'
     for p in progs.values():
         assert validate_program(p) == [], p.id

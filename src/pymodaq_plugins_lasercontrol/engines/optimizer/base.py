@@ -59,6 +59,8 @@ class OptContext:
     config: dict
     deadband: float = 0.1
     rng: random.Random = field(default_factory=random.Random)
+    cost_sigma: float = float('nan')       # noise of the cost on one frame (measured at the start of the pass)
+    result: dict = field(default_factory=dict)    # what the algorithm concluded (e.g. 'confirmed')
 
     NOISE_SAMPLES = 5
     PROBE_SAMPLES = 2

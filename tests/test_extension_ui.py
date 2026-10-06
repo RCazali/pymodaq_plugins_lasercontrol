@@ -259,6 +259,13 @@ def test_05_optimizer_one_pass(ext):
     assert opt.state.value == 'OFF', (opt.phase, opt.reason)
     assert opt.pass_count == 1
     assert len(opt.history) >= 1
+    # "Confirm maximum" settings: loss shown in %, stored as a fraction; the mode is selectable
+    w = opt_tab.widgets['Jet']
+    assert w.get_config()['config']['confirm_max_loss'] == pytest.approx(0.01)
+    w.settings.child('confirm_group', 'confirm_max_loss').setValue(2.0)
+    assert w.get_config()['config']['confirm_max_loss'] == pytest.approx(0.02)
+    assert 'Confirm maximum (extremum seeking)' in w.settings.child('run_mode').opts['limits']
+    w.settings.child('confirm_group', 'confirm_max_loss').setValue(1.0)
     # a second optimisation lives next to the first one
     opt_tab.add(dict(cfg, id='Jet2', label='Optim jet bis'))
     assert [c['id'] for c in opt_tab.configs()] == ['Jet', 'Jet2']
@@ -443,23 +450,33 @@ def test_06d_routines_tab_and_alignment_button(ext):
         Step('none', until=[Condition('delay', value=1.0)]),
         Step('resume', 'PID:H', until=[Condition('locked', 'PID:H', value=1.0, hold_s=0.5, then='end')],
              timeout_s=30)])
-    tab.load_from_preset({'routines': [r.to_dict()]})
+    tab.load_from_preset({'routines': [r.to_dict()]})                # an old step routine: converted
     a.tab_widget.setCurrentWidget(tab)
     run(0.4)
-    steps = tab.settings.child('steps')
-    assert len([c for c in steps.children() if c.type() == 'group']) == 4
-    assert 'converged' in steps.child('s0', 'until', 'c0').opts['title']
+    p = tab.routines[0]
+    assert [n.action for n in p.main] == ['start', 'pause', 'none', 'resume']
+    assert set(tab.view.items_) == {n.uid for n in p.main}          # one block per step in the diagram
     assert not tab.problems.isVisible()
-    steps.child('s2', 'until', 'c0', 'value').setValue(1.5)          # edit a condition in the tree
-    assert tab.routines[0].steps[2].until[0].value == 1.5
-    steps.child('s2', 'until', 'c0', 'value').setValue(1.0)
-    tab._on_add_step()
+    tab.select_block(p.main[0].uid)
     run(0.2)
-    assert len(tab.routines[0].steps) == 5
-    tab.select_step(4)
-    tab._on_delete_step()
+    assert 'PID:H |err| ≤ 1 for 1 s' in tab.settings.child('block', 'until', 'c0').opts['title']
+    tab.select_block(p.main[2].uid)
     run(0.2)
-    assert len(tab.routines[0].steps) == 4
+    tab.settings.child('block', 'until', 'c0', 'value').setValue(1.5)  # edit a condition in the tree
+    assert p.main[2].until[0].value == 1.5
+    tab.settings.child('block', 'until', 'c0', 'value').setValue(1.0)
+    tab._on_add('step')                                              # after the selected step
+    run(0.2)
+    assert len(p.main) == 5 and tab.selected == p.main[3].uid
+    tab._on_move(1)
+    assert tab.selected == p.main[4].uid
+    tab._on_delete()
+    run(0.2)
+    assert len(p.main) == 4 and p.main[3].action == 'resume'
+    tab._on_add('every')                                              # a background block, then removed
+    assert len(p.background) == 1 and tab.selected == p.background[0].uid
+    tab._on_delete()
+    assert not p.background
     a.tab_widget.setCurrentWidget(a.tabs['alignment'])
     run(0.6)
     panel = a.quick_panel
@@ -474,14 +491,14 @@ def test_06d_routines_tab_and_alignment_button(ext):
         run(0.2)
         paused = paused or (pid.state.value == 'PAUSED' and pid.pause_kind == 'manual')
         if rt.state.value == 'ACTIVE':
-            assert 'Step' in panel.cards['RTN:UI'].line.text()
+            assert panel.cards['RTN:UI'].line.text().startswith(('▶', '⚠'))
     assert rt.outcome == 'done', (rt.reason, list(rt.history)[-4:])
     assert paused and pid.state.value == 'ACTIVE'                   # left running after a successful end
     run(0.4)
     assert 'Done' in panel.cards['RTN:UI'].line.text()
     a.tab_widget.setCurrentWidget(tab)
     run(0.4)
-    assert 'Finished' in tab.status.text() and 'step 2' in tab.history.toPlainText()
+    assert 'Finished' in tab.status.text() and 'Pause PID:H' in tab.history.toPlainText()
     a.core.stop('PID:H', 'test')
 
 
@@ -548,38 +565,109 @@ def test_06e_settings_trees(ext):
     tab.load_from_preset({'routines': [r.to_dict()]})
     a.tab_widget.setCurrentWidget(tab)
     run(0.3)
-    s0 = tab.settings.child('steps', 's0')
-    s0.child('action').setValue('start')
+    p = tab.routines[0]
+    node = p.main[0]
+    tab.select_block(node.uid)
     run(0.2)
-    s0 = tab.settings.child('steps', 's0')
-    assert tab.routines[0].steps[0].action == 'start' and s0.child('target').opts['visible']
-    s0.child('target').setValue('PID:H')
+    tab.settings.child('block', 'action').setValue('start')
     run(0.2)
-    assert tab.routines[0].steps[0].target == 'PID:H'
-    tab._on_add_condition(0)
+    assert node.action == 'start' and tab.settings.child('block', 'target').value() == ''   # '— choose —'
+    tab.settings.child('block', 'target').setValue('PID:H')
     run(0.2)
-    assert len(tab.routines[0].steps[0].until) == 2
-    c1 = tab.settings.child('steps', 's0', 'until', 'c1')
-    c1.child('kind').setValue('signal')
+    assert node.target == 'PID:H'
+    tab.settings.child('block', 'until', 'add').activate()
     run(0.2)
-    c1 = tab.settings.child('steps', 's0', 'until', 'c1')
-    assert c1.child('op').opts['visible'] and c1.child('hold_s').opts['visible']
-    tab._on_remove_condition(0, 1)
+    assert len(node.until) == 2
+    tab.settings.child('block', 'until', 'c1', 'kind').setValue('signal')
     run(0.2)
-    assert len(tab.routines[0].steps[0].until) == 1
-    tab.settings.child('steps', 's0', 'action').setValue('none')                 # wait only: 30 s
+    c1 = tab.settings.child('block', 'until', 'c1')
+    assert c1.child('op') is not None and c1.child('hold_s') is not None
+    c1.child('remove').activate()
     run(0.2)
+    assert len(node.until) == 1
+    # a locked condition with one tolerance per PID
+    tab.settings.child('block', 'until', 'c0', 'kind').setValue('locked')
+    run(0.2)
+    tab.settings.child('block', 'until', 'c0', 'tolerances', 'PID:H').setValue(0.4)
+    assert node.until[0].pids() == {'PID:H': 0.4}
+    tab.settings.child('block', 'until', 'c0', 'kind').setValue('delay')
+    run(0.2)
+    tab.settings.child('block', 'until', 'c0', 'value').setValue(30.0)
+    tab.settings.child('block', 'action').setValue('none')                       # wait only: 30 s
+    run(0.2)
+    # a FOR EACH with a ramp inside: positions per PID, the ramp takes the position of the loop
+    tab.selected = None
+    tab._on_add('foreach')
+    fe = p.main[-1]
+    tab.settings.child('block', 'pids').setValue(['PID:H'])
+    run(0.3)
+    tab.settings.child('block', 'positions', 'add').activate()
+    run(0.2)
+    assert len(fe.positions) == 2 and set(fe.positions[1].setpoints) == {'PID:H'}
+    name = [k for k, v in tab._pos_names.items() if v == ('PID:H', 0)][-1]
+    tab.settings.child('block', 'positions', 'pos1', name).setValue(2.5)
+    assert fe.positions[1].setpoints['PID:H'] == [2.5]
+    tab.select_block(fe.body[0].uid)
+    run(0.2)
+    assert tab.settings.child('block', 'target_info') is not None
+    tab.select_block(fe.uid)
+    tab._on_delete()
+    assert len(p.main) == 1 and tab.view.items_.keys() == {node.uid}
     tab._on_run()
     run(0.5)
     assert a.routine('E').state.value == 'ACTIVE'
     assert tab.settings.child('routine', 'label').opts['readonly']                # locked while it runs
-    assert not tab.settings.child('steps', 'add').opts['enabled']
+    assert not tab.add_buttons['step'].isEnabled()
+    assert tab.view._run[0] == node.uid and tab.view.items_[node.uid].marker.text() == '▶'
     tab._on_stop()
     run(0.5)
     assert not tab.settings.child('routine', 'label').opts['readonly']
     a.core.remove_automation('RTN:E')
     tab.load_from_preset({'routines': []})
     align.load_config(saved)
+
+
+def test_06f_operator_question_in_alignment(ext):
+    """A routine waiting for the operator (e.g. HA maximum not confirmed): a banner in Alignment with
+    Continue / Check again / Stop; nothing goes on before the answer."""
+    from pymodaq_plugins_lasercontrol.engines.program import Cond, Node, Program
+    e, win, model, data = ext
+    a = e.app
+    prog = Program('Q', 'Question test', main=[
+        Node(action='note', text='before'), Node(until=[Cond('delay', value=0.5)]),
+        Node(action='note', text='after')])
+    ok, msg = a.start_routine(prog.to_dict())
+    assert ok, msg
+    rt = a.routine('Q')
+    a.tab_widget.setCurrentWidget(a.tabs['alignment'])
+    run(0.4)
+    panel = a.quick_panel
+    assert not panel.banner.isVisible()
+    rt.ask(a.core, rt.main, 'HA maximum not confirmed after 5 probes')       # as a "confirm" step would
+    run(0.5)
+    assert panel.banner.isVisible() and 'HA maximum not confirmed' in panel.banner_text.text()
+    assert panel.banner_text.text().startswith('⚠')
+    node = rt.main.node
+    run(1.0)
+    assert rt.main.node is node and rt.state.value == 'ACTIVE'               # waits for the answer
+    panel.banner_buttons['check'].click()                                     # the step runs again
+    run(0.5)
+    assert rt.question is None and not panel.banner.isVisible()
+    rt.ask(a.core, rt.main, 'still not confirmed')
+    run(0.4)
+    panel.banner_buttons['continue'].click()
+    run(1.5)
+    assert rt.outcome == 'done', (rt.reason, list(rt.history)[-4:])
+    ok, msg = a.start_routine(prog.to_dict())
+    assert ok, msg
+    rt = a.routine('Q')
+    run(0.3)
+    rt.ask(a.core, rt.main, 'third question')
+    run(0.4)
+    panel.banner_buttons['stop'].click()
+    run(0.4)
+    assert rt.outcome == 'stopped' and rt.state.value == 'OFF' and not panel.banner.isVisible()
+    a.core.remove_automation('RTN:Q')
 
 
 def test_07_recording_and_presets(ext):

@@ -309,6 +309,8 @@ class RoutineHost:
         a = self.automation(target)
         if a is None:
             return False, f'{target} does not exist'
+        if hasattr(a, 'run_mode_override'):
+            a.run_mode_override = 'confirm' if option == 'confirm' else None   # only for this start
         if option and hasattr(a, 'single_shot'):
             a.single_shot = option != 'periodic'
             if hasattr(a, 'config'):

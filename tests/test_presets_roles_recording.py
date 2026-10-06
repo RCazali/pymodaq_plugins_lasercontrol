@@ -296,7 +296,7 @@ def test_simulator_demo_preset(tmp_path, monkeypatch):
                                             'PID:Cpl_X', 'PID:Cpl_Y', 'PID:BW_Near_X', 'PID:BW_Far_X',
                                             'PID:BW_Near_Y', 'PID:BW_Far_Y', 'PID:Pointing_X', 'PID:Pointing_Y',
                                             'OPT:Optim_PD', 'OPT:Track_PD', 'OPT:Optim_OC', 'OPT:Optim_HA',
-                                            'RTN:HA_opt', 'RTN:Keep_aligned', 'RTN:Walk_X'}
+                                            'RTN:HA_opt', 'RTN:Keep_aligned', 'RTN:Transport', 'RTN:Walk_X'}
     assert not rep.warnings, rep.text()           # 'SP:Beam_H' setpoint axes are not taken for motor roles
     assert all(rm.module_for(r) in modules for r in rm.actuators)
     path = sim_preset.write_demo_preset()

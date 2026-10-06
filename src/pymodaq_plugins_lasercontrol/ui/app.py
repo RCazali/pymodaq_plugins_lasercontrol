@@ -22,7 +22,9 @@ from ..core.events import EventKind, Level
 from ..core.log import DedupLogger, add_rotating_file_handler, module_logger
 from ..core.safety import SafetyConfig
 from ..core.states import AutoState, ENGAGED_STATES
-from ..engines import CalibrationAutomation, OptimizerAutomation, PIDAutomation, Routine, RoutineAutomation
+from ..engines import (CalibrationAutomation, OptimizerAutomation, PIDAutomation, Program, ProgramAutomation,
+                       RoutineAutomation)
+from ..engines.program import ConversionError
 from ..hardware.pymodaq_ports import discover_ports
 from ..hardware.shaker import PiezoShaker
 from ..presets import (LegacyImport, PresetStore, SessionStore, content_hash, default_preset, normalize,
@@ -485,24 +487,39 @@ class LaserControlApp(QtCore.QObject):
         opt.label = label + (' (full)' if cfg['config'].get('full_optimization') else '')
         return self.core.start(opt.id)
 
-    def routine(self, routine_id: str) -> Optional[RoutineAutomation]:
+    def routine(self, routine_id: str) -> Optional[ProgramAutomation]:
         a = self.core.get(routine_id if routine_id.startswith('RTN:') else f'RTN:{routine_id}')
-        return a if isinstance(a, RoutineAutomation) else None
+        return a if isinstance(a, (ProgramAutomation, RoutineAutomation)) else None
 
     def start_routine(self, cfg: dict) -> Tuple[bool, str]:
-        """Start the routine ``cfg`` (Routines tab). Rebuilt from the current steps at each start (a copy:
-        editing the steps never changes a running routine); its history of runs is kept."""
+        """Start the routine ``cfg`` (Routines tab: a step routine, converted; or a structured program).
+        Rebuilt at each start (a copy: editing never changes a running routine); its history is kept."""
         from .routine_host import AppRoutineHost
         aid = f"RTN:{cfg['id']}"
         old = self.core.get(aid)
         if old is not None and old.state in ENGAGED_STATES:
             return False, f'{old.label} is already running'
-        new = RoutineAutomation(Routine.from_dict(copy.deepcopy(cfg)), AppRoutineHost(self))
+        try:
+            program = Program.from_dict(copy.deepcopy(cfg))
+        except ConversionError as e:
+            return False, f'this routine cannot be run: {e}'
+        new = ProgramAutomation(program, AppRoutineHost(self))
         if old is not None:
             new.history = old.history
             self.core.remove_automation(aid)
         self.core.add_automation(new)
         return self.core.start(aid)
+
+    def questions(self) -> List[Tuple[str, str, dict]]:
+        """Routines waiting for the operator: [(automation id, label, question)]."""
+        return [(a.id, a.label, a.question) for a in self.core.automations.values()
+                if getattr(a, 'question', None) is not None and a.state in ENGAGED_STATES]
+
+    def answer_question(self, auto_id: str, choice: str) -> Tuple[bool, str]:
+        a = self.core.get(auto_id)
+        if a is None or getattr(a, 'question', None) is None:
+            return False, 'no question pending'
+        return a.answer(self.core, choice)
 
     # ================================================================== Alignment buttons
     def quick_items(self) -> List[dict]:

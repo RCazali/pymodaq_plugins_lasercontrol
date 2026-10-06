@@ -21,7 +21,7 @@ from ..core.roles import RoleMap
 from ..core.safety import SafetyConfig
 from ..engines.optimizer.automation import DEFAULT_OPT_CONFIG
 from ..engines.pid import COMMON_KEYS, PIDSettings, default_loop, normalize_loop
-from ..engines.routine import Routine, validate_routine
+from ..engines.program import ConversionError, Program, validate_program
 
 SCHEMA_VERSION = 3
 META_KEYS = ('name', 'description', 'status', 'validated_on', 'validated_by', 'validation_notes',
@@ -104,6 +104,22 @@ def normalize_pid(pid: dict, fallback_id: str = 'PID_1') -> dict:
     return d
 
 
+def normalize_routine(r: dict) -> dict:
+    """A routine of the preset as a structured program (a step routine is converted; one that cannot be
+    converted is kept as it is and reported by the preset check)."""
+    try:
+        return Program.from_dict(r).to_dict()
+    except ConversionError:
+        return copy.deepcopy(r)
+
+
+def program_nodes(r: dict):
+    """Every block of a routine of the preset (empty for an unconverted step routine)."""
+    if 'main' not in r:
+        return []
+    return list(Program.from_dict(r).walk())
+
+
 def merge_group(members: List[dict]) -> dict:
     """Schema 2 "PID group" (decoupled PIDs sharing motors) → one PID with one loop per member."""
     first = members[0]
@@ -181,7 +197,7 @@ def normalize(preset: dict) -> dict:
             d['button_action'] = 'single'
         opts.append(d)
     p['optimizers'] = opts
-    p['routines'] = [Routine.from_dict(r).to_dict() for r in p.get('routines', []) or []]
+    p['routines'] = [normalize_routine(r) for r in p.get('routines', []) or []]
     if p.get('status') not in STATUSES:
         p['status'] = 'draft'
     return p
@@ -255,14 +271,14 @@ def roles_used(preset: dict) -> Dict[str, List[str]]:
             if g.get(k) not in (None, '', 'None') and not str(g[k]).startswith('SP:'):
                 acts.add(g[k])
     for r in preset.get('routines', []) or []:
-        for s in r.get('steps', []) or []:
-            if s.get('action') == 'move' and s.get('target'):
-                acts.add(s['target'])
-            for c in s.get('until', []) or []:
-                if c.get('kind') == 'travel' and c.get('target'):
-                    acts.add(c['target'])
-                elif c.get('kind') == 'signal' and c.get('target'):
-                    sigs.add(c['target'])
+        for n in program_nodes(r):
+            if n.type == 'step' and n.action == 'move' and n.target:
+                acts.add(n.target)
+            for c in n.until:
+                if c.kind == 'travel' and c.target:
+                    acts.add(c.target)
+                elif c.kind == 'signal' and c.target:
+                    sigs.add(c.target)
     return {'actuators': sorted(acts), 'signals': sorted(sigs)}
 
 
@@ -382,21 +398,30 @@ def validate_preset(preset: dict, roles: RoleMap, modules: Iterable[str] = (),
         if aid in ids:
             rep.errors.append(f"duplicate routine identifier: {r.get('id')}")
         ids.add(aid)
-        routine = Routine.from_dict(r)
-        probs = validate_routine(routine)
-        for i, s in enumerate(routine.steps, start=1):
-            names = s.targets() if s.action in ('start', 'stop', 'pause', 'resume') else []
-            names += [c.target for c in s.until if c.kind in ('locked', 'finished') and c.target]
-            for t in dict.fromkeys(names):
-                if t.startswith(('PID:', 'OPT:')) and t not in ids:
-                    probs.append(f"step {i}: {t} is not in this preset")
-            if s.action == 'move':
-                probs += [f"step {i}: {p}" for p in actuator_problems(s.target) + limits_problems(s.target)]
-            for c in s.until:
-                if c.kind == 'signal':
-                    probs += [f"step {i}: {p}" for p in signal_problems(c.target)]
+        if 'main' not in r:
+            rep.automations[aid] = ['old step routine that cannot be converted to blocks: rewrite it']
+            continue
+        prog = Program.from_dict(r)
+        probs = validate_program(prog)
+        names = []
+        for n in prog.walk():
+            if n.type == 'step' and n.action in ('start', 'stop', 'pause', 'resume', 'confirm'):
+                names.append(n.target)
+            for c in n.until:
+                if c.kind == 'locked':
+                    names += list(c.pids())
+                elif c.kind == 'finished':
+                    names.append(c.target)
+                elif c.kind == 'signal':
+                    probs += signal_problems(c.target)
                 elif c.kind == 'travel':
-                    probs += [f"step {i}: {p}" for p in actuator_problems(c.target)]
+                    probs += actuator_problems(c.target)
+            names += list(n.tolerances) + [pid for pos in n.positions for pid in pos.setpoints]
+            if n.type == 'step' and n.action == 'move':
+                probs += actuator_problems(n.target) + limits_problems(n.target)
+        for name in dict.fromkeys(x for x in names if x):
+            if name.startswith(('PID:', 'OPT:')) and name not in ids:
+                probs.append(f"{name} is not in this preset")
         rep.automations[aid] = probs
 
     dup = roles.duplicate_modules()

@@ -136,6 +136,32 @@ class QuickPanel(QtWidgets.QFrame):
         head.addWidget(hint)
         head.addStretch()
         lay.addLayout(head)
+        # a routine waiting for the operator (e.g. HA maximum not confirmed): big, bright, never colour only
+        self.banner = QtWidgets.QFrame()
+        self.banner.setObjectName('opBanner')
+        self.banner.setStyleSheet('#opBanner { border: 3px solid #ffd75e; border-radius: 6px; '
+                                  'background-color: rgba(255, 215, 94, 40); }')
+        bl = QtWidgets.QHBoxLayout(self.banner)
+        bl.setContentsMargins(8, 4, 8, 4)
+        self.banner_text = QtWidgets.QLabel('')
+        self.banner_text.setWordWrap(True)
+        f2 = self.banner_text.font()
+        f2.setBold(True)
+        f2.setPointSize(f2.pointSize() + 1)
+        self.banner_text.setFont(f2)
+        bl.addWidget(self.banner_text, 1)
+        self.banner_buttons: Dict[str, QtWidgets.QPushButton] = {}
+        from ..engines.program import ANSWERS
+        for key, text in ANSWERS.items():
+            b = QtWidgets.QPushButton(text)
+            b.setFocusPolicy(QtCore.Qt.NoFocus)
+            b.setStyleSheet('QPushButton { font-weight: bold; padding: 4px 10px; }')
+            b.clicked.connect(lambda _=False, k=key: self._on_answer(k))
+            bl.addWidget(b)
+            self.banner_buttons[key] = b
+        self.banner.setVisible(False)
+        self._banner_id = ''
+        lay.addWidget(self.banner)
         self.message = QtWidgets.QLabel('')
         self.message.setWordWrap(True)
         self.message.setStyleSheet('color: #c0392b; font-weight: bold;')
@@ -218,8 +244,29 @@ class QuickPanel(QtWidgets.QFrame):
         fn = getattr(menu, 'exec', None) or menu.exec_
         fn(pos)
 
+    def _on_answer(self, choice: str):
+        if self._banner_id:
+            ok, msg = self.app.answer_question(self._banner_id, choice)
+            self._say('' if ok else msg)
+        self.refresh()
+
+    def _refresh_banner(self):
+        qs = self.app.questions()
+        if not qs:
+            self.banner.setVisible(False)
+            self._banner_id = ''
+            return
+        aid, label, q = qs[0]
+        self._banner_id = aid
+        more = f'   (+{len(qs) - 1} other question(s))' if len(qs) > 1 else ''
+        self.banner_text.setText(f"⚠ {label}: {q['text']} — what next?{more}")
+        for key, b in self.banner_buttons.items():
+            b.setVisible(key in q.get('choices', []))
+        self.banner.setVisible(True)
+
     # ------------------------------------------------------------------ refresh (<= 5 Hz)
     def refresh(self):
+        self._refresh_banner()
         items = self.app.quick_items()
         sig = tuple((it['id'], it['label'], it['action']) for it in items)
         if sig != self._signature:
@@ -273,8 +320,9 @@ class QuickPanel(QtWidgets.QFrame):
             return 'Arming…', 'click: stop'
         # ACTIVE
         if item.get('kind') == 'routine':
-            n = len(a.routine.steps)
-            return f'▶ Step {min(a.index + 1, n)}/{n}: {a.status}', 'click: stop'
+            if getattr(a, 'question', None) is not None:
+                return '⚠ Waiting for the operator', 'answer above · click: stop'
+            return f'▶ {a.status}', 'click: stop'
         if is_opt:
             if a.in_pass:
                 line = f'Pass running · it. {a.iteration}'

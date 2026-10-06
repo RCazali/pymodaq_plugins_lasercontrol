@@ -52,9 +52,14 @@ if TYPE_CHECKING:  # pragma: no cover
 PREFIX = 'RTN:'
 NODE_TYPES = ('step', 'repeat', 'foreach', 'ramp')
 STEP_ACTIONS = {'none': 'Wait', 'start': 'Start', 'stop': 'Stop', 'pause': 'Pause', 'resume': 'Resume',
-                'move': 'Move motor', 'note': 'Note', 'hold': 'Hold (until stopped)'}
+                'move': 'Move motor', 'note': 'Note', 'hold': 'Hold (until stopped)',
+                'confirm': 'Confirm at maximum'}
+#: when a "confirm at maximum" step does not confirm: ask the operator (default), fail, or go on
+ON_FAIL = {'ask': 'ask the operator', 'fail': 'FAIL', 'next': 'go on'}
+#: answers of the operator to a question of a routine
+ANSWERS = {'continue': '▶ Continue', 'check': '↻ Check again', 'stop': '■ Stop'}
 OUTCOMES = {'next': 'next', 'repeat': 'repeat the loop', 'break': 'leave the loop', 'end': 'END', 'fail': 'FAIL'}
-AUTOMATION_ACTIONS = ('start', 'stop', 'pause', 'resume')
+AUTOMATION_ACTIONS = ('start', 'stop', 'pause', 'resume', 'confirm')
 _uid = itertools.count(1)
 
 
@@ -128,6 +133,7 @@ class Node:
     until: List[Cond] = field(default_factory=list)
     timeout_s: float = 0.0
     on_timeout: str = 'fail'
+    on_fail: str = 'ask'                  # confirm: not confirmed -> ask | fail | next
     # repeat / foreach
     times: int = 0                        # repeat: 0 = forever
     body: List['Node'] = field(default_factory=list)
@@ -136,6 +142,7 @@ class Node:
     speed: float = 0.0                    # setpoint units per second
     tolerances: Dict[str, float] = field(default_factory=dict)   # ramp: {PID id: tolerance}
     uid: int = field(default_factory=lambda: next(_uid), compare=False)
+    origin: Optional[int] = field(default=None, compare=False)   # converted step routine: index of its step
 
     @classmethod
     def from_dict(cls, d: dict) -> 'Node':
@@ -145,6 +152,7 @@ class Node:
                    option=str(d.get('option', '') or ''), text=str(d.get('text', '') or ''),
                    until=[Cond.from_dict(c) for c in d.get('until', []) or []],
                    timeout_s=max(_num(d.get('timeout_s')), 0.0), on_timeout=str(d.get('on_timeout', 'fail')),
+                   on_fail=str(d.get('on_fail', 'ask')),
                    times=int(_num(d.get('times'))), body=[Node.from_dict(b) for b in d.get('body', []) or []],
                    positions=[Position.from_dict(p) for p in d.get('positions', []) or []],
                    speed=_num(d.get('speed')),
@@ -155,6 +163,8 @@ class Node:
         if self.type == 'step':
             d.update(action=self.action, target=self.target, value=self.value, option=self.option, text=self.text,
                      until=[c.to_dict() for c in self.until], timeout_s=self.timeout_s, on_timeout=self.on_timeout)
+            if self.action == 'confirm':
+                d['on_fail'] = self.on_fail
         elif self.type == 'repeat':
             d.update(times=self.times, text=self.text, body=[b.to_dict() for b in self.body])
         elif self.type == 'foreach':
@@ -224,6 +234,103 @@ class Program:
             yield from rec(e.body)
 
 
+# ====================================================================== editing (the block editor)
+def find(p: Program, uid: int):
+    """(list containing the block, its index, owner) — owner = enclosing Node, an Every, or None (main
+    sequence / background list). The block is a Node or an Every. None when not found."""
+    def rec(nodes, owner):
+        for i, n in enumerate(nodes):
+            if n.uid == uid:
+                return nodes, i, owner
+            r = rec(n.body, n)
+            if r is not None:
+                return r
+        return None
+    r = rec(p.main, None)
+    if r is not None:
+        return r
+    for i, e in enumerate(p.background):
+        if e.uid == uid:
+            return p.background, i, None
+        r = rec(e.body, e)
+        if r is not None:
+            return r
+    return None
+
+
+def block_of(p: Program, uid: int):
+    f = find(p, uid)
+    return f[0][f[1]] if f is not None else None
+
+
+def inside_foreach(p: Program, uid: int) -> bool:
+    """Is the block inside a FOR EACH (its ramp uses the position of the loop)?"""
+    def rec(nodes, in_fe):
+        for n in nodes:
+            if n.uid == uid:
+                return in_fe
+            r = rec(n.body, in_fe or n.type == 'foreach')
+            if r is not None:
+                return r
+        return None
+    r = rec(p.main, False)
+    if r is None:
+        for e in p.background:
+            r = rec(e.body, False)
+            if r is not None:
+                break
+    return bool(r)
+
+
+def insert_block(p: Program, block, at_uid: Optional[int] = None) -> object:
+    """Insert ``block``: an Every goes to the background; a Node goes into the selected container (REPEAT /
+    FOR EACH / EVERY: at its end), after the selected step, or at the end of the main sequence."""
+    if isinstance(block, Every):
+        p.background.append(block)
+        return block
+    sel = block_of(p, at_uid) if at_uid is not None else None
+    if isinstance(sel, Every) or (isinstance(sel, Node) and sel.type in ('repeat', 'foreach')):
+        sel.body.append(block)
+    elif sel is not None:
+        nodes, i, _ = find(p, at_uid)
+        nodes.insert(i + 1, block)
+    else:
+        p.main.append(block)
+    return block
+
+
+def remove_block(p: Program, uid: int) -> bool:
+    f = find(p, uid)
+    if f is None:
+        return False
+    nodes, i, _ = f
+    nodes.pop(i)
+    return True
+
+
+def move_block(p: Program, uid: int, delta: int) -> bool:
+    """Up / down among its siblings."""
+    f = find(p, uid)
+    if f is None:
+        return False
+    nodes, i, _ = f
+    j = i + delta
+    if not 0 <= j < len(nodes):
+        return False
+    nodes[i], nodes[j] = nodes[j], nodes[i]
+    return True
+
+
+def duplicate_block(p: Program, uid: int):
+    f = find(p, uid)
+    if f is None:
+        return None
+    nodes, i, _ = f
+    clone = type(nodes[i]).from_dict(nodes[i].to_dict())      # fresh uids
+    nodes.insert(i + 1, clone)
+    return clone
+
+
 # ====================================================================== conversion from step routines
 class ConversionError(ValueError):
     pass
@@ -269,7 +376,7 @@ def from_routine(r: Routine) -> Program:
         s = steps[i]
         node = Node(type='step', action=s.action, target=s.target, value=s.value, option=s.option, text=s.text,
                     timeout_s=s.timeout_s,
-                    on_timeout=outcome(i, s.on_timeout, s.timeout_goto) if s.timeout_s > 0 else 'fail')
+                    on_timeout=outcome(i, s.on_timeout, s.timeout_goto) if s.timeout_s > 0 else 'fail', origin=i)
         for c in s.until:
             node.until.append(Cond(kind=c.kind, target=c.target, op=c.op, value=c.value, hold_s=c.hold_s,
                                    outcome=outcome(i, c.then, c.goto)))
@@ -314,6 +421,11 @@ def validate_program(p: Program) -> List[str]:
                     errors.append(f'{w}: {STEP_ACTIONS.get(node.action, node.action).lower()} needs a target')
                 if node.action == 'move' and node.value == 0 and node.option != 'absolute':
                     errors.append(f'{w}: move by 0')
+                if node.action == 'confirm':
+                    if node.target and not node.target.startswith('OPT:'):
+                        errors.append(f'{w}: "confirm at maximum" needs an optimization')
+                    if node.on_fail not in ON_FAIL:
+                        errors.append(f'{w}: unknown reaction {node.on_fail!r}')
                 outs = [c.outcome for c in node.until] + ([node.on_timeout] if node.timeout_s > 0 else [])
                 for c in node.until:
                     if c.kind not in CONDITIONS:
@@ -375,6 +487,8 @@ def describe_node(n: Node) -> str:
         return f'Start {t}{opt}'
     if n.action == 'move':
         return f"Move {t} {'to' if n.option == 'absolute' else 'by'} {n.value:+g}"
+    if n.action == 'confirm':
+        return f'Confirm at maximum: {t}'
     return f'{STEP_ACTIONS.get(n.action, n.action)} {t}'
 
 
@@ -464,6 +578,9 @@ class ProgramAutomation(Automation):
         self.interruptions = 0
         self._last_now: Optional[float] = None
         self._moving_roles: List[str] = []
+        self.question: Optional[dict] = None     # {'text', 'choices'}: waiting for the operator
+        self._asking: Optional[_Thread] = None
+        self._repause: Dict[str, str] = {}       # resumed for the question, paused again on "check again"
 
     # ------------------------------------------------------------------ description
     def motor_roles(self) -> List[str]:
@@ -506,6 +623,11 @@ class ProgramAutomation(Automation):
                 errors.append(err)
         return errors
 
+    def current_origin(self) -> Optional[int]:
+        """Converted step routine: index of the step running (or frozen) in the main sequence."""
+        node = self.main.node if self.main is not None else None
+        return node.origin if node is not None else None
+
     @property
     def current(self) -> Tuple[Optional[Node], Optional[Node]]:
         """(node running now, node of the main sequence frozen by a background block or None)."""
@@ -523,8 +645,56 @@ class ProgramAutomation(Automation):
         self.interruptions = 0
         self._last_now = None
         self._moving_roles = []
+        self.question, self._asking, self._repause = None, None, {}
         self._log(core, f'{self.label}: started')
         return None
+
+    # ------------------------------------------------------------------ operator
+    def ask(self, core: 'LaserCore', th: _Thread, text: str):
+        """Wait for the operator: what the routine paused is resumed (the PIDs hold the beam), the routine
+        stays where it is until an answer (Continue / Check again / Stop)."""
+        self._repause = {}
+        for aid, label in list(self.paused.items()):
+            a = core.get(aid)
+            if a is not None and a.state == AutoState.PAUSED and a.pause_kind == 'manual':
+                ok, _ = core.resume(aid, f'{self.label}: waiting for the operator')
+                if ok:
+                    self._repause[aid] = label
+                    self.paused.pop(aid, None)
+                    self.watched[aid] = label
+        self.question = {'text': text, 'choices': list(ANSWERS)}
+        self._asking = th
+        th.phase = 'ask'
+        self._log(core, f'⚠ {self.label}: {text} — waiting for the operator', Level.WARNING)
+
+    def answer(self, core: 'LaserCore', choice: str) -> Tuple[bool, str]:
+        """The operator's answer: 'continue' (go on), 'check' (pause again and run the step again), 'stop'."""
+        if self.question is None or self._asking is None:
+            return False, 'no question pending'
+        if choice not in ANSWERS:
+            return False, f'unknown answer {choice!r}'
+        th = self._asking
+        self.question, self._asking = None, None
+        self._log(core, f'{self.label}: operator answered "{ANSWERS[choice]}"')
+        if choice == 'stop':
+            self.outcome = 'stopped'
+            core.stop(self.id, 'stopped by the operator')
+            return True, ''
+        if choice == 'continue':
+            self._go(core, th, 'next', 'operator: continue')
+            return True, ''
+        for aid, label in self._repause.items():                 # 'check': same conditions as before
+            a = core.get(aid)
+            if a is not None and a.state == AutoState.ACTIVE:
+                ok, msg = self.host.pause(aid, f'paused by {self.label}', self.id)
+                if not ok:
+                    self._fail(core, f'cannot pause {label} again: {msg}')
+                    return False, msg
+                self.watched.pop(aid, None)
+                self.paused[aid] = label
+        self._repause = {}
+        th.phase = 'enter'
+        return True, ''
 
     def on_stop(self, core: 'LaserCore'):
         self._moving_roles = []
@@ -623,6 +793,8 @@ class ProgramAutomation(Automation):
         node, frozen = self.current
         if self.outcome == '' and not self.finished:
             label = describe_node(node) if node is not None else ''
+            if self.question is not None:
+                label = f"⚠ waiting for the operator: {self.question['text']}"
             self.status = (f'‖ {describe_node(frozen)} — ' if frozen is not None else '') + label
 
     def _run(self, core: 'LaserCore', th: _Thread, now: float):
@@ -654,7 +826,9 @@ class ProgramAutomation(Automation):
                 return self._tick_ramp(core, th, node, now)
             if th.phase == 'wait':
                 return self._tick_wait(core, th, node, now)
-            return
+            if th.phase == 'confirm':
+                return self._tick_confirm(core, th, node)
+            return                                                # 'ask': nothing until the operator answers
 
     def _end_of_frame(self, core: 'LaserCore', th: _Thread) -> bool:
         f = th.frames[-1]
@@ -744,6 +918,19 @@ class ProgramAutomation(Automation):
                 if d is not None:
                     self._forget(d.id)
                     self.started[d.id] = self.watched[d.id] = d.label
+        elif a == 'confirm':
+            d = self.host.automation(node.target)
+            if d is not None and d.state in ENGAGED_STATES:
+                return self._fail(core, f'{d.label} is already running')
+            ok, msg = self.host.start(node.target, 'confirm')
+            if not ok:
+                return self._fail(core, f'cannot start {node.target}: {msg}')
+            d = self.host.automation(node.target)
+            if d is not None:
+                self._forget(d.id)
+                self.started[d.id] = self.watched[d.id] = d.label
+            th.phase = 'confirm'
+            return
         elif a == 'stop':
             d = self.host.automation(node.target)
             if d is not None:
@@ -797,6 +984,22 @@ class ProgramAutomation(Automation):
         core.release(self)
         th.phase = 'wait'
         th.t_wait = th.t
+
+    def _tick_confirm(self, core: 'LaserCore', th: _Thread, node: Node):
+        d = self.host.automation(node.target)
+        if d is None:
+            return self._fail(core, f'{node.target} disappeared')
+        if d.state in ENGAGED_STATES:
+            return                                               # (held / error: _check_watched fails)
+        result = getattr(d, 'last_result', {}) or {}
+        if result.get('confirmed'):
+            return self._go(core, th, 'next', f"✔ {result.get('message', 'at maximum')}")
+        why = result.get('message') or 'maximum not confirmed'
+        if node.on_fail == 'fail':
+            return self._go(core, th, 'fail', why)
+        if node.on_fail == 'next':
+            return self._go(core, th, 'next', why)
+        self.ask(core, th, why)
 
     def _within(self, pid_id: str, tol: float) -> bool:
         p = self.host.pid(pid_id)

@@ -29,17 +29,18 @@ Control a large part of the laser automatically, precisely and without operator 
 | Coupled PID | `PIDAutomation` with several loops (`engines/pid.py`): one per signal (setpoint, sign, Kp, Ki, Kd, deadband, motor weights), common max step / period / settle; one order per motor per period (contributions summed, step vector scaled, direction kept) |
 | Decoupling in the PID settings | *Calibration & decoupling* group: 🎯 Measure (every motor on every signal of the PID, `CAL:<pid>`), matrix ± errors and κ, ✔ Apply (`engines/decoupling.py › decoupling_proposal`: J⁺ columns, Kp = 0.5 / loop gain, refused if the errors allow more remaining coupling than the threshold) |
 | Pause without automatic resume | `LaserCore.pause()` (`pause_kind = 'manual'`, motors released), resumed by `resume()` / a Resume step / one click on its button |
-| Routines | `engines/routine.py` (model, validation, runner `RoutineAutomation` = `RTN:<id>`), execution only |
+| Routines | structured programs `engines/program.py` (blocks, validation, runner `ProgramAutomation` = `RTN:<id>`), execution only; edited as a block diagram in the Routines tab |
 | Buttons in Alignment | band **SEQ**, routines first; state line "▶ Step n/N: …", "✔ Done", "✖ Failed · step n: why" |
 | Preset (schema 3) | `pids[]: {id, label, motors: [...], loops: [{signal, setpoint, sign, kp, ki, kd, deadband, weights}], settings, calibration: {signal: {motor: result}}}`; schema 2 PIDs and "groups" are converted (a group becomes one coupled PID); `routines: [...]` |
 
-### Routine model
-- A step = **action** (start, stop, pause, resume, move motor, note, wait only) + **conditions** (time,
-  PID converged — every signal of the PID —, signal test with hold time, motor travel since the step
-  began, automation finished, step count) + **timeout**. The first true condition gives the outcome:
-  next / go to step n / end / fail. No condition = next as soon as the action is done.
-- Loops are "go to" backwards; "Step count" guards them. "go to" numbers follow their step when the
-  steps are edited.
+### Routine model (structured blocks, § 3)
+- A step = **action** (start, stop, pause, resume, move motor, note, wait only, hold, confirm at maximum)
+  + **conditions** (time, PIDs locked — each within its own tolerance —, signal test with hold time, motor
+  travel since the step began, automation finished, step count) + **timeout**. The first true condition
+  gives the outcome: next / repeat the loop / leave the loop / end / fail.
+- Blocks: ⟲ REPEAT, ⟲ FOR EACH position, ↗ ramp of the setpoints, ⏱ EVERY N s in the background.
+- Routines saved by older versions ("go to" steps) are converted when loaded (backward "go to" →
+  REPEAT); forward "go to" cannot be converted and is reported.
 
 ### Rules (safety)
 - A routine starts only from a human action (S9) and runs in the core tick (no thread, never blocks).
@@ -59,19 +60,23 @@ on that beam (`HA_X`, `HA_Y` → `HA_flux`: the flux depends on the aperture pos
 angle; moving the aperture shifts the near field by 0.2 µm/µm, not the far field). "Simulator demo"
 preset (`python -m pymodaq_plugins_lasercontrol.tools.sim_preset --force`): coupled PIDs "Pointing x / y"
 (near + far, already decoupled; measure and apply again in the PID tab to see it), optimisation
-`Optim_HA`, and three routines:
+`Optim_HA`, and four routines:
 
 | Routine | Shows |
 |---|---|
-| HA optimization (PIDs paused) | lock, pause both PIDs, one HA pass (wait "finished"), resume, re-lock |
-| Keep aligned (HA every 2 min) | the same in a loop (delay, "go to") until stopped |
-| Beam walk x, one mirror at a time | manual beam walk automated: travel limit hands over to the other mirror, loop until both are centred, step-count guard |
+| HA check (PIDs paused) | lock, pause both PIDs, confirm the HA at its maximum (operator asked if not), resume, re-lock |
+| Keep aligned (HA every 2 min) | lock and hold; ⏱ every 2 min the HA check interrupts the hold |
+| Beam transport P1 → Final | FOR EACH position: slow ramp of the near / far setpoints, never leaving the beam behind; ⏱ every 30 s the HA check interrupts the ramp |
+| Beam walk x, one mirror at a time | manual beam walk automated: travel limit hands over to the other mirror, REPEAT until both are centred, step-count guard |
+
+The HA optimum drifts slowly (thermal: ±2 µm over minutes, 6 µm wide).
 
 Acceptance tests: `tests/test_pid_group.py` (coupled PID, schema migration), `tests/test_routine.py`
 (engine on the fake rig), `tests/test_routine_sim.py` (demo routines on the simulator model, offline),
-`tests/test_extension_ui.py` (PID tree, coupled PID decoupling, routines tree + Alignment button).
+`tests/test_program.py` (structured programs, beam transport), `tests/test_confirm.py` (confirm at maximum),
+`tests/test_extension_ui.py` (PID tree, coupled PID decoupling, routine block editor + Alignment button).
 
-## 3. Next version: structured routines (design agreed, not implemented)
+## 3. Structured routines (implemented 2026-10-02)
 
 The routine steps are shown and edited as **structured blocks** ("D" of `prototypes/routine_layouts.py`,
 chosen 2026-10-01: reads like a program). The target program is tab **E** of the prototype ("beam
@@ -108,10 +113,21 @@ correction).
 1. **Done** — engine: nested blocks (step, repeat, for each, ramp, every with interruption), conversion of
    the current routines, tests on the simulator (beam transport program): `engines/program.py`,
    `tests/test_program.py`.
-2. "Confirm at maximum" algorithm in the optimiser (pure estimator + automation), tests with noise, drift
-   and a moving optimum; operator wait (Continue / Check again / Stop) in Alignment.
-3. Block editor in the Routines tab (layout D, 1300 × 700, goggles rules), positions table, live run view
-   (▶ running, ‖ interrupted).
+2. **Done** — "Confirm at maximum" algorithm in the optimiser (`engines/optimizer/confirm.py`, tests with
+   noise, drift and a moving optimum: `tests/test_confirm.py`); "confirm" step of the programs, operator
+   question (Continue / Check again / Stop) as a banner in Alignment; routines run on the structured
+   engine. Learned on the simulator: the criterion is "within a tolerated loss (1 %)" because the top
+   moves during the check, the probes must never be truncated by the step bound (false gradient), and
+   the check must run with the pointing locked then paused (the flux depends on it).
+3. **Done** — block editor in the Routines tab (`ui/routines_tab.py`): routines on the left, the program
+   as a diagram in the middle (main sequence, then the ⏱ background blocks; ◆ selected, ▶ running,
+   ‖ interrupted — shape + symbol, never colour alone), toolbar Step / Repeat / For each / Ramp / Every…
+   (into the selected block, after the selected step, else at the end) and ▲ ▼ ⧉ ✖; the selected block in a
+   parameter tree on the right (conditions with one tolerance per PID, positions table per PID and signal,
+   ramp speed and tolerances, confirm "if not confirmed"), run controls, operator answers, history.
+   Locked while the routine runs. The demo routines are native programs. Learned on the simulator: an HA
+   optimum drifting as fast as the pointing (±7 µm in minutes) cannot be confirmed by any check; the
+   simulator now drifts it slowly.
 
 ## 4. Display constraints (kept from the previous iterations)
 

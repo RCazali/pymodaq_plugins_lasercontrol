@@ -78,45 +78,59 @@ Optimization or Routines tab, give a short
   more reliable than moving the motors by hand.
 - The height of the button area is adjusted with the handle between the motors and the buttons.
 
-## 4b. Routines (🧭 Routines tab): sequences of actions
+## 4b. Routines (🧭 Routines tab): programs of actions
 
-A **routine** chains high-level steps: *start A, wait until it converges, pause B, optimise C, resume
-B…*. It is programmed once in the **Routines** tab (one group per step in the parameter tree; ▲ ▼ ⧉ ✖ act
-on the selected step) and started from its button in Alignment (band **SEQ**, shown first) or with
-**▶ Run**. A routine only **executes**: it never changes a setting (setpoints, gains, decoupling are set
-in the PID tab).
+A **routine** chains high-level actions like a small program: *start the PIDs, wait until each one is
+within its tolerance, then for each position ramp the setpoints slowly; every 30 s pause the PIDs and
+check the hard aperture…*. It is programmed once in the **Routines** tab and started from its button in
+Alignment (band **SEQ**, shown first) or with **▶ Run**. A routine only **executes**: it never changes a
+setting (gains, decoupling are set in the PID tab); the positions of a FOR EACH / ramp are its own data.
 
-Each **step** = one **action**, then **wait until** one of its conditions is true; the first true condition
-decides where to go (**next**, **go to step n**, **end**, **fail**). No condition: the next step comes as
-soon as the action is done. A **timeout** is the last resort (→ fail by default).
+The tab shows the routine as a **diagram**: the **main sequence**, then the blocks that run **in the
+background**. Click a block to edit it in the tree on the right. The toolbar adds a block into the selected
+REPEAT / FOR EACH / EVERY, after the selected step, or at the end; ▲ ▼ ⧉ ✖ move, duplicate, delete it.
 
-| Action | Does |
+| Block | Does |
+|---|---|
+| ▪ Step | one **action**, then **wait until** one of its conditions is true (first true wins; none: go on when the action is done); a **timeout** is the last resort (→ fail by default) |
+| ⟲ REPEAT | its blocks again and again (forever or n×), until a condition says *leave the loop*, *END* or *FAIL* |
+| ⟲ FOR EACH position | its blocks once per position of a table (setpoints of the chosen PIDs, one value per signal) |
+| ↗ Ramp | moves the PID setpoints slowly (units / s) to the position of the FOR EACH (or its own target) and **waits while a PID is out of its tolerance**: the beam is never left behind |
+| ⏱ EVERY N s | in the background: when due, it **interrupts the main sequence at any moment** (its ramp and timers are frozen), runs, then gives it back |
+
+| Action of a step | Does |
 |---|---|
 | Start / Stop | a PID or an optimization (one pass, periodic, full) |
 | Pause / Resume | nothing moves while paused, and a paused automation **does not resume by itself**: a Resume step (or its button: one click = resume) restarts it. A PID *held* by a safety rule is never resumed by a routine. |
+| Confirm at maximum | an optimization in "confirm maximum" mode (e.g. the hard aperture, PIDs paused). Not confirmed → by default the PIDs are resumed and hold the beam and **the operator is asked**: ▶ Continue / ↻ Check again / ■ Stop (banner in Alignment, buttons in the Routines tab) |
 | Move motor | relative or absolute, in bounded steps with the safety limits; a PID using this motor pauses during the move and resumes by itself |
-| Note / Wait only | writes in the log / only waits |
+| Hold | stays there until the routine is stopped (e.g. keep the final position) |
+| Note / Wait | writes in the log / only waits |
 
 | Condition | True when |
 |---|---|
 | Time (s) | the delay has elapsed since the end of the action |
-| PID converged | \|error\| ≤ value (0 = the deadband) for *Hold* s — every signal of the PID |
+| PID converged | each listed PID within **its own tolerance** (every signal) for *Hold* s |
 | Signal | signal `<`, `>`, `\|x\|<`, `\|x\|>` value for *Hold* s |
 | Motor travel | the motor moved by ≥ value since the step began (e.g. "too far: hand over to the other motor") |
 | Finished | the automation ended by itself (one optimization pass) |
-| Step count | the step was entered ≥ n times (guard for loops made with "go to") |
+| Step count | the step was entered ≥ n times (guard for loops) |
+
+Then: **next**, **repeat the loop**, **leave the loop**, **END** (success), **FAIL**.
 
 - What a routine **starts** is watched: held, error or stopped by somebody else → the routine **fails**. On a
   failure or a stop, what it started is stopped (option *On failure / stop: stop what it started*); what
   it paused stays paused, the log says so.
-- A routine ends with its last step: what it started keeps running (e.g. PIDs locked).
-- Editing is locked while it runs (a run uses the steps as they were at its start). The running step is
-  marked **▶**; the run history is on the right.
-- "go to" numbers follow their step when steps are moved, inserted or deleted.
+- A routine ends with its last block: what it started keeps running (e.g. PIDs locked).
+- Editing is locked while it runs (a run uses the routine as it was at its start). In the diagram the
+  running block has a thick frame and **▶**, a main-sequence block interrupted by a background block a
+  dashed frame and **‖**, the selected block a dashed white frame and **◆**; the run history is on the right.
+- Routines saved by older versions ("go to" steps) are converted when loaded: a backward "go to" becomes a
+  REPEAT.
 
-Simulator examples ("Simulator demo" preset): *HA optimization (PIDs paused)* (hard aperture optimised with
-the coupled near / far field PIDs paused, then re-locked), *Keep aligned (HA every 2 min)* (loop), *Beam walk
-x, one mirror at a time* (travel limit + loop guard).
+Simulator examples ("Simulator demo" preset): *HA check (PIDs paused)*, *Keep aligned (HA every 2 min)*
+(hold + background check), *Beam transport P1 → Final* (FOR EACH + ramp, HA check every 30 s), *Beam walk x,
+one mirror at a time* (travel limit + loop guard).
 
 ## 5. Activating / deactivating the stabilization (Overview)
 

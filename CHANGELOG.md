@@ -5,7 +5,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 ## [Unreleased]
 
 ### Added
-- **Structured routines — engine** (`engines/program.py`, not yet used by the Routines tab): nested blocks
+- **Routine block editor** (🧭 Routines tab, layout "D"): the routine is shown as a program — main sequence,
+  then the ⏱ background blocks — and edited block by block: toolbar Step / ⟲ Repeat / ⟲ For each / ↗ Ramp /
+  ⏱ Every… (into the selected block, after the selected step, else at the end), ▲ ▼ ⧉ ✖; the selected block
+  in a parameter tree (conditions with one tolerance per PID, positions table per PID and signal, ramp speed
+  and tolerances, "if not confirmed"). While a routine runs its blocks are marked ▶ running / ‖ interrupted
+  (thick or dashed frame + symbol), the editor is locked, and the operator answers are also offered there.
+  Routines are saved as programs (`main`, `background`); older step routines are converted when loaded.
+- Simulator demo: routines rewritten as programs — "HA check (PIDs paused)", "Keep aligned" (HA check every
+  2 min in the background), new **"Beam transport P1 → Final"** (ramp along positions, HA check every 30 s),
+  "Beam walk x" (REPEAT).
+- **Confirm maximum (robust extremum seeking)**: new optimisation mode (`engines/optimizer/confirm.py`) whose
+  only goal is to confirm that a signal is at its maximum, never comparing its absolute value. Per motor:
+  plateaus `0 +δ −δ −δ +δ 0` (repeated), fit gradient + curvature + slow drift, error = the larger of the
+  frame noise and the residual scatter. At the maximum = curvature of a top and gradient not significant, or
+  estimated loss ≤ tolerance (1 %: the top itself moves). Otherwise one step towards the top (Newton) and probe
+  again (5 tries); a flat response enlarges the probe. Settings in the Optimization tab ("Confirm maximum"
+  group). Checked on the simulated hard aperture with the pointing locked then paused: confirmed 30 / 30
+  (10 seeds × at the top / 3 µm off on each side), without moving at the top.
+- **Routines run on the structured engine**; new step "confirm at maximum" (an optimisation in that mode).
+  Not confirmed → by default the routine **asks the operator**: what it paused (the PIDs) is resumed and
+  holds the beam, the routine waits; a banner in the Alignment tab (⚠ + text + bright frame) offers
+  ▶ Continue / ↻ Check again (pause again and check again) / ■ Stop.
+- **Structured routines — engine** (`engines/program.py`): nested blocks
   instead of "go to" — steps, `repeat` (forever or n×), `foreach` position (setpoints of the PIDs, per signal),
   `ramp` of the setpoints at a given speed that waits while a PID is out of its own tolerance, and
   background `every N s` blocks that interrupt the main sequence at any moment (its ramp and its timers are

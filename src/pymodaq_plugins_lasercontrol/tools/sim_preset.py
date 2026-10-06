@@ -266,53 +266,67 @@ def coupled_pointing_pids(pid) -> list:
 
 
 def demo_routines() -> list:
-    """Routines of the simulator (execution only): HA optimisation with the PIDs paused, periodic HA, beam walk."""
-    from ..engines.routine import Condition as C, Routine, Step
+    """Routines of the simulator (structured programs, execution only): HA check with the PIDs paused,
+    "keep aligned" with a periodic HA check, beam transport along positions with a slow ramp, and the
+    classic beam walk one mirror at a time."""
+    from ..engines.program import Cond, Every, Node, Position, Program
+    X, Y = 'PID:Pointing_X', 'PID:Pointing_Y'
+    tol = {X: 0.5, Y: 0.8}
 
-    def locked(pid_id, then='next', goto=1, tol=0.4, hold=3.0):
-        return C('locked', f'PID:{pid_id}', value=tol, hold_s=hold, then=then, goto=goto)
+    def locked(timeout=60.0, then='next'):
+        return Node(until=[Cond('locked', tolerances=dict(tol), hold_s=3.0, outcome=then)], timeout_s=timeout,
+                    text='each PID within its tolerance')
 
-    def lock_both(then_last='next', goto=1):
-        return [Step('none', until=[locked('Pointing_X')], timeout_s=60),
-                Step('none', until=[locked('Pointing_Y', then=then_last, goto=goto)], timeout_s=60)]
+    def ha_check():
+        return [Node(action='pause', target=X, text='nothing else moves during the check'),
+                Node(action='pause', target=Y),
+                Node(action='confirm', target='OPT:Optim_HA', on_fail='ask',
+                     text='not confirmed: the PIDs hold the beam and the operator decides'),
+                Node(action='resume', target=X), Node(action='resume', target=Y), locked(60.0)]
 
-    def ha_block():
-        return [Step('pause', 'PID:Pointing_X', text='the PIDs must not move during the HA measurement'),
-                Step('pause', 'PID:Pointing_Y'),
-                Step('start', 'OPT:Optim_HA', option='single', until=[C('finished', 'OPT:Optim_HA')], timeout_s=240),
-                Step('resume', 'PID:Pointing_X', text='the aperture shifted the near field: re-lock'),
-                Step('resume', 'PID:Pointing_Y')]
-
-    start_locked = [Step('start', 'PID:Pointing_X'), Step('start', 'PID:Pointing_Y')] + lock_both()
-    routines = [
-        Routine('HA_opt', 'HA optimization (PIDs paused)',
-                description='Lock the pointing, pause it, optimise the hard aperture, resume and re-lock.',
-                steps=start_locked + ha_block() + lock_both('end')),
-        Routine('Keep_aligned', 'Keep aligned (HA every 2 min)',
-                description='Lock the pointing, then every 2 minutes: pause, optimise HA, resume, re-lock. '
-                            'Runs until stopped.',
-                steps=start_locked + [Step('none', text='next HA optimisation',
-                                           until=[C('delay', value=120.0)])] + ha_block() + lock_both('goto', 5)),
-        Routine('Walk_X', 'Beam walk x, one mirror at a time',
+    start = [Node(action='start', target=X, text='near + far field x'), Node(action='start', target=Y),
+             locked(120.0)]
+    walk_body = [
+        Node(action='start', target='PID:BW_Near_X',
+             until=[Cond('locked', tolerances={'PID:BW_Near_X': 0.3}, hold_s=2.0),
+                    Cond('travel', 'BW1_H', value=15.0)],
+             timeout_s=30.0, on_timeout='next', text='near field with mirror 1'),
+        Node(action='stop', target='PID:BW_Near_X'),
+        Node(action='start', target='PID:BW_Far_X',
+             until=[Cond('locked', tolerances={'PID:BW_Far_X': 0.3}, hold_s=2.0), Cond('travel', 'BW2_H', value=15.0)],
+             timeout_s=30.0, on_timeout='next', text='far field with mirror 2'),
+        Node(action='stop', target='PID:BW_Far_X'),
+        Node(text='both centred?', until=[Cond('count', value=8, outcome='fail'),
+                                          Cond('signal', 'Near_x', '|x|>', 0.6, outcome='next'),
+                                          Cond('signal', 'Far_x', '|x|>', 0.6, outcome='next'),
+                                          Cond('delay', value=0.5, outcome='break')])]
+    programs = [
+        Program('HA_opt', 'HA check (PIDs paused)',
+                description='Lock the pointing, pause it, confirm the hard aperture is at its maximum, resume.',
+                main=start + ha_check()),
+        Program('Keep_aligned', 'Keep aligned (HA every 2 min)',
+                description='Lock the pointing and hold it; every 2 minutes the HA is confirmed at its maximum.',
+                main=start + [Node(action='hold', text='until stopped')],
+                background=[Every(120.0, 'HA check', ha_check())]),
+        Program('Transport', 'Beam transport P1 → Final',
+                description='Move the beam slowly along positions (setpoints near / far), never leaving it behind; '
+                            'the HA is confirmed at its maximum every 30 s, interrupting the ramp at any moment.',
+                main=start + [
+                    Node(type='foreach', text='positions = setpoints near / far (µm)', positions=[
+                        Position('P1', {X: [4.0, 1.0], Y: [2.0, 0.5]}),
+                        Position('P2', {X: [6.0, 1.5], Y: [3.0, 0.8]}),
+                        Position('Final', {X: [8.0, 2.0], Y: [4.0, 1.0]})], body=[
+                        Node(type='ramp', speed=0.2, tolerances=dict(tol), text='waits while a PID lags'),
+                        locked(120.0)]),
+                    Node(action='hold', text='stay on the final position')],
+                background=[Every(30.0, 'HA check', ha_check())]),
+        Program('Walk_X', 'Beam walk x, one mirror at a time',
                 description='Classic manual beam walk, automated: near field with mirror 1, far field with mirror '
-                            '2, again until both are centred. A mirror that travels too far hands over to the other '
-                            'one. Compare with the coupled PID "Pointing x".',
-                steps=[Step('stop', 'PID:Pointing_X', text='the coupled PID uses the same mirrors'),
-                       Step('start', 'PID:BW_Near_X', until=[locked('BW_Near_X', tol=0.3, hold=2.0),
-                                                             C('travel', 'BW1_H', value=15.0)],
-                            timeout_s=30, on_timeout='next'),
-                       Step('stop', 'PID:BW_Near_X'),
-                       Step('start', 'PID:BW_Far_X', until=[locked('BW_Far_X', tol=0.3, hold=2.0),
-                                                            C('travel', 'BW2_H', value=15.0)],
-                            timeout_s=30, on_timeout='next'),
-                       Step('stop', 'PID:BW_Far_X'),
-                       Step('none', text='both centred?',
-                            until=[C('count', value=8, then='fail'),
-                                   C('signal', 'Near_x', '|x|>', 0.6, then='goto', goto=2),
-                                   C('signal', 'Far_x', '|x|>', 0.6, then='goto', goto=2),
-                                   C('delay', value=0.5, then='end')])]),
+                            '2, again until both are centred (at most 8 times). Compare with "Pointing x".',
+                main=[Node(action='stop', target=X, text='the coupled PID uses the same mirrors'),
+                      Node(type='repeat', body=walk_body)]),
     ]
-    return [r.to_dict() for r in routines]
+    return [p.to_dict() for p in programs]
 
 
 def demo_preset() -> dict:
@@ -374,7 +388,7 @@ def demo_preset() -> dict:
                        opt('Track_PD', 'Photodiode tracking', ['PD_X', 'PD_Y'], 'PD_current',
                            action='periodic', interval=0.5),
                        opt('Optim_OC', 'OC power optim', ['OC_H', 'OC_V'], 'Laser_power', max_step=2.0),
-                       opt('Optim_HA', 'Hard aperture optim', ['HA_X', 'HA_Y'], 'HA_flux', max_step=3.0, probe=1.5)]
+                       opt('Optim_HA', 'Hard aperture optim', ['HA_X', 'HA_Y'], 'HA_flux', max_step=5.0, probe=1.5)]
     p['optimizers'][-1]['show_in_alignment'] = False        # driven by the routines
     p['routines'] = demo_routines()
     p['alignment'] = {'axes': [_axis('Pointing', 'Steer_H', 'Steer_V'),

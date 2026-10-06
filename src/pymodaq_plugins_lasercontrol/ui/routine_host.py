@@ -61,5 +61,9 @@ class AppRoutineHost(RoutineHost):
                 return False, 'tick at least one motor and one objective signal (Optimization tab)'
             how = option or cfg.get('button_action', 'single')
             cfg['config']['full_optimization'] = how == 'full'
-            return self.app.start_optimizer(cfg, single_shot=how != 'periodic')
+            ok, msg = self.app.start_optimizer(cfg, single_shot=how != 'periodic')
+            a = self.app.optimizer(target.split(':', 1)[-1])
+            if a is not None:                     # (the pass itself starts at the next tick of the core)
+                a.run_mode_override = 'confirm' if how == 'confirm' else None
+            return ok, msg
         return super().start(target, option)
