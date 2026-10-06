@@ -252,7 +252,7 @@ def coupled_pointing_pids(pid) -> list:
         sigs = (f'Near/{plane}', f'Far/{plane}')
         J = np.array([[BEAM_WALK[s].get(m, 0.0) for m in (m1, m2)] for s in sigs])
         W = np.linalg.pinv(J)
-        d = pid(f'Pointing_{plane.upper()}', f'Pointing {plane} (near + far)', f'Near_{plane}', m1, stab=False)
+        d = pid(f'Pointing_{plane.upper()}', f'Pointing {plane} (near + far)', f'Near_{plane}', m1)
         d['motors'] = [m1, m2]
         d['loops'] = []
         for k, role in enumerate((f'Near_{plane}', f'Far_{plane}')):
@@ -333,10 +333,10 @@ def demo_preset() -> dict:
     """Laser Control preset of the simulator: what the Alignment buttons need to be tried."""
     from ..presets import default_optimizer, default_pid, default_preset, normalize
 
-    def pid(pid_id, label, signal, motor, show=True, max_step=2.0, kp=0.6, stab=True):
+    def pid(pid_id, label, signal, motor, show=True, max_step=2.0, kp=0.6):
         d = default_pid(pid_id)
         # the motor integrates the steps already: P alone removes the error (Ki > 0: slow unwinding after a big error)
-        d.update({'label': label, 'show_in_alignment': show, 'in_stabilization': stab, 'motors': [motor],
+        d.update({'label': label, 'show_in_alignment': show, 'motors': [motor],
                   'loops': [{'signal': signal, 'setpoint': 0.0, 'setpoint_mode': 'fixed', 'sign': '+', 'kp': kp,
                              'ki': 0.0, 'kd': 0.0, 'deadband': 0.1, 'weights': {motor: 1.0}}]})
         d['settings'].update({'max_step': max_step, 'period_s': 0.5})
@@ -377,12 +377,12 @@ def demo_preset() -> dict:
                  pid('Cam1_X_OC', 'Cam1 X ← OC_H', 'Cam1_x', 'OC_H', max_step=1.5),
                  pid('Cam1_Y_OC', 'Cam1 Y ← OC_V', 'Cam1_y', 'OC_V', show=False, max_step=1.5),
                  # coupled benches driven by independent PIDs: works (simple) / slow, fighting (beam walk)
-                 pid('Cpl_X', 'Coupled x', 'Cpl_x', 'Cpl_A', show=False, stab=False),
-                 pid('Cpl_Y', 'Coupled y', 'Cpl_y', 'Cpl_B', show=False, stab=False),
-                 pid('BW_Near_X', 'BW near x', 'Near_x', 'BW1_H', show=False, stab=False),
-                 pid('BW_Far_X', 'BW far x', 'Far_x', 'BW2_H', show=False, kp=0.4, stab=False),
-                 pid('BW_Near_Y', 'BW near y', 'Near_y', 'BW1_V', show=False, stab=False),
-                 pid('BW_Far_Y', 'BW far y', 'Far_y', 'BW2_V', show=False, kp=0.4, stab=False)]
+                 pid('Cpl_X', 'Coupled x', 'Cpl_x', 'Cpl_A', show=False),
+                 pid('Cpl_Y', 'Coupled y', 'Cpl_y', 'Cpl_B', show=False),
+                 pid('BW_Near_X', 'BW near x', 'Near_x', 'BW1_H', show=False),
+                 pid('BW_Far_X', 'BW far x', 'Far_x', 'BW2_H', show=False, kp=0.4),
+                 pid('BW_Near_Y', 'BW near y', 'Near_y', 'BW1_V', show=False),
+                 pid('BW_Far_Y', 'BW far y', 'Far_y', 'BW2_V', show=False, kp=0.4)]
     p['pids'] += coupled_pointing_pids(pid)
     p['optimizers'] = [opt('Optim_PD', 'Photodiode optim', ['PD_X', 'PD_Y'], 'PD_current'),
                        opt('Track_PD', 'Photodiode tracking', ['PD_X', 'PD_Y'], 'PD_current',
@@ -403,7 +403,6 @@ def demo_preset() -> dict:
                                _axis('Beam setpoint', 'SP:Beam_H', 'SP:Beam_V', slow=0.2, fast=2.0,
                                      labels=('x', 'y'))],
                       'active': 0, 'hide_unassigned': False}
-    p['overview'] = {'plot_roles': ['Beam_x', 'Beam_y', 'PD_current', 'Near_x', 'Far_x', 'HA_flux']}
     return normalize(p)
 
 

@@ -270,13 +270,12 @@ class PIDAutomation(Automation):
     kind = 'pid'
 
     def __init__(self, pid_id: str, signal_role: str = '', motors: Optional[Dict[str, float]] = None,
-                 settings: Optional[PIDSettings] = None, label: str = '', in_stabilization: bool = True,
+                 settings: Optional[PIDSettings] = None, label: str = '',
                  loops: Optional[List[PIDLoop]] = None):
         super().__init__(f'PID:{pid_id}', label or f'PID {pid_id}')
         self.pid_id = pid_id
         self.loops: List[PIDLoop] = list(loops) if loops else [PIDLoop(signal_role, motors or {},
                                                                         settings or PIDSettings())]
-        self.in_stabilization = in_stabilization
         self.period_s = self._period()
         self.iterations = 0
         self.skipped_busy = 0
@@ -288,8 +287,7 @@ class PIDAutomation(Automation):
         common = cfg.get('settings', {}) or {}
         loops = [PIDLoop(l.get('signal', ''), l.get('weights', {}), loop_settings(l, common))
                  for l in cfg.get('loops', []) or [default_loop()]]
-        return cls(cfg['id'], label=cfg.get('label') or f"PID {cfg['id']}",
-                   in_stabilization=cfg.get('in_stabilization', True), loops=loops)
+        return cls(cfg['id'], label=cfg.get('label') or f"PID {cfg['id']}", loops=loops)
 
     def configure(self, cfg: dict, structure: bool = True):
         """Apply a preset PID. Live (engaged): only gains, setpoints and common settings (integrals kept);
@@ -297,7 +295,6 @@ class PIDAutomation(Automation):
         common = cfg.get('settings', {}) or {}
         loops_cfg = cfg.get('loops', []) or []
         self.label = cfg.get('label') or f"PID {self.pid_id}"
-        self.in_stabilization = cfg.get('in_stabilization', True)
         if structure:
             old = {l.signal_role: l for l in self.loops}
             new = []

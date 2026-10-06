@@ -586,6 +586,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         self._pos_labels = {}
         for card in self._cards:
             if card is not None:
+                card.hide()            # see _clear_layout
                 card.setParent(None)
                 card.deleteLater()
         self._cards = []
@@ -703,6 +704,7 @@ class AlignmentWidget(QtWidgets.QWidget):
             w = item.widget()
             sub = item.layout()
             if w is not None:
+                w.hide()               # see _clear_layout
                 w.setParent(None)
                 w.deleteLater()
             elif sub is not None:
@@ -828,6 +830,9 @@ class AlignmentWidget(QtWidgets.QWidget):
             w = item.widget()
             sub = item.layout()
             if w is not None:
+                # hidden first: a widget just added to a layout has a queued "show" pending; without its
+                # parent it would flash as a top-level window (two axis keys pressed together)
+                w.hide()
                 w.setParent(None)
                 w.deleteLater()
             elif sub is not None:
@@ -1239,12 +1244,15 @@ class AlignmentWidget(QtWidgets.QWidget):
                 {'title': 'Button step (− / +):', 'name': 'rel_step', 'type': 'float', 'min': 0.0, 'decimals': 4,
                  'value': float(ch.get('rel_step', 5.0 if key == 'h' else 1.0)),
                  'tip': 'relative move of the − / + buttons of the active axis'},
+                # only the 'limit' jog mode has a range (its move_abs targets): the other modes are unbounded
+                # here, the travel of a motor is bounded by the abs limits of its role (Configuration)
                 {'title': 'Min (limit mode):', 'name': 'min', 'type': 'float', 'value': float(ch.get('min', 0.0)),
-                 'decimals': 4},
+                 'decimals': 4, 'visible': ch.get('mode', 'auto') == 'limit'},
                 {'title': 'Max (limit mode):', 'name': 'max', 'type': 'float', 'value': float(ch.get('max', 25.0)),
-                 'decimals': 4},
+                 'decimals': 4, 'visible': ch.get('mode', 'auto') == 'limit'},
                 {'title': 'Speed parameter:', 'name': 'speed_param', 'type': 'str', 'value': ch.get('speed_param', ''),
-                 'tip': 'e.g. velocity  or  group/velocity (limit mode)'}]})
+                 'tip': 'e.g. velocity  or  group/velocity (limit mode)',
+                 'visible': ch.get('mode', 'auto') == 'limit'}]})
         return [{'title': 'Axis', 'name': 'axis', 'type': 'group', 'children': [
                     {'title': 'Name:', 'name': 'name', 'type': 'str', 'value': ax.get('name', '')},
                     {'title': 'Color:', 'name': 'color', 'type': 'color', 'value': axis_color(ax, row)}]}] + groups
@@ -1276,6 +1284,8 @@ class AlignmentWidget(QtWidgets.QWidget):
         ax['color'] = QtGui.QColor(color).name() if color is not None else ax.get('color')
         for k in ('h', 'v'):
             g = p.child(k)
+            for n in ('min', 'max', 'speed_param'):
+                g.child(n).setOpts(visible=g.child('mode').value() == 'limit')
             if not g.child('on').value():
                 ax[k] = None
                 continue

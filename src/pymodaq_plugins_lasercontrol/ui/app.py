@@ -36,9 +36,10 @@ from .widgets import ask_yes_no, info, warn
 
 logger = DedupLogger(module_logger(__file__))
 
-TAB_TITLES = {'overview': '🏠 Overview', 'alignment': '🎯 Alignment', 'xy': '✥ XY', 'axes': '🕹 Axes', 'pid': '⚙️ PID',
+TAB_TITLES = {'alignment': '🎯 Alignment', 'axes': '🕹 Axes', 'pid': '⚙️ PID',
               'optimizer': '📈 Optimization', 'routines': '🧭 Routines', 'scan': '📊 1D Scan', 'recording': '⏺ Recording',
               'presets': '📂 Presets', 'config': '🔧 Configuration', 'log': '📜 Log'}
+HIDDEN_TABS = ('recording',)     # built (its settings live in the preset) but not shown: not tested on the laser yet
 
 try:
     from pymodaq_utils.config import get_set_local_dir
@@ -110,7 +111,7 @@ def setpoint_name(pid_id: str, k: int = 0) -> str:
 
 
 class PIDSetpoints(VirtualActuators):
-    """The setpoint of every signal of every PID, as a virtual actuator of the Alignment / XY tabs
+    """The setpoint of every signal of every PID, as a virtual actuator of the Alignment tab
     (``SP:<pid id>`` for its first signal, ``SP:<pid id>/2`` for the second…). The value shown is the one
     the PID uses (captured setpoint included); a change goes through the PID tab field, so it is applied
     live, saved in the preset and the tab stays in sync."""
@@ -264,9 +265,7 @@ class LaserControlApp(QtCore.QObject):
         from pymodaq_gui.utils.dock import Dock
         from .status_bar import StatusBar
         from .event_log import EventLogWidget
-        from .overview import OverviewTab
         from .alignment import AlignmentWidget
-        from .xy import XYTab
         from .pid_tab import PIDTab
         from .optimizer_tab import OptimizerTab
         from .routines_tab import RoutinesTab
@@ -278,14 +277,12 @@ class LaserControlApp(QtCore.QObject):
         self.status_bar = StatusBar(self)
         self.status_bar.automation_clicked.connect(self.select_automation_tab)
         self.tab_widget = QtWidgets.QTabWidget()
-        self.tabs['overview'] = OverviewTab(self)
         self.tabs['alignment'] = AlignmentWidget(self.manual, shake_callback=lambda: self.shake('keyboard'),
                                                  history_path=self.paths.history_file)
         self.tabs['alignment'].config_changed.connect(self._mark_dirty)
         from .quick_panel import QuickPanel
         self.quick_panel = QuickPanel(self)
         self.tabs['alignment'].set_bottom_panel(self.quick_panel)
-        self.tabs['xy'] = XYTab(self)
         self.tabs['axes'] = self.tabs['alignment'].config_page      # settings of the Alignment axes
         self.tabs['pid'] = PIDTab(self)
         self.tabs['optimizer'] = OptimizerTab(self)
@@ -300,7 +297,11 @@ class LaserControlApp(QtCore.QObject):
         self.tabs['log'] = self.event_log
         self.event_log.unseen_changed.connect(self._on_log_unseen)
         for key, w in self.tabs.items():
-            self.tab_widget.addTab(w, TAB_TITLES[key])
+            if key in HIDDEN_TABS:
+                w.setParent(self.tab_widget)
+                w.hide()
+            else:
+                self.tab_widget.addTab(w, TAB_TITLES[key])
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
 
         if dockarea is not None:
@@ -366,8 +367,6 @@ class LaserControlApp(QtCore.QObject):
         w = self.tab_widget.widget(index)
         if w is self.tabs.get('alignment'):
             QtCore.QTimer.singleShot(0, w.activate_keyboard)
-        elif w is self.tabs.get('xy'):
-            QtCore.QTimer.singleShot(0, w._activate_current)
         elif w is self.tabs.get('presets'):
             w.refresh_list()
         self.refresh_ui()
@@ -386,8 +385,6 @@ class LaserControlApp(QtCore.QObject):
             self.tabs['routines'].select(auto_id)
         elif auto_id == 'SCAN':
             self.tab_widget.setCurrentWidget(self.tabs['scan'])
-        elif auto_id.startswith('XYSCAN:'):
-            self.tab_widget.setCurrentWidget(self.tabs['xy'])
 
     # ================================================================== feedback
     def _manual_feedback(self, msg: str):
@@ -581,109 +578,10 @@ class LaserControlApp(QtCore.QObject):
             return ok, msg
         return False, f'unknown automation: {auto_id}'
 
-    def stabilization_pids(self) -> List[dict]:
-        pid_tab = self.tabs.get('pid')
-        cfgs = pid_tab.configs() if pid_tab is not None else self.preset.get('pids', [])
-        return [c for c in cfgs if c.get('in_stabilization', True)]
-
-    def stabilization_drivers(self) -> list:
-        """Automations to run for the stabilization: one per stabilization PID."""
-        return [self.ensure_pid(cfg) for cfg in self.stabilization_pids()]
-
-    def stabilization_problems_text(self) -> str:
-        problems = []
-        try:
-            drivers = self.stabilization_drivers()
-        except RuntimeError:
-            return ''
-        for a in drivers:
-            if a.state in ENGAGED_STATES:
-                continue
-            errs = self.core.validate(a)
-            if errs:
-                problems.append(f"{a.label}: " + ' ; '.join(errs))
-        return '\n'.join(problems)
-
-    def activate_stabilization(self, parent=None):
-        """T5.3: summary of what will move, confirmation, then start every stabilisation PID."""
-        cfgs = self.stabilization_pids()
-        if not cfgs:
-            info(parent, 'Stabilization', 'No PID marked "stabilization" in the preset.')
-            return
-        autos = self.stabilization_drivers()
-        todo = [a for a in autos if a.state not in ENGAGED_STATES]
-        errors = {a.label: self.core.validate(a) for a in todo}
-        errors = {k: v for k, v in errors.items() if v}
-        if errors:
-            self.core.events.publish(EventKind.AUTOMATION_START, 'UI', 'Stabilization refused (nothing was started): ' +
-                                     ' | '.join(f"{k}: {' ; '.join(v)}" for k, v in errors.items()), Level.WARNING)
-            warn(parent, 'Stabilization impossible',
-                 'Nothing was started:\n\n' + '\n\n'.join(f'{k}:\n  ' + '\n  '.join(v) for k, v in errors.items()))
-            return
-        lines = []
-        for a in todo:
-            lines.append('• ' + a.summary())
-            for r in a.motor_roles():
-                lim = self.core.safety.limits(r)
-                if lim:
-                    lines.append(f'     {r}: step ≤ {lim.max_step:g}, excursion ± {lim.max_excursion:g}, '
-                                 f'rate ≤ {lim.rate_max:g} / {lim.rate_window_s:g} s')
-        draft = '' if self.preset.get('status') == 'validated' else '\n\n⚠ This preset is NOT validated.'
-        if not ask_yes_no(parent, 'Activate stabilization',
-                          'What will move:\n\n' + '\n'.join(lines) + draft + '\n\nActivate?'):
-            return
-        failed = []
-        for a in todo:
-            ok, msg = self.core.start(a.id)
-            if not ok:
-                failed.append(f'{a.label}: {msg}')
-        if failed:
-            for a in todo:
-                self.core.stop(a.id, 'incomplete activation')
-            self.core.events.publish(EventKind.AUTOMATION_START, 'UI',
-                                     'Stabilization cancelled (all or nothing): ' + ' | '.join(failed), Level.WARNING)
-            warn(parent, 'Stabilization', 'Activation cancelled:\n\n' + '\n'.join(failed))
-        else:
-            self.core.events.publish(EventKind.AUTOMATION_START, 'UI',
-                                     f"Stabilization activated ({', '.join(a.label for a in todo)})")
-
-    def held_stabilization(self) -> list:
-        """Stabilisation PIDs frozen by the safety supervisor (HELD, waiting for a manual resume, O10-A)."""
-        out = []
-        for cfg in self.stabilization_pids():
-            a = self.pid_driver(cfg['id'])
-            if a is not None and a.state == AutoState.HELD and a not in out:
-                out.append(a)
-        return out
-
-    def resume_stabilization(self, parent=None):
-        """Manual resume (O10-A) of every held stabilisation PID; each one is checked again by the core."""
-        failed = []
-        for a in self.held_stabilization():
-            ok, msg = self.core.resume(a.id)
-            if not ok:
-                failed.append(f'{a.label}: {msg}')
-        if failed:
-            warn(parent, 'Resume', 'Resume refused:\n\n' + '\n'.join(failed))
-
-    def deactivate_stabilization(self):
-        names = []
-        for cfg in self.stabilization_pids():
-            d = self.pid_driver(cfg['id'])
-            if d is not None and self.core.stop(d.id, 'stabilization deactivated'):
-                names.append(d.label)
-        if names:
-            self.core.events.publish(EventKind.AUTOMATION_STOP, 'UI', f"Stabilization deactivated ({', '.join(names)})")
-
     def emergency_stop(self, source: str = 'UI'):
-        for key in ('alignment',):
-            w = self.tabs.get(key)
-            if w is not None:
-                w.release_all_jogs()
-        xy = self.tabs.get('xy')
-        if xy is not None:
-            for g in xy.groups:
-                g.release_all_jogs()
+        w = self.tabs.get('alignment')
+        if w is not None:
+            w.release_all_jogs()
         self.core.emergency_stop(source)
         self.refresh_ui()
 
@@ -748,13 +646,10 @@ class LaserControlApp(QtCore.QObject):
         self.preset_dirty = True
 
     def _on_roles_or_hardware_changed(self):
-        for key in ('pid', 'optimizer', 'scan', 'xy', 'alignment', 'config'):
+        for key in ('pid', 'optimizer', 'scan', 'alignment', 'config'):
             w = self.tabs.get(key)
             if w is not None and hasattr(w, 'set_hardware'):
                 w.set_hardware()
-        ov = self.tabs.get('overview')
-        if ov is not None:
-            ov.rebuild()
 
     # ================================================================== presets
     def collect_preset(self) -> dict:
@@ -786,10 +681,9 @@ class LaserControlApp(QtCore.QObject):
         for w in self.tabs.values():
             if hasattr(w, 'load_from_preset'):
                 w.load_from_preset(p)
-        for key in ('alignment', 'xy'):          # PID setpoints (SP:<id>) exist once the PID tab is loaded
-            w = self.tabs.get(key)
-            if w is not None and hasattr(w, 'set_hardware'):
-                w.set_hardware()
+        w = self.tabs.get('alignment')           # PID setpoints (SP:<id>) exist once the PID tab is loaded
+        if w is not None:
+            w.set_hardware()
         self.preset_dirty = False
         rep = validate_preset(p, self.core.roles, self.core.broker.modules(), self.core.signals.channels())
         self.core.events.publish(EventKind.PRESET, source,
@@ -927,13 +821,12 @@ class LaserControlApp(QtCore.QObject):
             self.save_session()
         except Exception as e:  # pragma: no cover
             logger.warning(f'session not saved: {e}')
-        for key in ('alignment', 'xy'):
-            w = self.tabs.get(key)
-            if w is not None and hasattr(w, 'shutdown'):
-                try:
-                    w.shutdown()
-                except Exception:  # pragma: no cover
-                    pass
+        w = self.tabs.get('alignment')
+        if w is not None:
+            try:
+                w.shutdown()
+            except Exception:  # pragma: no cover
+                pass
         self.core.stop_all_automations('extension closed')
         try:
             self.recorder.stop()

@@ -7,8 +7,7 @@ import pytest
 
 from pymodaq_plugins_lasercontrol.core import AutoState
 from pymodaq_plugins_lasercontrol.engines import (PIDAutomation, PIDController, PIDSettings, Scan1DAutomation,
-                                                  XYScanAutomation, OptimizerAutomation, scan_positions,
-                                                  snake_pattern)
+                                                  OptimizerAutomation, scan_positions)
 from pymodaq_plugins_lasercontrol.engines.optimizer import (OptContext, Measure, MoveTo, Report, Status,
                                                             create_algorithm, CostModel)
 
@@ -195,11 +194,9 @@ def test_optimizer_automation_full_pass_on_rig():
 
 
 # --------------------------------------------------------------------------- scans
-def test_scan_positions_and_snake():
+def test_scan_positions():
     assert scan_positions(0, 1, 0.25) == pytest.approx([0, 0.25, 0.5, 0.75, 1.0])
     assert scan_positions(1, 0, 0.5) == pytest.approx([1, 0.5, 0.0])
-    pat = snake_pattern(0, 1, 1, 0, 1, 1)
-    assert pat == [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
 
 
 def test_scan1d_records_and_returns():
@@ -225,16 +222,3 @@ def test_scan1d_records_and_returns():
     assert [r[1]['S'] for r in scan.results] == pytest.approx([9.0, 9.5, 10.0, 10.5, 11.0])
     assert rig.acts['mod1'].position() == pytest.approx(0.0)
     assert all(abs(m[2]) <= 0.3 + 1e-12 for m in rig.moves())
-
-
-def test_xyscan_visits_pattern_and_stops_on_human_action():
-    rig = Rig(max_step=1.0)
-    rig.frame()
-    xy = XYScanAutomation('g1', 'M1', 'M2', 0, 2, 1, 0, 1, 1, dwell=0.0)
-    rig.core.add_automation(xy)
-    assert rig.core.start(xy.id)[0]
-    for _ in range(40):
-        rig.step(0.05)
-    assert xy.index >= 2
-    ok, _ = rig.core.broker.manual_move_rel('M2', 0.1, 'jog')
-    assert ok and xy.state == AutoState.OFF

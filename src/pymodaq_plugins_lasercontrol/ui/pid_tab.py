@@ -35,7 +35,7 @@ if TYPE_CHECKING:  # pragma: no cover
 OVERVIEW_RMS_S = 120.0
 WINDOWS = (('30 s', 30.0), ('2 min', 120.0), ('10 min', 600.0), ('all', math.inf))
 TERM_COLORS = {'p': '#3498db', 'i': '#9b59b6', 'd': '#95a5a6'}
-GENERAL = ('label', 'show_in_alignment', 'in_stabilization')
+GENERAL = ('label', 'show_in_alignment')
 LOOP_PARAMS = ('signal', 'setpoint', 'setpoint_mode', 'sign', 'kp', 'ki', 'kd', 'deadband')
 #: compatibility names of the single-signal PID (loop 0)
 LEGACY = {'loop_sign': 'sign'}
@@ -115,10 +115,7 @@ def pid_tree(cfg: dict, signals: List[str], actuators: List[str]) -> list:
              'tip': 'Short name, also on its button of the Alignment tab'},
             {'title': 'Button in Alignment:', 'name': 'show_in_alignment', 'type': 'bool',
              'value': bool(cfg['show_in_alignment']),
-             'tip': 'A button of the Alignment tab starts / stops it (no confirmation)'},
-            {'title': 'Stabilization:', 'name': 'in_stabilization', 'type': 'bool',
-             'value': bool(cfg['in_stabilization']),
-             'tip': 'Started / stopped by "Activate / Deactivate stabilization" (Overview)'}]},
+             'tip': 'A button of the Alignment tab starts / stops it (no confirmation)'}]},
         {'title': 'Motors', 'name': 'motors', 'type': 'checklist', 'limits': motor_items, 'value': list(cfg['motors']),
          'exclusive': False, 'delay': 0.1, 'expanded': False,
          'tip': 'Motors this PID may move (at least as many as signals for a coupled PID)'},

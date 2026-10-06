@@ -1,8 +1,8 @@
-"""Manual control facade used by the Alignment / XY / overview widgets.
+"""Manual control facade used by the Alignment widgets.
 
 Every manual order goes through the broker, which first stops the automations using the motor
-(D5/S7) and applies the roles' absolute limits. Widgets reference **roles** (the Alignment and
-XY configurations are stored in presets, so they must be machine independent, T1.2).
+(D5/S7) and applies the roles' absolute limits. Widgets reference **roles** (the Alignment
+configuration is stored in presets, so it must be machine independent, T1.2).
 """
 from __future__ import annotations
 

@@ -87,7 +87,7 @@ class StatusBar(QtWidgets.QFrame):
         self.btn_note = styled_button('📝 Note', None, 'Add a timestamped note to the log (T7.5)')
         self.btn_note.clicked.connect(self._on_note)
         lay.addWidget(self.btn_note)
-        self.btn_shake = styled_button('🎢 Shake', '#9b59b6', 'Piezo shake (Space in Alignment/XY)')
+        self.btn_shake = styled_button('🎢 Shake', '#9b59b6', 'Piezo shake (Space in Alignment)')
         self.btn_shake.clicked.connect(lambda: self.app.shake('button'))
         lay.addWidget(self.btn_shake)
         self.btn_rec = styled_button('● REC', '#7f8c8d', 'Start / stop the HDF5 recording', checkable=True)

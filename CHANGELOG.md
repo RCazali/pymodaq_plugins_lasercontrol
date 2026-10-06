@@ -4,6 +4,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 
 ## [Unreleased]
 
+### Removed
+- **Overview tab** and its grouped "Activate / Deactivate stabilization" (with the `Stabilization` flag of the
+  PIDs): the PIDs are started from their buttons in Alignment, from the PID tab or by a routine.
+- **XY tab** (groups, map, saved positions, XY snake scan). The motors are moved from the Alignment tab. Old
+  presets load unchanged: their `xy_groups` / `overview` entries are dropped.
+- **Recording tab hidden** (not tested on the laser yet): REC in the status bar still records with the
+  settings of the preset.
+- Repository: design prototype, working documents (roadmap, design, incident sheet) and the screenshots
+  not used by the README.
+
+### Changed
+- **Axes tab**: Min / Max / Speed parameter are only shown in the `limit` jog mode, the only one using them.
+  The travel of a motor is only bounded by the abs limits of its role (Configuration → Safety).
+
 ### Added
 - **Routine block editor** (🧭 Routines tab, layout "D"): the routine is shown as a program — main sequence,
   then the ⏱ background blocks — and edited block by block: toolbar Step / ⟲ Repeat / ⟲ For each / ↗ Ramp /

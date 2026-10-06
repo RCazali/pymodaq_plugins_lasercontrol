@@ -8,15 +8,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from ..core.states import STATE_COLORS, STATE_LABELS, AutoState, GlobalState
 
-OWNER_COLORS = {'Free': '#7f8c8d', 'Human': '#e67e22'}
-PALETTE = ['#2980b9', '#27ae60', '#8e44ad', '#d35400', '#16a085', '#c0392b', '#2c3e50', '#f39c12']
 DET_COLORS = {'ok': '#27ae60', 'warn': '#f39c12', 'stale': '#e74c3c', 'unknown': '#7f8c8d'}
-
-
-def owner_color(label: str) -> str:
-    if label in OWNER_COLORS:
-        return OWNER_COLORS[label]
-    return PALETTE[sum(ord(c) for c in label) % len(PALETTE)]
 
 
 def mono_font(pt: int = 11, bold: bool = True) -> QtGui.QFont:
@@ -37,14 +29,6 @@ def fmt(v, digits: int = 4) -> str:
     return f'{v:.{digits}g}'
 
 
-def fmt_pos(v, decimals: int = 3) -> str:
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return '—'
-    return f'{v:.{decimals}f}' if math.isfinite(v) else '—'
-
-
 def run_dialog(dlg) -> int:
     fn = getattr(dlg, 'exec', None) or getattr(dlg, 'exec_')
     return fn()
@@ -62,11 +46,6 @@ def info(parent, title: str, text: str):
 
 def warn(parent, title: str, text: str):
     QtWidgets.QMessageBox.warning(parent, title, text)
-
-
-def no_focus(*widgets):
-    for w in widgets:
-        w.setFocusPolicy(QtCore.Qt.NoFocus)
 
 
 def dspin(value: float = 0.0, lo: float = -1e9, hi: float = 1e9, decimals: int = 4, step: float = 0.1,
@@ -154,61 +133,6 @@ class Led(QtWidgets.QLabel):
             self.setToolTip(tip)
 
 
-class EnvelopeGauge(QtWidgets.QWidget):
-    """S4 envelope: [ref - exc, ref + exc] (and abs limits), current position marker."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMinimumHeight(14)
-        self.setMaximumHeight(18)
-        self.setMinimumWidth(90)
-        self._lo = self._hi = self._pos = self._ref = None
-
-    def set_values(self, lo: Optional[float], hi: Optional[float], pos: Optional[float], ref: Optional[float]):
-        self._lo, self._hi, self._pos, self._ref = lo, hi, pos, ref
-        if lo is not None and hi is not None and pos is not None and hi > lo:
-            used = max(abs(pos - ref) / ((hi - lo) / 2), 0) if ref is not None else None
-            self.setToolTip(f'envelope [{lo:.6g}, {hi:.6g}]  position {pos:.6g}' +
-                            (f'  ({100 * used:.0f} % used)' if used is not None else ''))
-        else:
-            self.setToolTip('no active envelope (motor not driven automatically)')
-        self.update()
-
-    def paintEvent(self, e):
-        p = QtGui.QPainter(self)
-        r = self.rect().adjusted(1, 3, -1, -3)
-        p.setRenderHint(QtGui.QPainter.Antialiasing)
-        lo, hi, pos, ref = self._lo, self._hi, self._pos, self._ref
-        if lo is None or hi is None or pos is None or not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
-            p.setPen(QtGui.QPen(QtGui.QColor('#95a5a6'), 1, QtCore.Qt.DashLine))
-            p.drawRect(r)
-            p.end()
-            return
-        frac = (pos - lo) / (hi - lo)
-        used = abs(frac - 0.5) * 2
-        color = '#27ae60' if used < 0.6 else ('#f39c12' if used < 0.9 else '#e74c3c')
-        p.setPen(QtGui.QPen(QtGui.QColor('#7f8c8d'), 1))
-        p.setBrush(QtGui.QColor(127, 127, 127, 40))
-        p.drawRoundedRect(r, 3, 3)
-        if ref is not None and math.isfinite(ref):
-            xr = r.left() + (ref - lo) / (hi - lo) * r.width()
-            p.setPen(QtGui.QPen(QtGui.QColor('#7f8c8d'), 1, QtCore.Qt.DotLine))
-            p.drawLine(QtCore.QPointF(xr, r.top()), QtCore.QPointF(xr, r.bottom()))
-        x = r.left() + min(max(frac, 0.0), 1.0) * r.width()
-        p.setPen(QtCore.Qt.NoPen)
-        p.setBrush(QtGui.QColor(color))
-        p.drawRect(QtCore.QRectF(x - 3, r.top() - 2, 6, r.height() + 4))
-        p.end()
-
-
-class ClickableFrame(QtWidgets.QFrame):
-    clicked = QtCore.Signal()
-
-    def mousePressEvent(self, e):
-        self.clicked.emit()
-        super().mousePressEvent(e)
-
-
 class CheckList(QtWidgets.QListWidget):
     """List of checkable strings."""
 
@@ -268,26 +192,6 @@ def set_combo_items(combo: QtWidgets.QComboBox, items: List[str], current: Optio
     if cur in items:
         combo.setCurrentText(cur)
     combo.blockSignals(False)
-
-
-class HLine(QtWidgets.QFrame):
-    def __init__(self):
-        super().__init__()
-        self.setFrameShape(QtWidgets.QFrame.HLine)
-        self.setStyleSheet('color: rgba(127,127,127,90);')
-
-
-def section_label(text: str) -> QtWidgets.QLabel:
-    lbl = QtWidgets.QLabel(f'<b>{text}</b>')
-    return lbl
-
-
-def scroll_wrap(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
-    sa = QtWidgets.QScrollArea()
-    sa.setWidgetResizable(True)
-    sa.setFrameShape(QtWidgets.QFrame.NoFrame)
-    sa.setWidget(widget)
-    return sa
 
 
 class FlowLayout(QtWidgets.QLayout):

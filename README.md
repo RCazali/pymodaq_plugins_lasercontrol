@@ -9,12 +9,12 @@ access to the hardware, engines in pure logic, and an explicit user interface.
   computer B, intensity versus threshold, ML ON / OFF / Unstable, Note, Shake, REC, EMERGENCY STOP.
 - **Alignment tab = workstation**: keyboard jog, history, and under the motors one button per chosen
   PID or optimization ("Button in Alignment"): one click starts, another one stops.
-- **Other tabs**: Overview (one-click stabilization, one card per motor with owner and envelope), XY,
-  PID (several PIDs), Optimization (several named optimizations), 1D Scan, Recording, Presets,
-  Configuration.
+- **Other tabs**: Axes (settings of the Alignment axes), PID (several PIDs, coupled PIDs), Optimization
+  (several named optimizations), Routines (programs of actions), 1D Scan, Presets, Configuration, Log.
 - **Safety**: the invariants S1–S12 are enforced by the core, not by the user interface, and each one
   has its automatic test.
-- **HDF5 recording** (periodic snapshots, bursts around the shake, notes, ML state).
+- **HDF5 recording** (periodic snapshots, bursts around the shake, notes, ML state): started with REC
+  in the status bar. Not tested on the laser yet, so its settings tab is hidden for now.
 - Versioned **presets**, written with **roles** (OC_H, Cam1_x…): the same preset loads at the office
   and in the lab, only the roles file of the machine changes.
 - **LaserSim simulator** (motor and 0D detector plugins) to work at the office.
@@ -95,7 +95,8 @@ computer A → Laser Control extension.
    names as at the office (template: `docs/examples/roles_lab.toml`), with the unit and the direction of
    each motor. Under "Frame counters", choose the frame counter channel of computer B (O9).
 3. **Legacy profiles**: **Presets → Import a legacy profile…** accepts LaserController sessions, PID
-   and optimizer profiles (each one becomes a named optimization), and XY profiles. Motors and channels
+   and optimizer profiles (each one becomes a named optimization), and the alignment axes of the XY
+   profiles. Motors and channels
    become roles. The `max_step`, `max_excursion` and rate limits are not invented: they must be filled in.
 4. **PID / Optimization**: give each useful automation a short name ("Optim HA", "Stab. OC_X"…) and
    tick **Button in Alignment**.
@@ -109,7 +110,7 @@ Single launch script: `python -m pymodaq_plugins_lasercontrol.extensions.laser_c
 |---|---|---|
 | `config_lasercontrol.toml` | PyMoDAQ configuration folder | machine settings (name, folders, shaker…) |
 | `roles_<machine>.toml` | `~/.pymodaq/laser_control/` | roles ↔ modules / channels of this machine |
-| `presets/*.json` | `~/.pymodaq/laser_control/presets/` | presets (PID, optimizer, safety, alignment, XY, scan, recording) |
+| `presets/*.json` | `~/.pymodaq/laser_control/presets/` | presets (PID, optimizer, routines, safety, alignment, scan, recording) |
 | `recordings/YYYY-MM-DD/session_*.h5` | `~/.pymodaq/laser_control/recordings/` | HDF5 recordings |
 | `session_<machine>.json` | `~/.pymodaq/laser_control/` | last state of the user interface, restored without starting anything (T6.6) |
 | `alignment_history_<machine>.json` | `~/.pymodaq/laser_control/` | position history of the Alignment tab |
@@ -125,7 +126,8 @@ machines (`[paths] presets_folder`). Reading a session:
 src/pymodaq_plugins_lasercontrol/
 ├── core/          broker (only access to the hardware), ownership, signals (freshness, heartbeat),
 │                  safety (S1–S5), states, roles, events, coordinator (LaserCore), automation
-├── engines/       pid, scan (1D, XY snake), optimizer (pluggable interface + 4 algorithms)
+├── engines/       pid, calibration and decoupling, optimizer (pluggable interface), routines
+│                  (program), 1D scan
 ├── hardware/      PyMoDAQ ports (DAQ_Move / DAQ_Viewer), simulator, Red Pitaya shaker
 ├── recording/     snapshots, HDF5 writing in a thread, bursts, trigger files (O8), reading
 ├── presets/       versioned schema, storage, validation, import of the legacy profiles
@@ -137,31 +139,12 @@ src/pymodaq_plugins_lasercontrol/
 
 The core and the engines depend neither on Qt nor on PyMoDAQ. They are tested with a simulated clock
 and simulated hardware (`core/fakes.py`), and the user interface never goes through `modules_manager`.
-Details in `docs/design.md`.
 
 ## Documentation
 
-- `docs/user_guide.md`: start, load a preset, activate the stabilization, what to do when it is red (T11.1).
-- `docs/incident_sheet.md`: crash, computer B silent, intensity at 0, emergency stop (T11.2).
-- `docs/design.md`: architecture, invariants and their tests, adding a motor, a detector or an engine (T11.3).
-- `docs/pid_tuning.md`: signs, gains, weights, envelopes (T11.4).
+- `docs/user_guide.md`: start, load a preset, work from the Alignment tab, what to do when it is red.
+- `docs/pid_tuning.md`: signs, gains, weights, envelopes.
 - `CHANGELOG.md`.
-
-## Progress with respect to the specification
-
-| Work package | Status |
-|---|---|
-| L0 | Replaced by the redesign: each fix is covered by the new core (emergency stop through `stop_motion`, pause and resume of the PIDs, NaN instead of 0.0, intensity guard, no more reconnection of the detectors, nothing blocking). |
-| L1 | Done: structure, roles, simulator, 71 tests, version and git hash in the UI and in the recordings, rotating log. To do on your side: branches and tags (T1.5), NTP (T1.7). The simulator must be calibrated against real measurements (T9.1). |
-| L2 | Alignment and XY are in the extension, behind the motor ownership (T2.3). The hardware inventory, the single lab preset and the removal of the old dashboard remain to be done in the lab. |
-| L3, L4 | Done: broker, freshness and heartbeat, ownership (D4 / D5 / O3-A), S1–S5 supervisor, state machine, event bus, emergency stop; multiple PIDs, passive monitor, 1D scan, optimizer interface with the 4 historical modes. |
-| L5 | Done. Readability from a remote access and on a small screen remains to be checked on site (T5.9, T8.2). |
-| L6 | Done, except the differences between presets (T6.5, P3). |
-| L7 | Done on computer A. On computer B (T7.6): read the trigger files and save the images. |
-| L9 | Session loader (T9.2). The rest is to be done. |
-| L10 | Only the interface is ready (`register_algorithm`). |
-| L11 | User guide, incident sheet, design, PID tuning. |
-| L12 | Invariants, arbitrations and some of the failures tested in simulation. Endurance, CW, ML and "non-developer user" test: in the lab. |
 
 ## Points to check in the lab
 
@@ -170,8 +153,10 @@ Details in `docs/design.md`.
   on computer B.
 - **Motor units**: the safety limits are in the unit of the PyMoDAQ module (picomotor steps, mm…).
   Also fill in the *Resolution* (smallest meaningful step).
-- **`limit` jog mode** (Alignment): a `move_abs` towards Min/Max may continue on the controller if
-  PyMoDAQ crashes (S10). Prefer `step`, or `native` if the motor plugin implements `jog()`.
+- **Travel limits**: the Axes tab sets no travel limit. The only limits of a motor are the *Abs min* /
+  *Abs max* of its role (Configuration → Safety); an empty cell means no limit on that side.
+- **`limit` jog mode** (Axes): a `move_abs` towards its Min/Max (shown only in this mode) may continue on
+  the controller if PyMoDAQ crashes (S10). Prefer `step`, or `native` if the motor plugin implements `jog()`.
 - **Isolated spikes**: no outlier filter. A spike produces at most one bounded step (S3), inside the
   envelope (S4). A deadband and a 0.5 s period limit its effect.
 - **Shake**: the Red Pitaya script `redpitaya_scpi.py` must be importable, or copied into

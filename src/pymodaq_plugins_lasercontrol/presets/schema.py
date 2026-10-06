@@ -61,7 +61,7 @@ def default_common() -> dict:
 def default_pid(pid_id: str = 'PID_1') -> dict:
     """A PID: one or several loops (one signal each, its setpoint, gains and motor weights), the motors
     it may use, common settings, and the calibration (``{signal: {motor: result}}`` = sensitivity matrix)."""
-    return {'id': pid_id, 'label': '', 'in_stabilization': True, 'show_in_alignment': False,
+    return {'id': pid_id, 'label': '', 'show_in_alignment': False,
             'loops': [default_loop()], 'motors': [], 'settings': default_common(), 'calibration': {}}
 
 
@@ -74,7 +74,7 @@ def normalize_pid(pid: dict, fallback_id: str = 'PID_1') -> dict:
     ``settings`` = PIDSettings, calibration ``{motor: result}``) are converted to one loop."""
     pid = copy.deepcopy(pid or {})
     d = default_pid(str(pid.get('id') or fallback_id))
-    for k in ('label', 'in_stabilization', 'show_in_alignment'):
+    for k in ('label', 'show_in_alignment'):
         if k in pid:
             d[k] = pid[k]
     d['label'] = str(d['label'] or '')
@@ -126,7 +126,6 @@ def merge_group(members: List[dict]) -> dict:
     d = copy.deepcopy(first)
     d['label'] = ' + '.join(m['label'] or m['id'] for m in members)
     d['show_in_alignment'] = any(m['show_in_alignment'] for m in members)
-    d['in_stabilization'] = any(m['in_stabilization'] for m in members)
     d['loops'] = [l for m in members for l in m['loops']]
     d['motors'] = list(dict.fromkeys(r for m in members for r in m['motors']))
     for l in d['loops']:
@@ -164,8 +163,6 @@ def default_preset(name: str = 'New preset') -> dict:
                  'channels': [], 'relative': True, 'return_to_start': True, 'check_intensity': False},
         'recording': default_recording(),
         'alignment': {},
-        'xy_groups': [],
-        'overview': {'plot_roles': []},
     }
 
 
@@ -218,6 +215,8 @@ def migrate(p: dict) -> dict:
                 d.update({k: old[k] for k in ('config', 'motors', 'signals') if k in old})
                 p['optimizers'].append(d)
     p.pop('optimizer', None)
+    for k in ('xy_groups', 'overview'):       # tabs removed: their settings are dropped from old presets
+        p.pop(k, None)
     if version < 3:
         # v2 had one signal per PID and "groups" of decoupled PIDs; v3 has PIDs with several loops:
         # a group becomes one PID (the id of its first member), a lone PID becomes a PID with one loop
@@ -266,10 +265,6 @@ def roles_used(preset: dict) -> Dict[str, List[str]]:
             ch = ax.get(k) if isinstance(ax, dict) else None
             if ch and ch.get('actuator') not in (None, '', 'None') and not str(ch['actuator']).startswith('SP:'):
                 acts.add(ch['actuator'])       # 'SP:<pid>' = setpoint of a PID, not a motor role
-    for g in preset.get('xy_groups', []) or []:
-        for k in ('actuator_x', 'actuator_y'):
-            if g.get(k) not in (None, '', 'None') and not str(g[k]).startswith('SP:'):
-                acts.add(g[k])
     for r in preset.get('routines', []) or []:
         for n in program_nodes(r):
             if n.type == 'step' and n.action == 'move' and n.target:

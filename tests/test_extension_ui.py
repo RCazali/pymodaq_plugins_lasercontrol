@@ -70,12 +70,13 @@ def ext(tmp_path_factory):
 def test_01_nothing_started_and_tabs(ext):
     e, win, model, data = ext
     a = e.app
-    assert set(a.tabs) == {'overview', 'alignment', 'xy', 'axes', 'pid', 'optimizer', 'routines', 'scan',
+    assert set(a.tabs) == {'alignment', 'axes', 'pid', 'optimizer', 'routines', 'scan',
                            'recording', 'presets', 'config', 'log'}
+    assert a.tab_widget.indexOf(a.tabs['recording']) == -1          # built but hidden for now
     # the journal is a tab: its title counts the warnings not seen yet, cleared when it is shown
     from pymodaq_plugins_lasercontrol.core.events import EventKind, Level
     log_index = a.tab_widget.indexOf(a.tabs['log'])
-    a.tab_widget.setCurrentWidget(a.tabs['overview'])
+    a.tab_widget.setCurrentWidget(a.tabs['alignment'])
     run(0.4)
     a.tabs['log'].mark_seen()                        # startup warnings (no roles yet)
     a.core.events.publish(EventKind.INFO, 'TEST', 'something odd', Level.WARNING)
@@ -124,13 +125,11 @@ def test_03_pid_from_tab_and_stabilisation(ext):
     e, win, model, data = ext
     a = e.app
     pid_tab = a.tabs['pid']
-    pid_tab._add_widget({'id': 'H', 'label': 'Centroid H', 'in_stabilization': True, 'signal': 'Cam1_x',
+    pid_tab._add_widget({'id': 'H', 'label': 'Centroid H', 'signal': 'Cam1_x',
                          'motors': {'Sim_OC_H': 1.0},
                          'settings': {'setpoint': 0.0, 'kp': 0.5, 'ki': 0.05, 'max_step': 1.0, 'period_s': 0.2}})
-    a.tab_widget.setCurrentWidget(a.tabs['overview'])
-    run(0.5)
-    assert 'Centroid H' in a.tabs['overview'].summary.text()
-    a.activate_stabilization()
+    ok, msg = a.quick_click('PID:H', 'start')
+    assert ok, msg
     pid = a.core.get('PID:H')
     assert pid is not None and pid.state.value == 'ACTIVE', (pid.state, pid.reason)
     run(6.0)
@@ -342,7 +341,7 @@ def test_06b_pid_calibration_from_the_tab(ext):
         if x.state.value != 'OFF':
             a.core.stop(x.id, 'test')
     pid_tab = a.tabs['pid']
-    w = pid_tab._add_widget({'id': 'C', 'label': 'Cal', 'in_stabilization': False, 'signal': 'Cam1_x',
+    w = pid_tab._add_widget({'id': 'C', 'label': 'Cal','signal': 'Cam1_x',
                              'motors': {'Sim_OC_H': 1.0}, 'settings': {'setpoint': 0.0, 'kp': 0.01, 'period_s': 0.2}})
     a.tab_widget.setCurrentWidget(pid_tab)
     pid_tab.select('PID:C')
@@ -381,7 +380,7 @@ def test_06c_coupled_pid_decoupling_in_its_settings(ext):
     e, win, model, data = ext
     a = e.app
     pid_tab = a.tabs['pid']
-    w = pid_tab._add_widget({'id': 'DXY', 'label': 'Dec', 'in_stabilization': False,
+    w = pid_tab._add_widget({'id': 'DXY', 'label': 'Dec',
                              'motors': ['Sim_OC_H', 'Sim_OC_V'], 'settings': {'period_s': 0.2},
                              'loops': [{'signal': 'Cam1_x', 'kp': 0.1, 'weights': {'Sim_OC_H': 1.0}},
                                        {'signal': 'Cam1_y', 'kp': 0.1, 'weights': {'Sim_OC_V': 1.0}}]})
@@ -537,7 +536,7 @@ def test_06e_settings_trees(ext):
     align.chk_hide.setChecked(False)
     # --- PID: add then remove a second signal; its setpoint is the axis SP:<id>/2
     pid_tab = a.tabs['pid']
-    w = pid_tab._add_widget({'id': 'T2', 'label': 'Two signals', 'in_stabilization': False, 'signal': 'Cam1_x',
+    w = pid_tab._add_widget({'id': 'T2', 'label': 'Two signals','signal': 'Cam1_x',
                              'motors': {'Sim_OC_H': 1.0}})
     a.tab_widget.setCurrentWidget(pid_tab)
     pid_tab.select('PID:T2')

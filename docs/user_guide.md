@@ -1,4 +1,4 @@
-# User guide — Laser Control (T11.1)
+# User guide — Laser Control
 
 ## 1. Start
 
@@ -10,8 +10,6 @@
    acquiring: click it.
 
 ## 2. Reading the status bar (always visible)
-
-![Overview, stabilization active (simulator)](images/overview.png)
 
 | Item | Meaning |
 |---|---|
@@ -25,7 +23,7 @@
 | ● REC | HDF5 recording running or not. |
 | EMERGENCY STOP (F12 or Pause) | stops every automation, then every motor. Then **Re-arm**. |
 
-The **log**, at the bottom, lists every event (starts, preemptions, safety…). Alarms appear in red.
+The **📜 Log** tab lists every event (starts, preemptions, safety…). Alarms appear in red.
 
 ## 3. Loading a preset
 
@@ -39,8 +37,6 @@ cannot be activated. **Check on this machine** runs the check again.
 buttons of the PIDs, optimizations and routines. Everything is *set* in its own tab, as a PyMoDAQ
 parameter tree: **🕹 Axes** (axes, keys, jog steps, − / + button steps), **⚙️ PID**, **📈 Optimization**,
 **🧭 Routines**.
-
-![Alignment tab: automation buttons above the motors, history](images/alignment.png)
 
 The tab is laid out **from the bottom up** (in the lab only the lower half of the screen is visible
 through the setup): the last line holds the keyboard state and **■ STOP ALIGNMENT**, just above it the
@@ -132,32 +128,20 @@ Simulator examples ("Simulator demo" preset): *HA check (PIDs paused)*, *Keep al
 (hold + background check), *Beam transport P1 → Final* (FOR EACH + ramp, HA check every 30 s), *Beam walk x,
 one mirror at a time* (travel limit + loop guard).
 
-## 5. Activating / deactivating the stabilization (Overview)
+## 5. Moving a motor by hand
 
-**Overview**:
-
-- the summary lists the stabilization PIDs, the tracked signal and the driven motors;
-- **Activate stabilization**: a summary of what will move (motors and limits) is shown, then you
-  confirm. It is **all or nothing**: if one PID cannot start, none starts, and the reason is shown in
-  red under the summary;
-- **Deactivate**: stops the stabilization PIDs. The motors stay where they are;
-- **Resume**: restarts the PIDs held by a safety rule, once the cause is gone (see 6).
-
-The motor cards show the position, the **owner** (Free, Human, PID name, Optimizer, Scan) and the
-**envelope** gauge (green, then orange, then red near the edge).
-
-**Moving a motor by hand** (Alignment, XY, Go, saved positions) **first stops** the automation that
+**Moving a motor by hand** (Alignment keyboard, − / + buttons, Go) **first stops** the automation that
 owns it. The log says so: "Cam1 X: ACTIVE → OFF (manual action on OC_H (alignment))". A move started
 from the PyMoDAQ module itself, outside the extension, is detected and stops the automation too
 ("external move detected").
 
 ## 6. What to do when it is red
 
-![Safety hold: computer B does not answer anymore, both PIDs are held](images/overview_hold.png)
+**Resume** = one click on the red button of the automation in Alignment (or right click → resume).
 
 | What I see | Likely cause | What to do |
 |---|---|---|
-| **Safety hold**, PID *Held (safety)*, reason "stale data" | computer B silent, LECO down, acquisition stopped | check computer B and the detector light (▶ Acquisition if needed). When it is green: **Resume** (or one click on the red button in Alignment). |
+| **Safety hold**, PID *Held (safety)*, reason "stale data" | computer B silent, LECO down, acquisition stopped | check computer B and the detector light (▶ Acquisition if needed). When it is green: **Resume**. |
 | reason "… frame counter frozen" | computer B still sends, but its counter does not advance anymore | restart the acquisition or the extension of computer B, then **Resume**. |
 | reason "intensity below threshold" or "unknown intensity" | laser off, mode-lock lost, pump reduced, power measurement missing | restore the laser or the measurement. **Resume** is only possible above the threshold plus the hysteresis. |
 | reason "envelope reached on …" | the PID pushes a motor to the edge of its excursion: drift too large, wrong sign or wrong gain | do not resume blindly. Re-center by hand if needed, check the sign (see `pid_tuning.md`), then **New envelope reference** or restart. |
@@ -167,12 +151,12 @@ from the PyMoDAQ module itself, outside the extension, is detected and stops the
 | automation in **Error** | exception in the computation (S8) | read the log, then restart. If it happens again, report the message. |
 | **EMERGENCY STOP** | you (or F12 / Pause) | when the situation is safe: **Re-arm**, then restart what is needed. |
 
-When in doubt, **Deactivate**: nothing moves. For any serious incident, see `incident_sheet.md`.
+When in doubt, **stop the automation** (its button): nothing moves.
 
 ## 7. Recording and annotating
 
-- **● REC** starts an HDF5 session: a periodic snapshot and bursts around the events chosen in the
-  Recording tab.
+- **● REC** starts an HDF5 session: a periodic snapshot and bursts around events. Not tested on the laser
+  yet: its settings tab is hidden for now, the settings of the preset are used.
 - Click **ML ON / ML OFF / Unstable** at each change of the mode-lock and add **Notes**: this is what
   makes the recordings usable.
 
@@ -182,4 +166,3 @@ When in doubt, **Deactivate**: nothing moves. For any serious incident, see `inc
 |---|---|
 | everywhere | **F12** or **Pause**: emergency stop |
 | Alignment (click on "Keyboard") | `a`/`d` horizontal, `s`/`w` vertical, **Shift** fast, `1`…`9`, `0` axis choice, **Space** shake |
-| XY | `a`/`d` X, `s`/`w` Y, **Shift** ×10, **Space** shake, `T` / `Shift+T` next / previous group |

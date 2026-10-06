@@ -166,9 +166,9 @@ def test_import_legacy_opt_and_xy(tmp_path):
     assert p['optimizers'][0]['id'] == 'opt_profile_a'
     assert p['optimizers'][0]['motors'][0]['role'] == 'Jet_X'
     assert p['optimizers'][0]['config']['run_mode'] == 'Nelder-Mead (simplex)'
-    assert p['xy_groups'][0]['actuator_y'] == 'Jet_Y'
+    assert 'xy_groups' not in p                                     # the XY groups are not imported anymore
     assert p['alignment']['axes'][0]['h']['actuator'] == 'Pico_OC_H'
-    assert rm.module_for('Jet_Y') == 'Jet_Y'
+    assert rm.module_for('Jet_X') == 'Jet_X'
 
 
 # --------------------------------------------------------------------------- recording

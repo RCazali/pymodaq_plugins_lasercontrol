@@ -3,7 +3,7 @@
 Laser Control - PyMoDAQ dashboard extension (one extension for the whole laser, decision D2).
 
 Stabilisation of a mode-locked thin-disk laser with intracavity XUV generation: multi-PID on 0D
-signals (camera centroids, power...), periodic drift optimiser, 1D / XY scans, keyboard alignment,
+signals (camera centroids, power...), periodic drift optimiser, routines, 1D scan, keyboard alignment,
 safety supervisor (S1-S12), HDF5 recording, versioned presets, logical roles per machine.
 
 Works with PyMoDAQ 5.1.x (developed on 5.1.10) and 5.2.x.

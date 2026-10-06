@@ -5,7 +5,7 @@ Handled files (``~/.pymodaq/laser_controller_profiles`` and ``~/.pymodaq/xy_stag
 * ``<preset>.json`` session files of the old LaserController (``pid_profiles``, ``scan_motor``...)
 * ``pid_profile_<name>.json`` multi-PID profiles
 * ``opt_profile_<name>.json`` optimiser profiles
-* XY Stage Controller profiles (``tabs`` + ``alignment``)
+* XY Stage Controller profiles (their ``alignment`` part)
 
 Actuator names and ``Detector/Channel`` names are turned into roles. Existing roles pointing to the
 same module/channel are reused; otherwise a role is created (name = sanitized module/channel name).
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import List
 
 from ..core.roles import RoleMap, sanitize_role_name
 from ..core.safety import ActuatorLimits, SafetyConfig
@@ -71,7 +71,7 @@ class LegacyImport:
                 continue
             # schema 2 form (one signal): normalize_pid converts it to a PID with one loop
             pid = {'id': sanitize_role_name(cfg.get('pid_id', pid_name)), 'label': str(pid_name),
-                   'in_stabilization': True, 'show_in_alignment': False,
+                   'show_in_alignment': False,
                    'signal': self.signal_role(cfg.get('detector', ''))}
             motors = {}
             for act, w in (cfg.get('weights') or {}).items():
@@ -106,22 +106,16 @@ class LegacyImport:
         self.report.append(f"optimizer imported: {len(opt['motors'])} motor(s), {len(opt['signals'])} signal(s)")
         return opt
 
-    def alignment_from_xy(self, data: dict) -> Tuple[dict, List[dict]]:
+    def alignment_from_xy(self, data: dict) -> dict:
         align = copy.deepcopy(data.get('alignment') or {})
         for ax in align.get('axes', []) or []:
             for k in ('h', 'v'):
                 ch = ax.get(k) if isinstance(ax, dict) else None
                 if ch:
                     ch['actuator'] = self.actuator_role(ch.get('actuator', 'None'))
-        groups = []
-        for tab in data.get('tabs', []) or []:
-            g = copy.deepcopy(tab)
-            g['actuator_x'] = self.actuator_role(tab.get('actuator_x', 'None'))
-            g['actuator_y'] = self.actuator_role(tab.get('actuator_y', 'None'))
-            groups.append(g)
-        self.report.append(f"alignment imported: {len(align.get('axes', []) or [])} axis(es), "
-                           f"{len(groups)} XY group(s)")
-        return align, groups
+        self.report.append(f"alignment imported: {len(align.get('axes', []) or [])} axis(es) "
+                           f"(the XY groups are not used anymore)")
+        return align
 
     # ------------------------------------------------------------------ entry point
     def import_file(self, path: Path, into: dict = None) -> dict:
@@ -131,10 +125,9 @@ class LegacyImport:
         safety = SafetyConfig.from_dict(preset.get('safety', {}))
         name = Path(path).name
         if isinstance(data, dict) and ('tabs' in data or 'alignment' in data):
-            align, groups = self.alignment_from_xy(data)
+            align = self.alignment_from_xy(data)
             if align:
                 preset['alignment'] = align
-            preset['xy_groups'] = groups
         elif isinstance(data, dict) and ('opt_config' in data or 'active_motors' in data):
             opt = self.optimizer_from_profile(data)
             taken = {o.get('id') for o in preset.get('optimizers', [])}

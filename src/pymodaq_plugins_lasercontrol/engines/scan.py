@@ -1,8 +1,8 @@
-"""Scans on the broker (T4.4): 1D scan with acquisition, XY snake positioning scan.
+"""Scan on the broker (T4.4): 1D scan with acquisition.
 
-Both acquire the scanned motors (a human action or another automation stops/pauses them like
-any automation), move with bounded relative chunks (S3) and stay inside the declared scan range
-(explicit S4 envelope, plus the roles' abs limits).
+It acquires the scanned motor (a human action or another automation stops/pauses it like
+any automation), moves with bounded relative chunks (S3) and stays inside the declared scan range
+(explicit S4 envelope, plus the role's abs limits).
 """
 from __future__ import annotations
 
@@ -29,19 +29,6 @@ def scan_positions(start: float, stop: float, step: float) -> List[float]:
     n = int(abs(stop - start) / step + 1e-9) + 1
     direction = 1.0 if stop >= start else -1.0
     return [start + direction * i * step for i in range(n)]
-
-
-def snake_pattern(xmin, xmax, dx, ymin, ymax, dy) -> List[Tuple[float, float]]:
-    """Boustrophedon pattern of the historical XY hardware scan."""
-    if dx <= 0 or dy <= 0 or xmin >= xmax or ymin >= ymax:
-        return []
-    xs = np.arange(xmin, xmax + dx / 2, dx)
-    ys = np.arange(ymin, ymax + dy / 2, dy)
-    pattern = []
-    for i, y in enumerate(ys):
-        line = xs[::-1] if i % 2 == 1 else xs
-        pattern.extend((float(x), float(y)) for x in line)
-    return pattern
 
 
 class Scan1DAutomation(Automation):
@@ -194,93 +181,3 @@ class Scan1DAutomation(Automation):
     def variables(self) -> Dict[str, float]:
         done, total = self.progress()
         return {'index': float(done), 'total': float(total)}
-
-
-class XYScanAutomation(Automation):
-    """Event driven snake scan of an XY pair (historical 'hardware scan' of the XY tabs)."""
-    kind = 'xyscan'
-
-    def __init__(self, group_id: str, x_role: str, y_role: str, xmin: float, xmax: float, dx: float,
-                 ymin: float, ymax: float, dy: float, dwell: float = 0.0, label: str = ''):
-        super().__init__(f'XYSCAN:{group_id}', label or f'XY Scan {group_id}')
-        self.period_s = 0.05
-        self.x_role, self.y_role = x_role, y_role
-        self.bounds = dict(xmin=float(xmin), xmax=float(xmax), dx=float(dx),
-                           ymin=float(ymin), ymax=float(ymax), dy=float(dy))
-        self.dwell = max(float(dwell), 0.0)
-        self.pattern = snake_pattern(xmin, xmax, dx, ymin, ymax, dy)
-        self.index = 0
-        self.phase = 'idle'
-        self.sequencer: Optional[MoveSequencer] = None
-        self._dwell_end = 0.0
-        self.finished = False
-        self.completed = False
-
-    def motor_roles(self) -> List[str]:
-        return [self.x_role, self.y_role]
-
-    def policy(self) -> SafetyPolicy:
-        return SafetyPolicy(check_data=False, check_intensity=False, check_rate=False, envelope='explicit')
-
-    def explicit_ranges(self, core: 'LaserCore') -> Optional[Dict[str, Tuple[float, float]]]:
-        out = {}
-        for role, lo, hi in ((self.x_role, self.bounds['xmin'], self.bounds['xmax']),
-                             (self.y_role, self.bounds['ymin'], self.bounds['ymax'])):
-            module = core.roles.module_for(role)
-            pos = core.position(role)
-            if module is None or pos is None:
-                return None
-            out[module] = (min(lo, pos), max(hi, pos))
-        return out
-
-    def summary(self) -> str:
-        b = self.bounds
-        return (f"{self.label}: X={self.x_role} [{b['xmin']:g}, {b['xmax']:g}] step {b['dx']:g}, "
-                f"Y={self.y_role} [{b['ymin']:g}, {b['ymax']:g}] step {b['dy']:g} ({len(self.pattern)} points)")
-
-    def validate(self, core: 'LaserCore') -> List[str]:
-        errors = []
-        if not self.pattern:
-            errors.append('invalid scan parameters (min < max, step > 0)')
-        if self.x_role == self.y_role:
-            errors.append('X and Y must be two different actuators')
-        return errors
-
-    def on_start(self, core: 'LaserCore') -> Optional[str]:
-        self.index = 0
-        self.finished = False
-        self.completed = False
-        self.sequencer = MoveSequencer(core, self)
-        self.phase = 'goto'
-        x, y = self.pattern[0]
-        self.sequencer.set_targets({self.x_role: x, self.y_role: y})
-        return None
-
-    def on_resume(self, core: 'LaserCore'):
-        pass
-
-    def is_done(self) -> bool:
-        return self.finished
-
-    def tick(self, core: 'LaserCore', now: float):
-        if self.phase == 'goto':
-            if self.sequencer.step() == MoveSequencer.DONE:
-                self.phase = 'dwell'
-                self._dwell_end = now + self.dwell
-            return
-        if self.phase == 'dwell' and now >= self._dwell_end:
-            self.index += 1
-            if self.index >= len(self.pattern):
-                self.completed = True
-                self.finished = True
-                core.events.publish(EventKind.SCAN, self.id, f"{self.label} finished ({len(self.pattern)} points)")
-                return
-            x, y = self.pattern[self.index]
-            self.sequencer.set_targets({self.x_role: x, self.y_role: y})
-            self.phase = 'goto'
-
-    def progress(self) -> Tuple[int, int]:
-        return self.index, len(self.pattern)
-
-    def variables(self) -> Dict[str, float]:
-        return {'index': float(self.index), 'total': float(len(self.pattern))}

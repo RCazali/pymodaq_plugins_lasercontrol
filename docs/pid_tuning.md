@@ -19,8 +19,6 @@ step of motor i = output × weight_i; the whole step vector is scaled down so th
   each resume (pause, hold).
 - The D term acts on the measurement and not on the error: changing the setpoint does not cause a kick.
 
-![PID tab: settings, state, P / I / D contributions, measurement and setpoint](images/pid.png)
-
 ## 1. Finding the sign (the most important)
 
 A wrong sign makes the loop **diverge**: the motor always goes the wrong way. The envelope (S4) and
@@ -62,7 +60,7 @@ used, start / stop). Below, for the selected PID: measurement and setpoint with 
 then the error with the P, I, D contributions, over a chosen window (30 s, 2 min, 10 min, all), with
 the RMS error and the standard deviation of the measurement: use them to compare two settings.
 When the PID is not active (stopped, paused, held), the plots freeze on the last iteration. The
-tree has five groups: **General** (name, button in Alignment, stabilization), **Motors** (tick the
+tree has five groups: **General** (name, button in Alignment), **Motors** (tick the
 motors the PID may move), **Signals** (per signal: setpoint, sign, Kp, Ki, Kd, deadband, motor
 weights), **Calibration** and **Timing & limits** (max step, period, settle, confirmation). While the PID
 runs, the gains and setpoints stay editable (applied live), not the signals, motors or weights.
