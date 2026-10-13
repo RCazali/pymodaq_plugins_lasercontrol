@@ -189,6 +189,7 @@ class LaserControlApp(QtCore.QObject):
         self.window = window
         self.preset_dirty = False
         self._closing = False
+        self._roles_seen: Optional[tuple] = None      # modules and channels already given a role (ensure_roles)
 
         roles = RoleMap.load(self.paths.roles_file)
         if not roles.machine:
@@ -259,6 +260,23 @@ class LaserControlApp(QtCore.QObject):
 
     def start_detectors(self):
         self.core.broker.start_grab(self.role_detectors())
+
+    def ensure_roles(self) -> List[str]:
+        """Roles are created automatically: one per motor module of the dashboard and per received 0D channel
+        that has none, named after the module / channel (renamed in the Configuration tab). Saved at once.
+        Nothing while an automation is engaged: done at the next call."""
+        modules, channels = self.core.broker.modules(), self.core.signals.channels()
+        seen = (tuple(modules), tuple(channels))
+        if seen == self._roles_seen or self._any_engaged():
+            return []
+        self._roles_seen = seen
+        roles = self.core.roles.copy()
+        created = roles.auto_complete(modules, channels, units_of=self.core.broker.units)
+        if created:
+            self.apply_roles(roles, save=True)
+            self.core.events.publish(EventKind.INFO, 'UI', f"{len(created)} role(s) created automatically "
+                                                            f"({', '.join(created)}): rename them in Configuration")
+        return created
 
     # ================================================================== UI construction
     def build(self, dockarea) -> None:
@@ -351,6 +369,7 @@ class LaserControlApp(QtCore.QObject):
 
     def refresh_ui(self):
         try:
+            self.ensure_roles()
             if self.status_bar is not None:
                 self.status_bar.refresh()
             if self.tab_widget is not None:
@@ -801,10 +820,6 @@ class LaserControlApp(QtCore.QObject):
             QtCore.QTimer.singleShot(500, self.start_detectors)
         if bool(config_get(self.config, 'recording', 'autostart', default=False)):
             QtCore.QTimer.singleShot(1000, lambda: self.toggle_recording(True))
-        if not self.core.roles.all_roles():
-            self.core.events.publish(EventKind.INFO, 'UI', "No role declared on this machine: Configuration "
-                                                            "tab → 'Create missing roles'",
-                                     Level.WARNING)
 
     # ================================================================== shutdown
     def engaged_labels(self) -> List[str]:

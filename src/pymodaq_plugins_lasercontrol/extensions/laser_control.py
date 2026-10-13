@@ -71,11 +71,12 @@ class LaserControl(CustomExt):
     params = []
     app = None          # class level: CustomExt.__init__ may call hooks before the app exists (5.2)
 
-    def __init__(self, parent: gutils.DockArea, dashboard):
+    def __init__(self, parent: gutils.DockArea, dashboard, data_folder: Path = None):
         super().__init__(parent, dashboard)
         name = _dashboard_config_name(dashboard)
         self.app = LaserControlApp(modules_manager=self.modules_manager, dockarea=self.dockarea,
-                                   window=self.mainwindow, dashboard_preset=name, config=plugin_config)
+                                   window=self.mainwindow, dashboard_preset=name, config=plugin_config,
+                                   data_folder=data_folder)
         self.setup_ui()
         self._title = f'Laser Control — {name or "dashboard"} — machine {self.app.machine}'
         if self.mainwindow is not None:
@@ -166,13 +167,19 @@ class LaserControl(CustomExt):
             self.app.shutdown()
         return super().eventFilter(obj, event)
 
-    def quit_fun(self):
+    def _quit_fun(self) -> bool:
+        return True       # PyMoDAQ 5.3: CustomExt.quit_fun does nothing unless this hook returns True
+
+    def quit_fun(self) -> bool:
         if self.app is not None:
             self.app.shutdown()
         try:
             super().quit_fun()
         except Exception:
             pass
+        if self.mainwindow is not None:
+            self.mainwindow.close()
+        return True       # 5.3: the "Quit" button of the window closes it only if this is True
 
 
 def main():

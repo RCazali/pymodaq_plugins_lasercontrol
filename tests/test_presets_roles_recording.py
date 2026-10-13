@@ -309,6 +309,8 @@ def test_simulator_dashboard_preset_with_more_than_ten_actuators():
     pytest.importorskip('pymodaq')
     from pmd_helpers import app
     from pymodaq_plugins_lasercontrol.tools import sim_preset
+    if sim_preset.is_pymodaq_52():
+        pytest.skip('dashboard presets only exist up to PyMoDAQ 5.1')
     app()
     assert len(sim_preset.DEFAULT_MOVES) > 11
     p = sim_preset.build_preset_51('t', sim_preset.DEFAULT_MOVES, sim_preset.DEFAULT_DETECTORS)

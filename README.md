@@ -91,9 +91,11 @@ computer A → Laser Control extension.
 1. **`config_lasercontrol.toml`**: it is created at the first launch, next to `config_pymodaq.toml`,
    and stays specific to each machine, outside git. Set `[machine] name = "lab"`, the folders, the
    address of the Red Pitaya (`[shaker]`) and the folder shared with computer B (`event_trigger_folder`, O8).
-2. **Roles**: in **Configuration → Roles**, click "Create missing roles", then give the roles the same
-   names as at the office (template: `docs/examples/roles_lab.toml`), with the unit and the direction of
-   each motor. Under "Frame counters", choose the frame counter channel of computer B (O9).
+2. **Roles**: they are created automatically, one per motor of the dashboard and per received 0D channel
+   (start the acquisition). In **Configuration**, rename them like at the office (template:
+   `docs/examples/roles_lab.toml`), with the unit and the direction of each motor, and set the limits of
+   each motor (⚠ = not set). Under **Advanced → Frame counters**, choose the frame counter channel of
+   computer B (O9).
 3. **Legacy profiles**: **Presets → Import a legacy profile…** accepts LaserController sessions, PID
    and optimizer profiles (each one becomes a named optimization), and the alignment axes of the XY
    profiles. Motors and channels
@@ -152,9 +154,9 @@ and simulated hardware (`core/fakes.py`), and the user interface never goes thro
   (option O9-B). A value that is frozen but still sent is then not detected. The counter must be added
   on computer B.
 - **Motor units**: the safety limits are in the unit of the PyMoDAQ module (picomotor steps, mm…).
-  Also fill in the *Resolution* (smallest meaningful step).
-- **Travel limits**: the Axes tab sets no travel limit. The only limits of a motor are the *Abs min* /
-  *Abs max* of its role (Configuration → Safety); an empty cell means no limit on that side.
+  Also fill in the *Resolution* (smallest meaningful step, under *Advanced* of the motor).
+- **Travel limits**: the Axes tab sets no travel limit. The only limits of a motor are its *Lower limit* /
+  *Upper limit* in Configuration; off means no limit on that side.
 - **`limit` jog mode** (Axes): a `move_abs` towards its Min/Max (shown only in this mode) may continue on
   the controller if PyMoDAQ crashes (S10). Prefer `step`, or `native` if the motor plugin implements `jog()`.
 - **Isolated spikes**: no outlier filter. A spike produces at most one bounded step (S3), inside the

@@ -99,8 +99,7 @@ def test_02_roles_and_safety_from_config_tab(ext):
     a.start_detectors()
     assert wait(lambda: 'SimB/Cam1/x' in a.core.signals.channels(), 10)
     cfg_tab = a.tabs['config']
-    cfg_tab._auto_roles()
-    cfg_tab._save_roles()
+    a.ensure_roles()                                  # created automatically (also by the UI timer), and saved
     assert (data / 'roles_test.toml').exists()
     roles = a.core.roles
     assert roles.module_for('Sim_OC_H') == 'Sim OC_H'
@@ -119,6 +118,27 @@ def test_02_roles_and_safety_from_config_tab(ext):
     assert a.core.safety.config.intensity.role == 'Laser_power'
     a.tab_widget.setCurrentWidget(cfg_tab)
     run(0.5)
+    # the tree: a limit edited and a role renamed (its limits follow), applied at once
+    def jet(name):
+        return cfg_tab.params.child('motors', f'm{cfg_tab._motors.index(name)}')
+    assert jet('Sim_JET_X').opts['title'].startswith('✔')
+    jet('Sim_JET_X').child('has_max').setValue(True)
+    jet('Sim_JET_X').child('abs_max').setValue(50.0)
+    assert a.core.safety.config.limits('Sim_JET_X').abs_max == 50.0
+    jet('Sim_JET_X').child('name').setValue('Jet X')
+    run(0.3)
+    assert a.core.roles.module_for('Jet_X') == 'Sim JET_X' and not a.core.roles.is_actuator('Sim_JET_X')
+    assert a.core.safety.config.limits('Jet_X').max_step == 1.0
+    assert (data / 'roles_test.toml').read_text(encoding='utf-8').count('Jet_X')
+    jet('Jet_X').child('has_max').setValue(False)
+    assert a.core.safety.config.limits('Jet_X').abs_max is None          # off = no limit
+    jet('Jet_X').child('name').setValue('Sim_JET_X')
+    run(0.3)
+    assert a.core.roles.module_for('Sim_JET_X') == 'Sim JET_X'
+    jet('Sim_JET_X').child('max_step').setValue(0.0)                     # 0 = not set
+    assert a.core.safety.config.limits('Sim_JET_X').max_step is None
+    assert jet('Sim_JET_X').opts['title'].startswith('⚠')
+    jet('Sim_JET_X').child('max_step').setValue(1.0)
 
 
 def test_03_pid_from_tab_and_stabilisation(ext):
@@ -528,9 +548,12 @@ def test_06e_settings_trees(ext):
     align.select_axis(0)
     run(0.3)
     spins = [w for w in align.detail.findChildren(QtWidgets.QDoubleSpinBox)]
-    assert len(spins) == 1 or all(s.toolTip() == 'Absolute target' for s in spins)   # only "go to" is typed
-    labels = [l.text() for l in align.detail.findChildren(QtWidgets.QLabel)]
-    assert '2.5' in labels                                                           # the − / + step, read-only
+    steps = [s for s in spins if s.toolTip().startswith('Step of')]
+    assert len(steps) == 1 and steps[0].value() == 2.5                # the − / + step, typed in place
+    steps[0].setValue(0.75)
+    assert align.get_config()['axes'][0]['h']['rel_step'] == 0.75     # saved with the axis
+    assert align.detail.minimumSizeHint().width() <= 480              # fits the 1300 px window
+    steps[0].setValue(2.5)
     align.chk_hide.setChecked(True)
     assert align.get_config()['hide_unassigned'] is True
     align.chk_hide.setChecked(False)

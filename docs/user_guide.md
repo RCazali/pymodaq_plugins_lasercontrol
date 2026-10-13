@@ -147,7 +147,7 @@ from the PyMoDAQ module itself, outside the extension, is detected and stops the
 | reason "envelope reached on …" | the PID pushes a motor to the edge of its excursion: drift too large, wrong sign or wrong gain | do not resume blindly. Re-center by hand if needed, check the sign (see `pid_tuning.md`), then **New envelope reference** or restart. |
 | reason "rate limit reached on …" | too much cumulated displacement over the window (60 s by default) | same: find out why the PID pushes so much. |
 | reason "timeout on …" | motor or controller not answering anymore | check the controller in the dashboard. |
-| reason "safety limits not defined for …" | motor limits missing from the preset | Configuration → Safety: fill them in, save the preset. |
+| reason "safety limits not defined for …" | motor limits missing from the preset | Configuration: the motor is marked ⚠. Fill in its max step, max excursion and max travel per window, save the preset. |
 | automation in **Error** | exception in the computation (S8) | read the log, then restart. If it happens again, report the message. |
 | **EMERGENCY STOP** | you (or F12 / Pause) | when the situation is safe: **Re-arm**, then restart what is needed. |
 

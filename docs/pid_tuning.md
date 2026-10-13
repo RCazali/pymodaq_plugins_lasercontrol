@@ -33,7 +33,7 @@ the rate (S5) limit the damage, then hold the PID.
    sign, Kp, deadband and settle time from the measured response.
 4. The loop sign applies to the P, I and D terms together. A preset with different Kp / Ki / Kd signs
    (older versions) is unified to the Kp sign when loaded, with a warning in the log.
-5. Write the direction in the role note (Configuration → Roles), for example "+ = beam to the right
+5. Write the direction in the note of the motor (Configuration), for example "+ = beam to the right
    on Cam1".
 
 ## 2. Typical gains
@@ -88,7 +88,7 @@ measure again with more cycles per motor). The PID then corrects both signals at
 motor per period; each signal keeps its own setpoint (also as an Alignment axis `SP:<pid>` and
 `SP:<pid>/2`), gains and plot (choose it above the plots).
 
-## 4. Envelopes and limits (Configuration → Safety)
+## 4. Envelopes and limits (Configuration, per motor)
 
 | Limit | Role | Advice |
 |---|---|---|

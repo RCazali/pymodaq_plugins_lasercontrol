@@ -114,8 +114,7 @@ def test_roles_move_and_estop(loaded):
     a = ext.app
     a.start_detectors()
     assert wait(lambda: f'{DETECTOR}/Cam1/x' in a.core.signals.channels(), 15)
-    a.tabs['config']._auto_roles()
-    a.tabs['config']._save_roles()
+    a.ensure_roles()                                  # created automatically (also by the UI timer)
     assert a.core.roles.module_for('Sim_OC_H') == 'Sim OC_H'
     assert a.core.roles.actuators['Sim_OC_H'].units      # filled from the actuator
     before = a.core.broker.position('Sim OC_H')

@@ -119,6 +119,15 @@ class _AxisCard(QtWidgets.QFrame):
         super().mousePressEvent(e)
 
 
+class _StepSpin(QtWidgets.QDoubleSpinBox):
+    """Spin box without trailing zeros ('5', '0.75'): any step can be typed in a narrow field."""
+
+    def textFromValue(self, value):
+        text = super().textFromValue(value)
+        point = self.locale().decimalPoint()
+        return text.rstrip('0').rstrip(point) if point in text else text
+
+
 class KeyPage(QtWidgets.QWidget):
     """Owns the keyboard focus and forwards key / focus events to its owner."""
     focus_changed = QtCore.Signal(bool)
@@ -557,8 +566,8 @@ class AlignmentWidget(QtWidgets.QWidget):
             self.kb_label.setText('⌨ Keyboard: inactive — click')
             self.kb_label.setStyleSheet('background-color: #7f8c8d; color: white; font-weight: bold; padding: 2px 8px;')
 
-    def _spin(self, val: float) -> QtWidgets.QDoubleSpinBox:
-        sb = QtWidgets.QDoubleSpinBox()
+    def _spin(self, val: float, cls=QtWidgets.QDoubleSpinBox) -> QtWidgets.QDoubleSpinBox:
+        sb = cls()
         sb.setRange(-1e9, 1e9)
         sb.setDecimals(4)
         sb.setValue(val)
@@ -787,17 +796,24 @@ class AlignmentWidget(QtWidgets.QWidget):
                 btn_go.setFocusPolicy(QtCore.Qt.NoFocus)
                 btn_go.setMaximumWidth(60)
                 btn_go.setStyleSheet('background-color: #2980b9; color: white; font-weight: bold; padding: 1px 10px;')
-                btn_go.clicked.connect(lambda _, a=act, t=target: self.move_abs(a, t.value()))
-                rel = float(ch.get('rel_step', 5.0 if ch_key == 'h' else 1.0))
-                step = QtWidgets.QLabel(f'{rel:g}')
-                step.setToolTip('Step of the − / + buttons (set in the Axes tab)')
+                btn_go.clicked.connect(lambda _, a=act, t=target: self.move_abs(a, self._typed(t)))
+                rel = abs(float(ch.get('rel_step', 5.0 if ch_key == 'h' else 1.0)))
+                step = self._spin(rel, _StepSpin)
+                step.setRange(0.0, 1e9)
+                step.setDecimals(6)
+                step.setValue(rel)
+                step.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+                step.setMinimumWidth(56)
+                step.setMaximumWidth(84)
+                step.setToolTip('Step of the − / + buttons (saved with the axis, also in the Axes tab)')
+                step.valueChanged.connect(lambda v, c=ch: self._on_step_edited(c, v))
                 b_m = QtWidgets.QPushButton('−')
                 b_p = QtWidgets.QPushButton('+')
                 for b in (b_m, b_p):
                     b.setFocusPolicy(QtCore.Qt.NoFocus)
                     b.setFixedWidth(28)
-                b_m.clicked.connect(lambda _, a=act, s=rel: self.move_rel(a, -s))
-                b_p.clicked.connect(lambda _, a=act, s=rel: self.move_rel(a, +s))
+                b_m.clicked.connect(lambda _, a=act, s=step: self.move_rel(a, -self._typed(s)))
+                b_p.clicked.connect(lambda _, a=act, s=step: self.move_rel(a, +self._typed(s)))
                 lt = QtWidgets.QLabel('go to')
                 lt.setStyleSheet('color: gray;')
                 ls = QtWidgets.QLabel('step')
@@ -837,6 +853,16 @@ class AlignmentWidget(QtWidgets.QWidget):
                 w.deleteLater()
             elif sub is not None:
                 AlignmentWidget._clear_layout(sub)
+
+    @staticmethod
+    def _typed(spin: QtWidgets.QDoubleSpinBox) -> float:
+        """Value of a spin box including a text still being typed (the buttons never take the focus)."""
+        spin.interpretText()
+        return spin.value()
+
+    def _on_step_edited(self, ch: dict, value: float):
+        ch['rel_step'] = float(value)
+        self.config_changed.emit()
 
     def _reset_delta(self):
         for act in self._delta_labels:

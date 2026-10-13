@@ -15,8 +15,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
   not used by the README.
 
 ### Changed
+- **Configuration tab redesigned as one parameter tree** (no more sub-tabs and tables). The roles are created
+  automatically (one per motor of the dashboard and per received 0D channel) and saved: they are only renamed
+  there. Each motor shows its limits (⚠ = max step / excursion / travel not set, ✔ = ready); the absolute
+  limits are optional (Lower / Upper limit off = no limit). A renamed motor keeps its limits. Safety,
+  intensity guard, frame counters and folders are groups of the same tree; the live detectors and channels
+  are on the right. Roles cannot be renamed while an automation is engaged.
 - **Axes tab**: Min / Max / Speed parameter are only shown in the `limit` jog mode, the only one using them.
-  The travel of a motor is only bounded by the abs limits of its role (Configuration → Safety).
+  The travel of a motor is only bounded by the limits of its role (Configuration).
+
+### Fixed
+- Alignment: pressing two axis keys together (1+2…) no longer flashes ghost windows.
 
 ### Added
 - **Routine block editor** (🧭 Routines tab, layout "D"): the routine is shown as a program — main sequence,
