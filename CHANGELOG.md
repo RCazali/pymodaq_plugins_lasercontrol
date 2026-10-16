@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 ## [Unreleased]
 
 ### Added
+- **Jog window: Setup group** in its settings: the preset (and **Save preset**), **Import** a setup of the
+  Dashboard's Keyboard Jog (its modules matched to the roles), **Export** this configuration as one. Works with
+  the right-click *Number* / *Rename* of Keyboard Jog 0.3 (fix: the menu of a single motor raised an error).
 - **Jog window** (replaces the Alignment and Axes tabs): the Keyboard Jog interface
   (`pymodaq_plugins_keyboardjog`, to install) in a small always-on-top window, on the broker. Green / red
   border, numbered groups and named pairs (right click), W A S D (Z Q S D in AZERTY), `+` / `-` step, step or

@@ -120,8 +120,10 @@ computer A → Laser Control extension.
    profiles. Motors and channels
    become roles. The `max_step`, `max_excursion` and rate limits are not invented: they must be filled in.
 4. **PID / Optimization**: give each useful automation a short name ("Optim HA", "Stab. OC_X"…) and
-   tick **Button in the jog window**. Then build the groups of the jog window (right click a line: pair,
-   invert keys…) and **Save preset**.
+   tick **Button in the jog window**. Then build the groups of the jog window (right click a line: number,
+   rename, pair, invert keys…) and **Save preset** (Presets tab, or jog window → Settings → Setup). A setup
+   already made in the Keyboard Jog of the Dashboard can be reused: jog window → Settings → Setup →
+   **Import** (its modules are matched to the roles); **Export** does the opposite.
 5. **Presets → Check on this machine**, test in CW, then **Mark as validated…**
 
 Single launch script: `python -m pymodaq_plugins_lasercontrol.extensions.laser_control <preset>`.

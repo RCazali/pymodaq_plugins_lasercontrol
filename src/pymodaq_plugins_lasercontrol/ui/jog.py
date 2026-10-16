@@ -8,7 +8,8 @@ continuous mode, history, saved positions); Laser Control brings everything that
   EMERGENCY STOP is latched;
 * the actuators are the **roles** (machine independent, like the rest of the preset) and the PID setpoints
   ``SP:<pid>`` (hidden until shown from the settings: moving a setpoint steers the beam with the PID running);
-* the configuration is saved in the Laser Control preset (``preset['jog']``), not in Keyboard Jog setups;
+* the configuration is saved in the Laser Control preset (``preset['jog']``); a setup made in the Keyboard Jog of
+  the Dashboard can be imported (its modules matched to the roles), and this configuration exported as one;
 * the automation buttons ("Button in Alignment") and E-STOP / Re-arm are on top of the window;
 * per role, **Invert keys** (right-click menu) swaps the - / + keys, as the old Alignment axes did.
 
@@ -24,10 +25,11 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from pymodaq_gui.utils.dock import DockArea
 
-from pymodaq_plugins_keyboardjog.core.model import HIDDEN, HORIZONTAL, VERTICAL, JogSetup
+from pymodaq_plugins_keyboardjog.core.model import HIDDEN, HORIZONTAL, VERTICAL, ExtraKeys, JogSetup
 from pymodaq_plugins_keyboardjog.core.ports import ActuatorPort
-from pymodaq_plugins_keyboardjog.core.setups import setup_from_dict, setup_to_dict
-from pymodaq_plugins_keyboardjog.extensions.keyboard_jog import KeyboardJog
+from pymodaq_plugins_keyboardjog.core.setups import (SetupStore, clean_name, default_folder, setup_from_dict,
+                                                     setup_to_dict)
+from pymodaq_plugins_keyboardjog.extensions.keyboard_jog import KeyboardJog, plugin_config as jog_plugin_config
 from pymodaq_plugins_keyboardjog.ui import settings as jog_settings
 
 from ..core.events import EventKind, Level
@@ -141,6 +143,41 @@ def setup_from_alignment(alignment: Optional[dict]) -> (JogSetup, List[str]):
     return setup, inverted
 
 
+def rename_actuators(setup: JogSetup, mapping: Dict[str, str]) -> JogSetup:
+    """Copy of a setup with its actuators renamed (Dashboard module <-> role); names absent from the mapping are
+    kept (they are skipped with a warning when the setup is loaded)"""
+    m = lambda name: mapping.get(name, name)  # noqa: E731
+    changes = {'hidden': [m(a) for a in setup.hidden], 'headless': [m(a) for a in setup.headless],
+               'continuous': [m(a) for a in setup.continuous],
+               'steps': {m(k): v for k, v in setup.steps.items()},
+               'pair_numbers': {m(k): v for k, v in setup.pair_numbers.items()},
+               'axes': {m(k): v for k, v in setup.axes.items()},
+               'pair_names': dict(setup.pair_names),
+               'extra_keys': [ExtraKeys(m(e.actuator) if e.actuator else '', e.key_minus, e.key_plus)
+                              for e in setup.extra_keys]}
+    if hasattr(setup, 'actuator_names'):      # Keyboard Jog >= 0.3
+        changes['actuator_names'] = {m(k): v for k, v in setup.actuator_names.items()}
+    return JogSetup(**{**setup.__dict__, **changes})
+
+
+def setup_params() -> dict:
+    """Setup group of the jog settings (the one of Keyboard Jog is hidden: the configuration is in the preset)"""
+    return {'title': 'Setup', 'name': 'lc_setup', 'type': 'group', 'children': [
+        {'title': 'Preset:', 'name': 'preset', 'type': 'str', 'value': '', 'readonly': True,
+         'tip': 'The jog configuration is saved with the Laser Control preset (* = changes not saved)'},
+        {'title': 'Save preset', 'name': 'save_preset', 'type': 'action',
+         'tip': 'Save the Laser Control preset, with this jog configuration (the Save button of the Presets tab)'},
+        {'title': 'Keyboard Jog setups:', 'name': 'jog_setups', 'type': 'list', 'limits': [''], 'value': '',
+         'tip': 'Setups saved by the Keyboard Jog extension of the Dashboard'},
+        {'title': 'Import', 'name': 'import', 'type': 'action',
+         'tip': 'Use the Keyboard Jog setup selected above (its Dashboard modules are matched to the roles), then '
+                'save the preset to keep it'},
+        {'title': 'Export as:', 'name': 'export_name', 'type': 'str', 'value': ''},
+        {'title': 'Export', 'name': 'export', 'type': 'action',
+         'tip': 'Save this configuration as a Keyboard Jog setup, usable by the Keyboard Jog of the Dashboard'},
+    ]}
+
+
 class LaserJog(KeyboardJog):
     """Keyboard Jog in its own window, driven by Laser Control (see the module docstring)"""
 
@@ -158,6 +195,13 @@ class LaserJog(KeyboardJog):
         super().__init__(dockarea, None)
         self.window = window
         self.settings.child('setup').setOpts(visible=False)      # saved with the Laser Control preset
+        self.jog_store = SetupStore(default_folder(jog_plugin_config))   # setups of the Dashboard's Keyboard Jog
+        self.settings.insertChild(0, setup_params())
+        for name, slot in (('save_preset', self.save_preset), ('import', self._import_selected),
+                           ('export', self._export)):
+            self.settings.child('lc_setup', name).sigActivated.connect(lambda *_, s=slot: s())
+        self.panel.settings_toggled.connect(lambda shown: shown and self._refresh_setup_group())
+        self._refresh_setup_group()
         self.panel.close_button.setToolTip('Hide the jog window (Laser Control toolbar: show it again)')
         from .quick_panel import QuickPanel
         self.quick = QuickPanel(app, compact=True)
@@ -225,6 +269,95 @@ class LaserJog(KeyboardJog):
         self._dirty = dirty
         if dirty and not self._applying and not self._loading:
             self.app._mark_dirty()
+        self._refresh_setup_group(lists=False)
+
+    def value_changed(self, param):
+        path = self.settings.childPath(param) or []
+        if path and path[0] == 'lc_setup':
+            return
+        super().value_changed(param)
+
+    # ---------------------------------------------------------------- preset, Keyboard Jog setups
+    def _refresh_setup_group(self, lists: bool = True):
+        if getattr(self, 'jog_store', None) is None:
+            return                   # Keyboard Jog __init__: the group is not there yet
+        loading, self._loading = self._loading, True
+        try:
+            name = str(self.app.preset.get('name', '') or '(no name)')
+            self.settings.child('lc_setup', 'preset').setValue(f'{name} *' if self.app.preset_dirty else name)
+            if lists:
+                param = self.settings.child('lc_setup', 'jog_setups')
+                names = self.jog_store.names() or ['']
+                current = param.value()
+                param.setLimits(names)
+                param.setValue(current if current in names else names[0])
+        finally:
+            self._loading = loading
+
+    def save_preset(self):
+        self.app.save_preset()
+        self._refresh_setup_group(lists=False)
+        self.show_message(f"Preset '{self.app.preset.get('name', '')}' saved (with the jog configuration)")
+
+    def _module_of_role(self) -> Dict[str, str]:
+        """role -> Dashboard module, for the motors of this window (not the PID setpoints)"""
+        out = {}
+        for role in self.ports:
+            module = None if is_virtual(role) else self.manual.module(role)
+            if module:
+                out[role] = module
+        return out
+
+    def import_jog_setup(self, name: str) -> List[str]:
+        """Use a setup of the Dashboard's Keyboard Jog: its modules become the roles; the preset is modified (saved
+        with it). Returns the warnings (modules absent here)"""
+        role_of = {module: role for role, module in self._module_of_role().items()}
+        setup = rename_actuators(self.jog_store.load(name), role_of)
+        self._configured = set(setup.used_actuators())
+        setup.hidden += [n for n in self.ports if is_virtual(n) and n not in self._configured
+                         and n not in setup.hidden]
+        preset_name = self.setup_name
+        warnings = self.load_setup(name, setup)
+        self.setup_name = preset_name
+        self._set_dirty(True)
+        if not warnings:
+            self.show_message(f"Keyboard Jog setup '{name}' imported: save the preset to keep it")
+        return warnings
+
+    def export_jog_setup(self, name: str) -> str:
+        """Save this configuration as a setup of the Dashboard's Keyboard Jog (roles -> modules)"""
+        module_of = self._module_of_role()
+        setup, _ = rename_actuators(self._read_setup(), module_of).restricted_to(list(module_of.values()))
+        name = self.jog_store.save(name, setup)
+        self._refresh_setup_group()
+        self.show_message(f"Exported as the Keyboard Jog setup '{name}'")
+        return name
+
+    def _import_selected(self):
+        name = self.settings['lc_setup', 'jog_setups']
+        if not name:
+            self.show_message('No Keyboard Jog setup saved yet (Dashboard > Keyboard Jog > Settings > Save as)',
+                              warning=True)
+            return
+        if not self._ask('Import setup', f"Replace the jog configuration by the Keyboard Jog setup '{name}'?"):
+            return
+        try:
+            self.import_jog_setup(name)
+        except Exception as e:
+            logger.warning(f"Keyboard Jog setup '{name}' not imported: {e}")
+            self.show_message(f"Setup '{name}' not imported: {e}", warning=True)
+
+    def _export(self):
+        name = clean_name(self.settings['lc_setup', 'export_name'])
+        if not name:
+            self.show_message("Type a name in 'Export as' first", warning=True)
+            return
+        if self.jog_store.exists(name) and not self._ask('Export setup', f"Replace the Keyboard Jog setup '{name}'?"):
+            return
+        self.export_jog_setup(name)
+        self._loading = True
+        self.settings.child('lc_setup', 'export_name').setValue('')
+        self._loading = False
 
     def _decorate_window(self):
         super()._decorate_window()
@@ -246,8 +379,8 @@ class LaserJog(KeyboardJog):
         super()._fit_window()
 
     # ---------------------------------------------------------------- invert keys (Laser Control only)
-    def _add_actuator_actions(self, menu: QtWidgets.QMenu, name: str):
-        super()._add_actuator_actions(menu, name)
+    def _add_actuator_actions(self, menu: QtWidgets.QMenu, name: str, *args, **kwargs):
+        super()._add_actuator_actions(menu, name, *args, **kwargs)
         if is_virtual(name):
             return
         action = menu.addAction('Invert keys', lambda: self.set_inverted(name, name not in self.inverted))
@@ -337,6 +470,8 @@ class LaserJog(KeyboardJog):
     def refresh(self):
         if not self._disposed and self.window is not None and self.window.isVisible():
             self.quick.refresh()
+            if self.panel.settings_visible():
+                self._refresh_setup_group(lists=False)      # the preset may be saved from the Presets tab
 
     def release(self, stop: bool = True):
         """Forget the held keys; with ``stop``, stop the motors this window is moving"""

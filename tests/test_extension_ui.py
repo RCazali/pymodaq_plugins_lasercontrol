@@ -341,6 +341,54 @@ def test_04b_jog_window_preempts_pid_and_steers_setpoint(ext):
     assert jog.window.isVisible()
 
 
+def test_04c_jog_setup_shared_with_keyboard_jog(ext):
+    """A setup of the Dashboard's Keyboard Jog (module names) is imported in the jog window (roles) and saved with
+    the preset; the jog configuration is exported back as a Keyboard Jog setup. Right-click menu: Number, Rename"""
+    from pymodaq_plugins_keyboardjog.core.model import VERTICAL, ExtraKeys, JogSetup
+    from pymodaq_plugins_keyboardjog.core.setups import SetupStore
+    e, win, model, data = ext
+    a = e.app
+    jog = a.jog
+    jog.jog_store = SetupStore(data / 'keyboardjog_setups')          # not the real Keyboard Jog folder
+    jog.jog_store.save('bench', JogSetup(pair_numbers={'Sim OC_H': 3, 'Sim OC_V': 3}, axes={'Sim OC_V': VERTICAL},
+                                         pair_names={3: 'OC'}, actuator_names={'Sim JET_X': 'Jet'},
+                                         steps={'Sim OC_H': 0.25}, step_factor=5.0,
+                                         extra_keys=[ExtraKeys('Sim JET_X', 'PgDown', 'PgUp')]))
+    jog.panel.show_settings(True)
+    run(0.2)
+    assert jog.settings['lc_setup', 'jog_setups'] == 'bench'
+    a.preset_dirty = False
+    jog._import_selected()                                             # (the dialogs answer Yes)
+    pair = next(g for g in jog.groups if g.is_pair)
+    assert pair.number == 3 and pair.title == 'OC' and pair.actuators == ['Sim_OC_H', 'Sim_OC_V']
+    jet = next(g for g in jog.groups if 'Sim_JET_X' in g)
+    assert jet.title == 'Jet' and jog._extra_labels['Sim_JET_X']
+    assert jog.controller.step('Sim_OC_H') == 0.25 and jog.setup.step_factor == 5.0
+    assert 'SP:H' in jog.setup.hidden
+    assert a.preset_dirty and jog.settings['lc_setup', 'preset'].endswith('*')
+    # right-click menu of a single motor and of a pair (Laser Control adds Invert keys)
+    texts = [x.text() for x in jog.group_menu(jog.groups.index(jet)).actions()]
+    assert texts[:2] == ['Number', "Rename 'Jet'…"] and 'Invert keys' in texts
+    assert [x.text() for x in jog.group_menu(jog.groups.index(pair)).actions()][:3] == ['Number', "Rename 'OC'…",
+                                                                                       'Unpair']
+    jog.set_group_number(jog.groups.index(pair), 1)
+    assert next(g for g in jog.groups if g.is_pair).number == 1
+    # saved with the preset, from the jog window
+    jog.save_preset()
+    assert not a.preset_dirty and not jog.settings['lc_setup', 'preset'].endswith('*')
+    p = a.collect_preset()
+    assert p['jog']['setup']['pair_numbers'] == {'Sim_OC_H': 1, 'Sim_OC_V': 1}
+    assert p['jog']['setup']['actuator_names'] == {'Sim_JET_X': 'Jet'}
+    # exported back for the Dashboard's Keyboard Jog: module names, no PID setpoint
+    jog.export_jog_setup('from LC')
+    back = jog.jog_store.load('from LC')
+    assert back.pair_numbers == {'Sim OC_H': 1, 'Sim OC_V': 1} and back.pair_names == {1: 'OC'}
+    assert back.actuator_names == {'Sim JET_X': 'Jet'} and back.extra_keys[0].actuator == 'Sim JET_X'
+    assert not any(n.startswith('SP:') for n in back.used_actuators())
+    assert jog.settings.child('lc_setup', 'jog_setups').opts['limits'] == ['bench', 'from LC']
+    jog.panel.show_settings(False)
+
+
 def test_05_optimizer_one_pass(ext):
     e, win, model, data = ext
     a = e.app
