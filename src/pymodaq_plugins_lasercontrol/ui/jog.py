@@ -215,6 +215,11 @@ class LaserJog(KeyboardJog):
             sc.setContext(QtCore.Qt.WindowShortcut)
             sc.activated.connect(lambda: self.app.emergency_stop('jog window (keyboard)'))
             self._shortcuts.append(sc)
+        shake = QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Space), window)
+        shake.setContext(QtCore.Qt.WindowShortcut)
+        shake.setAutoRepeat(False)                    # held: one shake
+        shake.activated.connect(self.shake)
+        self._shortcuts.append(shake)
         window.setWindowTitle(WINDOW_TITLE)
 
     # ---------------------------------------------------------------- Keyboard Jog hooks
@@ -377,6 +382,15 @@ class LaserJog(KeyboardJog):
                     layout.invalidate()
                     layout.activate()
         super()._fit_window()
+
+    # ---------------------------------------------------------------- shaker (space bar, as the old Alignment tab)
+    def shake(self) -> bool:
+        """Space: fire the piezo shaker, only while the window is armed (green border), like the movement keys"""
+        if self.panel is None or not self.panel.armed:
+            return False
+        self.app.shake('jog window (space)')
+        self.show_message('Shake')
+        return True
 
     # ---------------------------------------------------------------- invert keys (Laser Control only)
     def _add_actuator_actions(self, menu: QtWidgets.QMenu, name: str, *args, **kwargs):

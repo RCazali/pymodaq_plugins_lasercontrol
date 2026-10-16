@@ -96,6 +96,7 @@ Opened with the extension (toolbar button **Jog window** to show it again; closi
 - Saved in the preset (**Save preset**). A preset without jog configuration starts from its old Alignment axes
   (same keys, names, steps and inversions; the other motors hidden: Settings > Actuators > Pair).
 - F12 / Pause: emergency stop, also from the jog window.
+- Space: shake (Red Pitaya piezo shaker), from the jog window while its border is green (held: one shake).
 
 The optima drift slowly (about one minute). Misalign a bench with the keyboard, then click its button.
 

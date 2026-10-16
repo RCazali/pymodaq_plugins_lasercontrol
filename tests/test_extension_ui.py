@@ -389,6 +389,24 @@ def test_04c_jog_setup_shared_with_keyboard_jog(ext):
     jog.panel.show_settings(False)
 
 
+def test_04d_space_bar_shakes_when_armed(ext, monkeypatch):
+    """Space in the jog window fires the shaker (as the old Alignment tab), only while the window is armed"""
+    from qtpy import QtGui
+    e, win, model, data = ext
+    a = e.app
+    jog = a.jog
+    shakes = []
+    monkeypatch.setattr(a, 'shake', lambda source='UI': shakes.append(source))
+    space = [s for s in jog._shortcuts if s.key() == QtGui.QKeySequence(QtCore.Qt.Key_Space)]
+    assert len(space) == 1 and not space[0].autoRepeat()
+    monkeypatch.setattr(type(jog.panel), 'armed', property(lambda self: False))
+    space[0].activated.emit()
+    assert shakes == []                                       # red border: ignored
+    monkeypatch.setattr(type(jog.panel), 'armed', property(lambda self: True))
+    space[0].activated.emit()
+    assert shakes == ['jog window (space)']
+
+
 def test_05_optimizer_one_pass(ext):
     e, win, model, data = ext
     a = e.app
