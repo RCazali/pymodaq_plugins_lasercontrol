@@ -84,7 +84,7 @@ def pid_tree(cfg: dict, signals: List[str], actuators: List[str]) -> list:
             {'title': 'Signal:', 'name': 'signal', 'type': 'list', 'limits': [''] + signals, 'value': l['signal'],
              'tip': '0D signal role regulated by this loop'},
             {'title': 'Setpoint:', 'name': 'setpoint', 'type': 'float', 'value': l['setpoint'], 'decimals': 6,
-             'tip': 'Target value of the signal (signal units). Also moved from the Alignment tab (SP axes)'},
+             'tip': 'Target value of the signal (signal units). Also moved from the jog window (actuator SP:<PID>, hidden until shown in its settings)'},
             {'title': '📍 Setpoint = current value', 'name': 'capture', 'type': 'action'},
             {'title': 'Setpoint mode:', 'name': 'setpoint_mode', 'type': 'list', 'limits': ['fixed', 'capture'],
              'value': l['setpoint_mode'], 'tip': 'capture: the setpoint takes the value of the signal at each start'},
@@ -112,10 +112,10 @@ def pid_tree(cfg: dict, signals: List[str], actuators: List[str]) -> list:
     return [
         {'title': 'General', 'name': 'general', 'type': 'group', 'children': [
             {'title': 'Display name:', 'name': 'label', 'type': 'str', 'value': cfg['label'],
-             'tip': 'Short name, also on its button of the Alignment tab'},
-            {'title': 'Button in Alignment:', 'name': 'show_in_alignment', 'type': 'bool',
+             'tip': 'Short name, also on its button in the jog window'},
+            {'title': 'Button in the jog window:', 'name': 'show_in_alignment', 'type': 'bool',
              'value': bool(cfg['show_in_alignment']),
-             'tip': 'A button of the Alignment tab starts / stops it (no confirmation)'}]},
+             'tip': 'A button on top of the jog window starts / stops it (no confirmation)'}]},
         {'title': 'Motors', 'name': 'motors', 'type': 'checklist', 'limits': motor_items, 'value': list(cfg['motors']),
          'exclusive': False, 'delay': 0.1, 'expanded': False,
          'tip': 'Motors this PID may move (at least as many as signals for a coupled PID)'},
@@ -177,7 +177,7 @@ class SinglePIDWidget(QtWidgets.QWidget):
         head = QtWidgets.QHBoxLayout()
         self.state = StateBadge('', font_pt=11)
         head.addWidget(self.state, 1)
-        self.btn_start = styled_button('▶ Start', '#27ae60', 'Try the settings (the PID is run from Alignment)')
+        self.btn_start = styled_button('▶ Start', '#27ae60', 'Try the settings (the PID is run from the jog window)')
         self.btn_stop = styled_button('⏹ Stop', '#7f8c8d', 'Stops the PID (no move)')
         self.btn_resume = styled_button('⏯ Resume', '#2980b9', 'Resume after a safety hold or a pause')
         self.btn_ref = styled_button('↺', None, 'New envelope reference: the S4 envelope is re-centered on the '
@@ -714,7 +714,7 @@ class PIDTab(QtWidgets.QWidget):
         for b in (self.btn_add, self.btn_remove):
             bar.addWidget(b)
         bar.addStretch()
-        bar.addWidget(QtWidgets.QLabel('<i>Settings only: the PIDs are run from the Alignment tab. '
+        bar.addWidget(QtWidgets.QLabel('<i>Settings only: the PIDs are run from the jog window. '
                                        'Saved in the preset.</i>'))
         lay.addLayout(bar)
 

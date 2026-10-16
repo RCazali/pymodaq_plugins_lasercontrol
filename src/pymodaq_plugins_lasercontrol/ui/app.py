@@ -212,6 +212,7 @@ class LaserControlApp(QtCore.QObject):
                                   extra_folders=[self.paths.data])
         self.shake_done.connect(self._on_shake_done)
         self.tabs: Dict[str, QtWidgets.QWidget] = {}
+        self.jog = None                     # jog window (Keyboard Jog), see build()
         self.status_bar = None
         self.tab_widget: Optional[QtWidgets.QTabWidget] = None
         self.event_log = None
@@ -314,8 +315,11 @@ class LaserControlApp(QtCore.QObject):
         self.event_log = EventLogWidget(self.core.events)
         self.tabs['log'] = self.event_log
         self.event_log.unseen_changed.connect(self._on_log_unseen)
+        self.jog = self._make_jog()
+        hidden = HIDDEN_TABS + (('alignment', 'axes') if self.jog is not None and not
+                                bool(config_get(self.config, 'ui', 'legacy_alignment', default=False)) else ())
         for key, w in self.tabs.items():
-            if key in HIDDEN_TABS:
+            if key in hidden:
                 w.setParent(self.tab_widget)
                 w.hide()
             else:
@@ -333,6 +337,28 @@ class LaserControlApp(QtCore.QObject):
         self.restore_session()
         if self._start_timers:
             self.start_timers()
+            if self.jog is not None and bool(config_get(self.config, 'ui', 'jog_window_at_start', default=True)):
+                QtCore.QTimer.singleShot(0, self.show_jog)
+
+    def _make_jog(self):
+        """The jog window (Keyboard Jog on the broker); None if pymodaq_plugins_keyboardjog is not installed: the
+        old Alignment tab is then shown instead."""
+        try:
+            from .jog import LaserJog
+        except ImportError as e:
+            logger.warning(f'Keyboard Jog not available ({e}): old Alignment tab used')
+            self.core.events.publish(EventKind.INFO, 'UI', 'pymodaq_plugins_keyboardjog is not installed: the old '
+                                                            'Alignment tab is used instead of the jog window',
+                                     Level.WARNING)
+            return None
+        return LaserJog(self)
+
+    def show_jog(self):
+        """Show (or bring to the front) the jog window"""
+        if self.jog is not None:
+            self.jog.show_window()
+        elif self.tab_widget is not None and 'alignment' in self.tabs:
+            self.tab_widget.setCurrentWidget(self.tabs['alignment'])
 
     def _on_log_unseen(self, n: int):
         i = self.tab_widget.indexOf(self.event_log)
@@ -379,6 +405,8 @@ class LaserControlApp(QtCore.QObject):
                 align = self.tabs.get('alignment')
                 if align is not None and w is not align:
                     align.refresh()
+            if self.jog is not None:
+                self.jog.refresh()
         except Exception as e:  # pragma: no cover
             logger.exception(f'UI refresh failed: {e}')
 
@@ -601,6 +629,8 @@ class LaserControlApp(QtCore.QObject):
         w = self.tabs.get('alignment')
         if w is not None:
             w.release_all_jogs()
+        if self.jog is not None:
+            self.jog.release(stop=False)        # every motor is stopped just below
         self.core.emergency_stop(source)
         self.refresh_ui()
 
@@ -669,6 +699,8 @@ class LaserControlApp(QtCore.QObject):
             w = self.tabs.get(key)
             if w is not None and hasattr(w, 'set_hardware'):
                 w.set_hardware()
+        if self.jog is not None:
+            self.jog.set_hardware()
 
     # ================================================================== presets
     def collect_preset(self) -> dict:
@@ -676,6 +708,8 @@ class LaserControlApp(QtCore.QObject):
         for w in self.tabs.values():
             if hasattr(w, 'write_to_preset'):
                 w.write_to_preset(p)
+        if self.jog is not None:
+            self.jog.write_to_preset(p)
         return normalize(p)
 
     def _any_engaged(self) -> List[str]:
@@ -703,6 +737,8 @@ class LaserControlApp(QtCore.QObject):
         w = self.tabs.get('alignment')           # PID setpoints (SP:<id>) exist once the PID tab is loaded
         if w is not None:
             w.set_hardware()
+        if self.jog is not None:
+            self.jog.load_from_preset(p)
         self.preset_dirty = False
         rep = validate_preset(p, self.core.roles, self.core.broker.modules(), self.core.signals.channels())
         self.core.events.publish(EventKind.PRESET, source,
@@ -842,6 +878,11 @@ class LaserControlApp(QtCore.QObject):
                 w.shutdown()
             except Exception:  # pragma: no cover
                 pass
+        if self.jog is not None:
+            try:
+                self.jog.lc_shutdown()
+            except Exception as e:  # pragma: no cover
+                logger.warning(f'jog window not closed cleanly: {e}')
         self.core.stop_all_automations('extension closed')
         try:
             self.recorder.stop()

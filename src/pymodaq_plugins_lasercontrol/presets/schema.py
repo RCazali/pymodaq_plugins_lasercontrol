@@ -163,6 +163,7 @@ def default_preset(name: str = 'New preset') -> dict:
                  'channels': [], 'relative': True, 'return_to_start': True, 'check_intensity': False},
         'recording': default_recording(),
         'alignment': {},
+        'jog': {},          # jog window: {'setup': Keyboard Jog setup (roles), 'invert': [roles]}
     }
 
 

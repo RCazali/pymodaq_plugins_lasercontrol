@@ -114,6 +114,8 @@ class LaserControl(CustomExt):
     def setup_actions(self):
         self.add_action('estop', "Emergency stop", _icon('#c0392b', 'octagon'),
                         "Stops every automation, then every motor of the dashboard")
+        self.add_action('jog', 'Jog window', _icon('#27ae60', 'square'),
+                        'Show the jog window: the motors with the keyboard, the automation buttons')
         self.add_action('save_preset', 'Save preset', _std_icon('SP_DialogSaveButton'),
                         'Save the current preset')
         self.add_action('record', 'Recording', _icon('#e74c3c'), 'Start / stop the HDF5 recording',
@@ -123,6 +125,7 @@ class LaserControl(CustomExt):
 
     def connect_things(self):
         self.connect_action('estop', lambda: self.app.emergency_stop('toolbar'))
+        self.connect_action('jog', self.app.show_jog)
         self.connect_action('save_preset', lambda: self.app.save_preset())
         self.connect_action('record', lambda: self.app.toggle_recording(self.is_action_checked('record')))
         self.connect_action('refresh_hardware', self.app.refresh_hardware)

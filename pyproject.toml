@@ -44,6 +44,9 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["pytest", "pytest-qt"]
 analysis = ["pandas"]
+# jog window: install pymodaq_plugins_keyboardjog first (pip install -e ../pymodaq_plugins_keyboardjog);
+# without it the old Alignment tab is used
+jog = ["pymodaq_plugins_keyboardjog"]
 
 [build-system]
 requires = [

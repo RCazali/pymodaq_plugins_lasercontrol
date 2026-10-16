@@ -29,9 +29,9 @@ def opt_params() -> list:
     d = DEFAULT_OPT_CONFIG
     return [
         {'title': 'Display name:', 'name': 'label', 'type': 'str', 'value': '',
-         'tip': 'Short name, also used for the button of the Alignment tab (e.g. Optim HA)'},
-        {'title': 'Button in Alignment:', 'name': 'show_in_alignment', 'type': 'bool', 'value': False,
-         'tip': 'Shows a button under the motors of the Alignment tab: one click starts, another one stops '
+         'tip': 'Short name, also used for its button in the jog window (e.g. Optim HA)'},
+        {'title': 'Button in the jog window:', 'name': 'show_in_alignment', 'type': 'bool', 'value': False,
+         'tip': 'Shows a button on top of the jog window: one click starts, another one stops '
                 '(no confirmation)'},
         {'title': 'Button action:', 'name': 'button_action', 'type': 'list',
          'limits': {v: k for k, v in OPT_BUTTON_ACTION_LABELS.items()}, 'value': 'single',

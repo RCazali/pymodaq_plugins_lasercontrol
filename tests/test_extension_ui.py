@@ -256,6 +256,91 @@ def test_04_alignment_keyboard_preempts_pid(ext):
     assert any('manual action' in ev.message for ev in a.core.events.history)
 
 
+def jog_step(jog, name, direction, held_s=0.0):
+    """One key press (+ release) of the jog window on this actuator"""
+    from pymodaq_plugins_keyboardjog.core.actions import MoveAction
+    action = MoveAction(name, direction)
+    jog.controller.press(action)
+    run(held_s)
+    jog.controller.release(action)
+
+
+def test_04b_jog_window_preempts_pid_and_steers_setpoint(ext):
+    """The jog window (Keyboard Jog on the broker): the roles and the PID setpoints are its actuators; a key on a
+    motor of the running PID stops the PID first (D5/S7, decision of 2026-10-16), a key on the setpoint does not;
+    the configuration is saved in the preset."""
+    e, win, model, data = ext
+    a = e.app
+    jog = a.jog
+    assert jog is not None
+    assert a.tab_widget.indexOf(a.tabs['alignment']) == -1          # replaced by the jog window
+    a.show_jog()
+    run(0.5)
+    assert jog.window.isVisible()
+    assert {'Sim_OC_H', 'Sim_OC_V', 'Sim_JET_X', 'SP:H'} <= set(jog.ports)
+    assert 'SP:H' in jog.setup.hidden                                  # a setpoint is hidden until shown
+    ok, msg = a.start_pid(a.tabs['pid'].configs()[0])
+    assert ok, msg
+    pid = a.core.get('PID:H')
+    run(1.0)
+    # the setpoint: moved without stopping the PID
+    sp0 = pid.settings.setpoint
+    jog.controller.set_step('SP:H', 0.5)
+    jog_step(jog, 'SP:H', +1)
+    run(0.4)
+    assert pid.settings.setpoint == pytest.approx(sp0 + 0.5)
+    assert pid.state.value == 'ACTIVE'
+    a.manual.move_abs('SP:H', sp0)
+    run(0.3)
+    # a motor of the PID: the first key stops the PID (if a PID step is running, that step finishes and nothing
+    # is sent: never two orders on a motor), then the keys move the motor
+    jog.controller.set_step('Sim_OC_H', 0.5)
+    jog_step(jog, 'Sim_OC_H', +1)
+    run(0.6)
+    assert pid.state.value == 'OFF' and 'manual action' in pid.reason
+    assert wait(lambda: not a.core.broker.is_busy('Sim OC_H') and not jog.controller.is_busy('Sim_OC_H'), 5)
+    pos0 = a.core.broker.position('Sim OC_H')
+    jog_step(jog, 'Sim_OC_H', +1)
+    run(0.6)
+    assert a.core.broker.position('Sim OC_H') > pos0 + 0.3
+    assert not jog.controller.is_busy('Sim_OC_H')
+    # invert keys: the + key moves backwards
+    jog.set_inverted('Sim_OC_H', True)
+    pos1 = a.core.broker.position('Sim OC_H')
+    jog_step(jog, 'Sim_OC_H', +1)
+    run(0.8)
+    assert a.core.broker.position('Sim OC_H') < pos1 - 0.3
+    # E-STOP: nothing moves, the refusal is shown in the window
+    a.emergency_stop('test')
+    pos2 = a.core.broker.position('Sim OC_H')
+    jog_step(jog, 'Sim_OC_H', +1)
+    run(0.5)
+    assert a.core.broker.position('Sim OC_H') == pytest.approx(pos2)
+    assert 'EMERGENCY' in jog.panel.message_label.text()
+    a.core.reset_estop()
+    # saved in the preset: pair, step, inversion
+    jog.pair_actuators('Sim_OC_H', 'Sim_OC_V', 'OC')
+    p = a.collect_preset()
+    assert p['jog']['invert'] == ['Sim_OC_H']
+    assert p['jog']['setup']['pair_numbers']['Sim_OC_H'] == p['jog']['setup']['pair_numbers']['Sim_OC_V']
+    assert p['jog']['setup']['steps']['Sim_OC_H'] == 0.5
+    jog.set_inverted('Sim_OC_H', False)
+    jog.unpair(next(i for i, g in enumerate(jog.groups) if g.is_pair))
+    ok, msg = a.apply_preset(p)
+    assert ok, msg
+    assert 'Sim_OC_H' in jog.inverted
+    group = next(g for g in jog.groups if 'Sim_OC_H' in g)
+    assert group.is_pair and group.title == 'OC' and group.vertical == 'Sim_OC_V'
+    jog.set_inverted('Sim_OC_H', False)
+    # closing the window hides it (shown again from the toolbar), nothing is destroyed
+    jog.window.close()
+    run(0.3)
+    assert not jog.window.isVisible() and not jog._disposed
+    a.show_jog()
+    run(0.3)
+    assert jog.window.isVisible()
+
+
 def test_05_optimizer_one_pass(ext):
     e, win, model, data = ext
     a = e.app
@@ -300,9 +385,9 @@ def test_05b_alignment_buttons(ext):
     a = e.app
     a.tabs['pid'].widgets['H']._param('show_in_alignment').setValue(True)
     a.tabs['optimizer'].widgets['Jet'].settings.child('show_in_alignment').setValue(True)
-    a.tab_widget.setCurrentWidget(a.tabs['alignment'])
+    a.show_jog()
     run(0.6)
-    panel = a.quick_panel
+    panel = a.jog.quick                         # the buttons are on top of the jog window
     assert panel.isVisible()
     assert list(panel.cards) == ['PID:H', 'OPT:Jet']
     assert panel.cards['PID:H'].name.text() == 'Centroid H'
@@ -496,9 +581,9 @@ def test_06d_routines_tab_and_alignment_button(ext):
     assert len(p.background) == 1 and tab.selected == p.background[0].uid
     tab._on_delete()
     assert not p.background
-    a.tab_widget.setCurrentWidget(a.tabs['alignment'])
+    a.show_jog()
     run(0.6)
-    panel = a.quick_panel
+    panel = a.jog.quick
     assert 'RTN:UI' in panel.cards and panel.cards['RTN:UI'].band.text() == 'SEQ'
     panel._on_click('RTN:UI')
     rt = a.routine('UI')
@@ -530,33 +615,35 @@ def test_06e_settings_trees(ext):
     a = e.app
     align = a.tabs['alignment']
     saved = align.get_config()
-    # --- Axes tab: the tree edits the axis of the Alignment tab (nothing editable left in Alignment)
-    a.tab_widget.setCurrentWidget(a.tabs['axes'])
-    align.axis_list.setCurrentRow(0)
-    run(0.3)
-    h = align.axis_params.child('h')
-    h.child('on').setValue(True)
-    h.child('actuator').setValue('Sim_OC_H')
-    h.child('rel_step').setValue(2.5)
-    h.child('slow').setValue(0.25)
-    align.axis_params.child('axis', 'name').setValue('Test axis')
-    run(0.8)                                              # applied after a short delay
-    ax = align.get_config()['axes'][0]
-    assert ax['name'] == 'Test axis' and ax['h']['actuator'] == 'Sim_OC_H'
-    assert ax['h']['rel_step'] == 2.5 and ax['h']['slow'] == 0.25
-    a.tab_widget.setCurrentWidget(align)
-    align.select_axis(0)
-    run(0.3)
-    spins = [w for w in align.detail.findChildren(QtWidgets.QDoubleSpinBox)]
-    steps = [s for s in spins if s.toolTip().startswith('Step of')]
-    assert len(steps) == 1 and steps[0].value() == 2.5                # the − / + step, typed in place
-    steps[0].setValue(0.75)
-    assert align.get_config()['axes'][0]['h']['rel_step'] == 0.75     # saved with the axis
-    assert align.detail.minimumSizeHint().width() <= 480              # fits the 1300 px window
-    steps[0].setValue(2.5)
-    align.chk_hide.setChecked(True)
-    assert align.get_config()['hide_unassigned'] is True
-    align.chk_hide.setChecked(False)
+    # --- old Alignment / Axes tabs (shown only with [ui] legacy_alignment = true: the jog window replaces them)
+    if a.tab_widget.indexOf(a.tabs['axes']) >= 0:
+        # --- Axes tab: the tree edits the axis of the Alignment tab (nothing editable left in Alignment)
+        a.tab_widget.setCurrentWidget(a.tabs['axes'])
+        align.axis_list.setCurrentRow(0)
+        run(0.3)
+        h = align.axis_params.child('h')
+        h.child('on').setValue(True)
+        h.child('actuator').setValue('Sim_OC_H')
+        h.child('rel_step').setValue(2.5)
+        h.child('slow').setValue(0.25)
+        align.axis_params.child('axis', 'name').setValue('Test axis')
+        run(0.8)                                              # applied after a short delay
+        ax = align.get_config()['axes'][0]
+        assert ax['name'] == 'Test axis' and ax['h']['actuator'] == 'Sim_OC_H'
+        assert ax['h']['rel_step'] == 2.5 and ax['h']['slow'] == 0.25
+        a.tab_widget.setCurrentWidget(align)
+        align.select_axis(0)
+        run(0.3)
+        spins = [w for w in align.detail.findChildren(QtWidgets.QDoubleSpinBox)]
+        steps = [s for s in spins if s.toolTip().startswith('Step of')]
+        assert len(steps) == 1 and steps[0].value() == 2.5                # the − / + step, typed in place
+        steps[0].setValue(0.75)
+        assert align.get_config()['axes'][0]['h']['rel_step'] == 0.75     # saved with the axis
+        assert align.detail.minimumSizeHint().width() <= 480              # fits the 1300 px window
+        steps[0].setValue(2.5)
+        align.chk_hide.setChecked(True)
+        assert align.get_config()['hide_unassigned'] is True
+        align.chk_hide.setChecked(False)
     # --- PID: add then remove a second signal; its setpoint is the axis SP:<id>/2
     pid_tab = a.tabs['pid']
     w = pid_tab._add_widget({'id': 'T2', 'label': 'Two signals','signal': 'Cam1_x',
@@ -661,9 +748,9 @@ def test_06f_operator_question_in_alignment(ext):
     ok, msg = a.start_routine(prog.to_dict())
     assert ok, msg
     rt = a.routine('Q')
-    a.tab_widget.setCurrentWidget(a.tabs['alignment'])
+    a.show_jog()
     run(0.4)
-    panel = a.quick_panel
+    panel = a.jog.quick
     assert not panel.banner.isVisible()
     rt.ask(a.core, rt.main, 'HA maximum not confirmed after 5 probes')       # as a "confirm" step would
     run(0.5)

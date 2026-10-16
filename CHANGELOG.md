@@ -4,6 +4,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 
 ## [Unreleased]
 
+### Added
+- **Jog window** (replaces the Alignment and Axes tabs): the Keyboard Jog interface
+  (`pymodaq_plugins_keyboardjog`, to install) in a small always-on-top window, on the broker. Green / red
+  border, numbered groups and named pairs (right click), W A S D (Z Q S D in AZERTY), `+` / `-` step, step or
+  continuous mode, history, saved positions. The automation buttons and E-STOP / Re-arm are on top of it.
+  A key on a motor of an engaged automation stops the automation first (D5/S7); if the automation is moving the
+  motor at that moment, its step finishes and the next key press moves the motor (nothing is stacked).
+  The actuators are the roles (one per motor) and the PID setpoints `SP:<pid>` (hidden until shown in its
+  settings). Per motor, **Invert keys** in the right-click menu. Saved in the preset (`jog`); a preset without
+  it starts from its old Alignment axes (same numbers, names, steps and inversions; the other motors hidden).
+  Toolbar button **Jog window** to show it again; `[ui] legacy_alignment = true` shows the old tabs.
+
 ### Removed
 - **Overview tab** and its grouped "Activate / Deactivate stabilization" (with the `Stabilization` flag of the
   PIDs): the PIDs are started from their buttons in Alignment, from the PID tab or by a routine.

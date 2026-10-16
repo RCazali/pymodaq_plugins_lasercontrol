@@ -20,6 +20,8 @@ event_trigger_folder = ""
 refresh_hz = 5                 # UI refresh rate (specification: <= 5 Hz)
 estop_shortcut = "F12"         # emergency stop keyboard shortcut (Pause/Break is always active too)
 plot_history_s = 600           # length of the live curves (s)
+jog_window_at_start = true     # open the jog window (Keyboard Jog) with the extension
+legacy_alignment = false       # true: also show the old Alignment / Axes tabs
 
 [core]
 tick_hz = 20                   # scheduler rate of the event driven core (GUI thread)

@@ -40,31 +40,41 @@ class QuickCard(QtWidgets.QFrame):
 
     WIDTH = 280
     HEIGHT = 62
+    COMPACT_WIDTH = 190         # jog window: name and state line only
+    COMPACT_HEIGHT = 38
+    COMPACT_CHARS = 22
+    BAND_W = 34
 
-    def __init__(self, item: dict, parent=None):
+    def __init__(self, item: dict, parent=None, compact: bool = False):
         super().__init__(parent)
         self.item = item
         self.auto_id = item['id']
         self._style_key = None
+        self.compact = compact
+        # compact: about COMPACT_CHARS characters of text (190 px with the 9 pt font of Windows)
+        self.width_px = max(self.COMPACT_WIDTH, self.BAND_W + 20 + self.COMPACT_CHARS *
+                            self.fontMetrics().averageCharWidth()) if compact else self.WIDTH
         self.setObjectName('quickCard')
         self.setAttribute(QtCore.Qt.WA_Hover, True)
         self.setFocusPolicy(QtCore.Qt.NoFocus)
         self.setCursor(QtCore.Qt.PointingHandCursor)
-        self.setFixedSize(self.WIDTH, self.HEIGHT)
+        self.setFixedSize(self.width_px, max(self.COMPACT_HEIGHT, 2 * self.fontMetrics().height() + 6)
+                          if compact else self.HEIGHT)
         h = QtWidgets.QHBoxLayout(self)
         h.setContentsMargins(0, 0, 6, 0)
         h.setSpacing(7)
         self.band = QtWidgets.QLabel({'pid': 'PID', 'routine': 'SEQ'}.get(item['kind'], 'OPT'))
         self.band.setObjectName('quickBand')
         self.band.setAlignment(QtCore.Qt.AlignCenter)
-        self.band.setFixedWidth(34)
+        self.band.setFixedWidth(self.BAND_W)
         h.addWidget(self.band)
         v = QtWidgets.QVBoxLayout()
-        v.setContentsMargins(0, 3, 0, 3)
+        v.setContentsMargins(0, 1 if compact else 3, 0, 1 if compact else 3)
         v.setSpacing(0)
         self.name = QtWidgets.QLabel(item['label'])
         f = self.name.font()
-        f.setPointSize(f.pointSize() + 1)
+        if not compact:
+            f.setPointSize(f.pointSize() + 1)
         f.setBold(True)
         self.name.setFont(f)
         self.line = QtWidgets.QLabel('')
@@ -73,8 +83,12 @@ class QuickCard(QtWidgets.QFrame):
         for w in (self.name, self.line, self.hint):
             w.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
             v.addWidget(w)
+        self.hint.setVisible(not compact)        # compact: the hint is in the tooltip
         h.addLayout(v, 1)
         self.band.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+
+    def sizeHint(self) -> QtCore.QSize:
+        return self.size() if self.minimumSize() == self.maximumSize() else super().sizeHint()   # the flow layout
 
     @staticmethod
     def _elide(label: QtWidgets.QLabel, text: str, width: int):
@@ -94,11 +108,11 @@ class QuickCard(QtWidgets.QFrame):
                 f'#quickBand {{ background-color: {color}; color: white; font-weight: bold; font-size: 11px; '
                 f'border-top-left-radius: 6px; border-bottom-left-radius: 6px; }}')
             self.line.setStyleSheet(f'color: {color if engaged else "gray"}; font-weight: bold;')
-        text_w = self.WIDTH - 34 - 20
+        text_w = self.width_px - self.BAND_W - 20
         self._elide(self.name, self.item['label'], text_w)
         self._elide(self.line, line, text_w)
         self._elide(self.hint, hint, text_w)
-        self.setToolTip(tip)
+        self.setToolTip(f'{tip}\n{hint}' if self.compact and hint else tip)
 
     def mouseReleaseEvent(self, e):
         if self.rect().contains(e.pos()):
@@ -111,30 +125,56 @@ class QuickCard(QtWidgets.QFrame):
 
 class QuickPanel(QtWidgets.QFrame):
     """Buttons of the PIDs / optimisations shown in the Alignment tab (see module docstring)."""
+    height_changed = QtCore.Signal()     # compact: the cards wrapped on more / fewer lines
 
-    def __init__(self, app: 'LaserControlApp', parent=None):
+    def __init__(self, app: 'LaserControlApp', parent=None, compact: bool = False):
+        """``compact``: the strip of the jog window (small cards, no scroll area, E-STOP / Re-arm buttons)."""
         super().__init__(parent)
         self.app = app
+        self.compact = compact
         self.cards: Dict[str, QuickCard] = {}
         self._signature: Optional[Tuple] = None
         self._last_click: Dict[str, float] = {}
         self.setObjectName('quickPanel')
         self.setFocusPolicy(QtCore.Qt.NoFocus)
-        self.setStyleSheet('#quickPanel { border-top: 2px solid rgba(127,127,127,110); }')
+        if not compact:
+            self.setStyleSheet('#quickPanel { border-top: 2px solid rgba(127,127,127,110); }')
         lay = QtWidgets.QVBoxLayout(self)
-        lay.setContentsMargins(2, 6, 2, 2)
-        lay.setSpacing(4)
+        lay.setContentsMargins(*((0, 0, 0, 0) if compact else (2, 6, 2, 2)))
+        lay.setSpacing(2 if compact else 4)
         head = QtWidgets.QHBoxLayout()
         title = QtWidgets.QLabel('Automations')
         f = title.font()
         f.setBold(True)
-        f.setPointSize(f.pointSize() + 1)
+        if not compact:
+            f.setPointSize(f.pointSize() + 1)
         title.setFont(f)
         head.addWidget(title)
         hint = QtWidgets.QLabel('click: start / stop (held: resume) · right click: more')
         hint.setStyleSheet('color: gray; font-style: italic;')
-        head.addWidget(hint)
+        if compact:
+            title.setToolTip(hint.text())
+        else:
+            head.addWidget(hint)
         head.addStretch()
+        self.btn_estop = self.btn_rearm = None
+        if compact:
+            self.btn_rearm = QtWidgets.QPushButton('Re-arm')
+            self.btn_rearm.setToolTip('Leave the EMERGENCY STOP state')
+            self.btn_rearm.setStyleSheet('background-color: #e67e22; color: white; font-weight: bold; '
+                                         'padding: 1px 8px;')
+            self.btn_rearm.clicked.connect(self._on_rearm)
+            self.btn_rearm.setVisible(False)
+            head.addWidget(self.btn_rearm)
+            self.btn_estop = QtWidgets.QPushButton('■ E-STOP')
+            self.btn_estop.setToolTip(f'Emergency stop: every automation, then every motor of the dashboard '
+                                      f'({app.estop_shortcut_text()})')
+            self.btn_estop.setStyleSheet('background-color: #c0392b; color: white; font-weight: bold; '
+                                         'padding: 1px 8px;')
+            self.btn_estop.clicked.connect(lambda: self.app.emergency_stop('jog window'))
+            head.addWidget(self.btn_estop)
+            for b in (self.btn_rearm, self.btn_estop):
+                b.setFocusPolicy(QtCore.Qt.NoFocus)
         lay.addLayout(head)
         # a routine waiting for the operator (e.g. HA maximum not confirmed): big, bright, never colour only
         self.banner = QtWidgets.QFrame()
@@ -171,19 +211,25 @@ class QuickPanel(QtWidgets.QFrame):
         self._msg_timer = QtCore.QTimer(self)
         self._msg_timer.setSingleShot(True)
         self._msg_timer.timeout.connect(lambda: self.message.setVisible(False))
-        self.scroll = QtWidgets.QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.scroll.setFocusPolicy(QtCore.Qt.NoFocus)
-        self.scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.container = QtWidgets.QWidget()
-        self.flow = FlowLayout(self.container, spacing=6)
+        self.flow = FlowLayout(self.container, spacing=4 if compact else 6)
         self.flow.setContentsMargins(2, 2, 2, 2)
-        self.scroll.setWidget(self.container)
-        lay.addWidget(self.scroll, 1)
-        self.empty = QtWidgets.QLabel('No button: tick "Button in Alignment" in the settings of a PID '
+        if compact:                       # the jog window grows with its cards: no scroll area
+            self.scroll = self.container
+            lay.addWidget(self.container)
+        else:
+            self.scroll = QtWidgets.QScrollArea()
+            self.scroll.setWidgetResizable(True)
+            self.scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+            self.scroll.setFocusPolicy(QtCore.Qt.NoFocus)
+            self.scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            self.scroll.setWidget(self.container)
+            lay.addWidget(self.scroll, 1)
+        self.empty = QtWidgets.QLabel('No button: tick "Button in the jog window" in the settings of a PID '
                                       '(PID tab), of an optimization (Optimization tab) or of a routine '
                                       '(Routines tab).')
+        if compact:
+            self.empty.setText('No button: tick "Button in the jog window" in the PID / Optimization / Routines tab.')
         self.empty.setWordWrap(True)
         self.empty.setStyleSheet('color: gray; font-style: italic;')
         lay.addWidget(self.empty)
@@ -196,7 +242,7 @@ class QuickPanel(QtWidgets.QFrame):
             c.deleteLater()
         self.cards = {}
         for it in items:
-            card = QuickCard(it)
+            card = QuickCard(it, compact=self.compact)
             card.clicked.connect(self._on_click)
             card.menu_requested.connect(self._on_menu)
             self.flow.addWidget(card)
@@ -204,6 +250,24 @@ class QuickPanel(QtWidgets.QFrame):
         self.empty.setVisible(not items)
         self.scroll.setVisible(bool(items))
         self.container.updateGeometry()
+        self._fit_cards()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._fit_cards()
+
+    def _fit_cards(self):
+        """Compact: the layouts of the jog window ignore the height-for-width of the flow layout, so the container
+        gets the height of its wrapped lines as minimum height"""
+        if not self.compact:
+            return
+        width = self.container.width() or self.width()
+        height = self.flow.heightForWidth(max(width, 1)) if self.cards else 0
+        if height != self.container.minimumHeight():
+            self.container.setFixedHeight(height)
+            self.layout().invalidate()
+            self.updateGeometry()
+            self.height_changed.emit()
 
     # ------------------------------------------------------------------ actions
     def _say(self, text: str):
@@ -244,6 +308,13 @@ class QuickPanel(QtWidgets.QFrame):
         fn = getattr(menu, 'exec', None) or menu.exec_
         fn(pos)
 
+    def _on_rearm(self):
+        from .widgets import ask_yes_no
+        if ask_yes_no(self.window(), 'Re-arm', 'Leave the EMERGENCY STOP state?\n\nFirst check the state of the laser '
+                                               'and of the motors.'):
+            self.app.core.reset_estop('jog window')
+        self.refresh()
+
     def _on_answer(self, choice: str):
         if self._banner_id:
             ok, msg = self.app.answer_question(self._banner_id, choice)
@@ -274,6 +345,8 @@ class QuickPanel(QtWidgets.QFrame):
             self._rebuild(items)
         core = self.app.core
         estop = core.estop
+        if self.btn_rearm is not None and self.btn_rearm.isVisible() != estop:
+            self.btn_rearm.setVisible(estop)
         for auto_id, card in self.cards.items():
             a = core.get(auto_id)
             state = a.state if a is not None else AutoState.OFF

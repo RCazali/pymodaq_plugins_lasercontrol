@@ -309,7 +309,7 @@ class RoutinesTab(QtWidgets.QWidget):
         head = QtWidgets.QHBoxLayout()
         self.badge = StateBadge()
         head.addWidget(self.badge, 1)
-        self.btn_run = styled_button('▶ Run', '#27ae60', 'Try the routine (it is run from the Alignment tab)')
+        self.btn_run = styled_button('▶ Run', '#27ae60', 'Try the routine (it is run from the jog window)')
         self.btn_stop = styled_button('⏹ Stop', '#7f8c8d')
         self.btn_resume = styled_button('⏯', '#2980b9', 'Resume after a safety hold during a move')
         self.btn_run.clicked.connect(self._on_run)
@@ -571,7 +571,7 @@ class RoutinesTab(QtWidgets.QWidget):
     def _routine_params(self, r: Program) -> dict:
         return {'title': 'Routine', 'name': 'routine', 'type': 'group', 'children': [
             {'title': 'Display name:', 'name': 'label', 'type': 'str', 'value': r.label},
-            {'title': 'Button in Alignment:', 'name': 'show_in_alignment', 'type': 'bool', 'value': r.show_in_alignment},
+            {'title': 'Button in the jog window:', 'name': 'show_in_alignment', 'type': 'bool', 'value': r.show_in_alignment},
             {'title': 'On failure / stop: stop what it started:', 'name': 'stop_started_on_abort', 'type': 'bool',
              'value': r.stop_started_on_abort, 'tip': 'what it paused stays paused (nothing moves); the log says so'},
             {'title': 'Description:', 'name': 'description', 'type': 'str', 'value': r.description}]}
@@ -684,7 +684,7 @@ class RoutinesTab(QtWidgets.QWidget):
             kids.append({'title': 'If not confirmed:', 'name': 'on_fail', 'type': 'list',
                          'limits': {v: k for k, v in ON_FAIL.items()}, 'value': b.on_fail,
                          'tip': 'ask the operator: what the routine paused is resumed (the PIDs hold the beam), '
-                                'Continue / Check again / Stop in the Alignment tab'})
+                                'Continue / Check again / Stop in the jog window'})
         kids += [{'title': 'Comment:' if b.action != 'note' else 'Note:', 'name': 'text', 'type': 'str',
                   'value': b.text},
                  {'title': 'Then wait until (first true wins; none = go on when done)', 'name': 'until',

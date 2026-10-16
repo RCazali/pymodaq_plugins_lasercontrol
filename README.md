@@ -7,9 +7,11 @@ access to the hardware, engines in pure logic, and an explicit user interface.
 
 - **Always-visible status bar**: global state, one button per automation, freshness of the data of
   computer B, intensity versus threshold, ML ON / OFF / Unstable, Note, Shake, REC, EMERGENCY STOP.
-- **Alignment tab = workstation**: keyboard jog, history, and under the motors one button per chosen
-  PID or optimization ("Button in Alignment"): one click starts, another one stops.
-- **Other tabs**: Axes (settings of the Alignment axes), PID (several PIDs, coupled PIDs), Optimization
+- **Jog window = workstation**: the Keyboard Jog interface in a small always-on-top window (green border =
+  the keys move the motors, red = ignored), on top of it one button per chosen PID, optimization or routine
+  ("Button in the jog window": one click starts, another one stops) and E-STOP. A key on a motor of a running
+  PID stops that PID first. See [Jog window](#jog-window).
+- **Tabs** (settings): PID (several PIDs, coupled PIDs), Optimization
   (several named optimizations), Routines (programs of actions), 1D Scan, Presets, Configuration, Log.
 - **Safety**: the invariants S1–S12 are enforced by the core, not by the user interface, and each one
   has its automatic test.
@@ -34,8 +36,8 @@ access to the hardware, engines in pure logic, and an explicit user interface.
 In the PyMoDAQ environment:
 
 ```bash
-cd pymodaq_plugins_lasercontrol
-pip install -e .
+pip install -e pymodaq_plugins_keyboardjog      # the jog window (without it: the old Alignment tab)
+pip install -e pymodaq_plugins_lasercontrol
 ```
 
 The version comes from the git tags (`hatch-vcs`, 0.2.0 without a git repository). The extension
@@ -75,8 +77,25 @@ Besides the simulated laser, the simulator contains two simple test benches:
 | coupled mount (moderate coupling) | `Cpl_A`, `Cpl_B` | `Cpl_x` = A + 0.35·B, `Cpl_y` = −0.25·A + B | PIDs "Coupled x" / "Coupled y" |
 | beam walk (strong coupling) | `BW1_H/V`, `BW2_H/V` | `Near_x/y`, `Far_x/y` (see `hardware/sim.py`) | PIDs "BW near / far x / y" (independent: slow, they fight) |
 
-The Alignment axis **Beam setpoint** moves the setpoints of the PIDs "Beam H" / "Beam V" with the
-keyboard (`a`/`d`, `s`/`w`): start both PIDs, then steer the beam through its setpoint.
+The group **Beam setpoint** (key `0` of the jog window) moves the setpoints of the PIDs "Beam H" / "Beam V"
+with the keyboard (`a`/`d`, `s`/`w`): start both PIDs, then steer the beam through its setpoint.
+
+## Jog window
+
+Opened with the extension (toolbar button **Jog window** to show it again; closing it only hides it).
+
+- Click it: green border = the keys move the motors; red = keys ignored (and the moves it started are stopped).
+- `1`…`9`, `0` or a click select a group; W A S D (Z Q S D on AZERTY, or the arrows: Settings > Motion) move
+  it; `+` / `-` multiply / divide its step; Shift / Ctrl ×10 / ÷10 in continuous mode.
+- Right click a line: pair it with another motor (named pair), keys horizontal / vertical, continuous,
+  headless, **Invert keys**, hide. Settings: the same for every motor, extra keys, the PID setpoints `SP:<pid>`
+  (hidden by default).
+- The actuators are the **roles**; every move goes through the broker: limits of the roles, E-STOP, and a key
+  on a motor of an engaged automation stops it first (if the automation is moving the motor at that moment,
+  its step finishes and the next key press moves the motor: nothing is ever stacked on a motor).
+- Saved in the preset (**Save preset**). A preset without jog configuration starts from its old Alignment axes
+  (same keys, names, steps and inversions; the other motors hidden: Settings > Actuators > Pair).
+- F12 / Pause: emergency stop, also from the jog window.
 
 The optima drift slowly (about one minute). Misalign a bench with the keyboard, then click its button.
 
@@ -101,7 +120,8 @@ computer A → Laser Control extension.
    profiles. Motors and channels
    become roles. The `max_step`, `max_excursion` and rate limits are not invented: they must be filled in.
 4. **PID / Optimization**: give each useful automation a short name ("Optim HA", "Stab. OC_X"…) and
-   tick **Button in Alignment**.
+   tick **Button in the jog window**. Then build the groups of the jog window (right click a line: pair,
+   invert keys…) and **Save preset**.
 5. **Presets → Check on this machine**, test in CW, then **Mark as validated…**
 
 Single launch script: `python -m pymodaq_plugins_lasercontrol.extensions.laser_control <preset>`.
