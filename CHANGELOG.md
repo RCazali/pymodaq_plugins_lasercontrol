@@ -23,6 +23,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
   `README.rst` instead of `README.md`, docstrings and `_epsilons` in the LaserSim plugins.
 
 ### Added
+- **`leco_lab_check` on PyMoDAQ 5.2+**: temporary experiment (LaserSim + LECODirector not initialised at load, its
+  host / port / actor set before its init, an experiment keeping no plugin settings). Checked at the office with
+  a 5.3 receiver and a 5.1 sender.
 - **`tools/motor_check`**: checks that each motor answers, +1 then -1 in its units (back to its start), one motor
   at a time and one command per second at most. The first motor that does not answer (no move done before its
   timeout, target not reached, not back to its start, exception) is stopped and **every motor is locked**: the

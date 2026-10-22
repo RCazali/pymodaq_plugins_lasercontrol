@@ -66,6 +66,43 @@ def _print_watch(signals, title: str, keys, elapsed: float):
     print(' | '.join(parts), flush=True)
 
 
+def _write_experiment_52(title: str) -> Path:
+    """PyMoDAQ >= 5.2: temporary experiment with one LaserSim actuator and a LECODirector viewer, not initialised
+    at load (an experiment does not keep the plugin settings: host / port / actor are set before its init)."""
+    from pymodaq_gui.parameter import ioxml
+    from pymodaq.utils.managers.modules.utils import ModuleType
+    from pymodaq_plugins_lasercontrol.tools.sim_preset import _find, _fix_none_values, build_experiment_52, \
+        target_path
+    p = build_experiment_52(PRESET, (('Sim OC_H', 'OC_H'),), ())
+    dets = p.child(ModuleType.Detector.value)
+    dets.addNew(('DAQ0D', 'LECODirector'))
+    d = dets.children()[-1]
+    d.child('name').setValue(title)
+    _find(d, 'init').setValue(False)
+    _fix_none_values(p)
+    path = target_path(PRESET)
+    ioxml.parameter_to_xml_file(p, path.with_suffix(''), overwrite=True)
+    return path
+
+
+def _init_director_52(dashboard, title: str, host: str, port: int, actor: str, timeout: float = 20.0) -> bool:
+    from pymodaq_plugins_lasercontrol.tools.sim_preset import _find
+
+    def director():
+        return next((d for d in dashboard.detector_modules if d.title == title), None)
+    _wait(lambda: director() is not None, timeout)       # the modules are created by the event loop
+    det = director()
+    if det is None:
+        return False
+    ds = _find(det.settings, 'detector_settings')       # not main_settings > leco (the module's own LECO link)
+    for key, value in (('host', host), ('port', int(port)), ('actor_name', actor)):
+        child = _find(ds, key) if ds is not None else None
+        if child is not None:
+            child.setValue(value)
+    det.init_hardware_ui(True)
+    return _wait(lambda: bool(det.initialized_state), timeout)
+
+
 def run(host: str, port: int, actor: str, seconds: float, title: str = 'LECO_B', watch=()) -> int:
     _app()
     from qtpy import QtWidgets
@@ -73,26 +110,35 @@ def run(host: str, port: int, actor: str, seconds: float, title: str = 'LECO_B',
     from pymodaq.dashboard import DashBoard
     import pymodaq_plugins_lasercontrol.ui.app as app_mod
     from pymodaq_plugins_lasercontrol.tools.sim_preset import is_pymodaq_52, write_sim_config
-    if is_pymodaq_52():
-        print('only for PyMoDAQ 5.1 dashboard presets')
-        return 2
+    v52 = is_pymodaq_52()
     tmp = Path(tempfile.mkdtemp(prefix='leco_lab_check_'))
     cwd = os.getcwd()
     os.chdir(tmp)                       # the 5.1 dashboard creates its default data folder relative to the cwd
     orig_resolve = app_mod.resolve_paths
     app_mod.resolve_paths = lambda config, machine, override=None: orig_resolve(config, 'leco_check', tmp)
     DashBoard.check_update = lambda self, show=True: False
-    path = write_sim_config(PRESET, (('Sim OC_H', 'OC_H'),), (), overwrite=True, leco=(title, host, port, actor))
+    if v52:
+        path = _write_experiment_52(title)
+    else:
+        path = write_sim_config(PRESET, (('Sim OC_H', 'OC_H'),), (), overwrite=True,
+                                leco=(title, host, port, actor))
     dashboard = None
     code = 1
     try:
-        win = QtWidgets.QMainWindow()
-        area = DockArea()
-        win.setCentralWidget(area)
-        win.show()
-        dashboard = DashBoard(area)
-        dashboard.set_preset_mode(path)
-        ext = dashboard.load_extension_from_name('Laser Control')
+        if v52:
+            from pymodaq.dashboard import load_dashboard_with_experiment
+            dashboard, ext, _win = load_dashboard_with_experiment(PRESET, 'LASERCONTROL')
+            if not _init_director_52(dashboard, title, host, port, actor):
+                print(f'RESULT: FAILED (LECODirector {title} not initialised: coordinator / relay of B running?)')
+                return 1
+        else:
+            win = QtWidgets.QMainWindow()
+            area = DockArea()
+            win.setCentralWidget(area)
+            win.show()
+            dashboard = DashBoard(area)
+            dashboard.set_preset_mode(path)
+            ext = dashboard.load_extension_from_name('Laser Control')
         _wait(timeout=2.0)
         a = ext.app
         a.start_detectors()
