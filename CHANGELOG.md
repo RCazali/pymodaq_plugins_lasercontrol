@@ -11,6 +11,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
   `README.rst` instead of `README.md`, docstrings and `_epsilons` in the LaserSim plugins.
 
 ### Added
+- **`sim_preset --leco-b HOST:PORT:ACTOR`**: the simulator preset gets a LECODirector viewer `LECO_B` receiving
+  the Camera Station relay of computer B (PyMoDAQ 5.1), to test the LECO link in the lab with simulated motors
+  only (`--no-roles --no-demo` leave the roles file and the Laser Control presets untouched).
 - **Space = shake** in the jog window (as the old Alignment tab), only while it is armed (green border).
 - **Jog window: Setup group** in its settings: the preset (and **Save preset**), **Import** a setup of the
   Dashboard's Keyboard Jog (its modules matched to the roles), **Export** this configuration as one. Works with

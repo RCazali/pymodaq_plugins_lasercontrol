@@ -90,6 +90,26 @@ def _find_last_index(list_children=(), name_prefix='', format_string='02.0f'):
     return f'{(max(idx) + 1) if idx else 0:{format_string}}'
 
 
+def add_leco_director_51(p, title: str, host: str, port: int, actor: str):
+    """Add a LECODirector 0D viewer receiving the relay of computer B (channel keys ``<title>/...``)"""
+    p.child('Detectors').addNew(('DAQ0D', 'LECODirector'))
+    d = p.child('Detectors').children()[-1]
+    d.child('name').setValue(title)
+    module_name = _find(d.child('params'), 'module_name')
+    if module_name is not None:
+        module_name.setValue(title)
+    ds = _find(d.child('params'), 'detector_settings')
+    for key, value in (('host', host), ('port', int(port)), ('actor_name', actor)):
+        child = _find(ds, key)
+        if child is None:
+            raise KeyError(f'LECODirector has no setting {key!r}')
+        child.setValue(value)
+    saver = _find(d.child('params'), 'saver_settings')
+    if saver is not None:
+        saver.remove()
+    _fix_none_values(d)
+
+
 def build_preset_51(name: str, moves: Sequence[Tuple[str, str]], detectors: Iterable[str]):
     """Dashboard preset of PyMoDAQ 5.0 / 5.1 (what the preset editor would produce)."""
     from pymodaq_gui.parameter import Parameter
@@ -150,13 +170,21 @@ def target_path(name: str = DEFAULT_NAME) -> Path:
 
 
 def write_sim_config(name: str = DEFAULT_NAME, moves: Sequence[Tuple[str, str]] = DEFAULT_MOVES,
-                     detectors: Iterable[str] = DEFAULT_DETECTORS, overwrite: bool = False) -> Path:
-    """Write the preset (5.1) or experiment (5.2) file and return its path."""
+                     detectors: Iterable[str] = DEFAULT_DETECTORS, overwrite: bool = False,
+                     leco: Optional[Tuple[str, str, int, str]] = None) -> Path:
+    """Write the preset (5.1) or experiment (5.2) file and return its path.
+
+    ``leco``: (viewer title, coordinator host, port, LECO name of the relay of computer B) adds a LECODirector
+    viewer that receives computer B (PyMoDAQ 5.1 presets only)."""
     from pymodaq_gui.parameter import ioxml
     path = target_path(name)
     if path.exists() and not overwrite:
         raise FileExistsError(f'{path} already exists (use --force to replace it)')
+    if leco is not None and is_pymodaq_52():
+        raise NotImplementedError('--leco-b is only implemented for PyMoDAQ 5.1 presets')
     p = build_experiment_52(name, moves, detectors) if is_pymodaq_52() else build_preset_51(name, moves, detectors)
+    if leco is not None:
+        add_leco_director_51(p, *leco)
     ioxml.parameter_to_xml_file(p, path.with_suffix(''), overwrite=True)
     return path
 
@@ -423,22 +451,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--force', action='store_true',
                         help=f'replace the dashboard preset / experiment and the "{DEMO_PRESET}" preset')
     parser.add_argument('--no-roles', action='store_true', help='do not write the roles file of the simulator')
+    parser.add_argument('--no-demo', action='store_true', help=f'do not write the "{DEMO_PRESET}" preset')
+    parser.add_argument('--leco-b', metavar='HOST:PORT:ACTOR',
+                        help='add a LECODirector viewer "LECO_B" receiving the relay ACTOR of computer B through the '
+                             'coordinator HOST:PORT (PyMoDAQ 5.1), e.g. localhost:12300:CameraStation')
     args = parser.parse_args(argv)
+    leco = None
+    if args.leco_b:
+        host, port, actor = args.leco_b.rsplit(':', 2)
+        leco = ('LECO_B', host, int(port), actor)
     from qtpy import QtWidgets
     if QtWidgets.QApplication.instance() is None:
         _app = QtWidgets.QApplication(sys.argv[:1])  # noqa: F841  (Qt objects need an application)
     kind = 'experiment' if is_pymodaq_52() else 'preset'
     try:
-        path = write_sim_config(args.name, overwrite=args.force)
+        path = write_sim_config(args.name, overwrite=args.force, leco=leco)
         print(f'simulator {kind} written: {path}')
     except FileExistsError as e:
         print(f'{e}\n  (the Steer / PD test benches need the up-to-date file: run again with --force)')
     if not args.no_roles:
         roles = write_sim_roles(overwrite=False)
         print(f'simulator roles added: {roles}' if roles else 'simulator roles already present')
-    demo = write_demo_preset(overwrite=args.force)
-    print(f'Laser Control preset "{DEMO_PRESET}" written: {demo}' if demo else
-          f'Laser Control preset "{DEMO_PRESET}" already present: kept (--force to replace it)')
+    if not args.no_demo:
+        demo = write_demo_preset(overwrite=args.force)
+        print(f'Laser Control preset "{DEMO_PRESET}" written: {demo}' if demo else
+              f'Laser Control preset "{DEMO_PRESET}" already present: kept (--force to replace it)')
     print(f"Open the dashboard with '{args.name}', then the 'Laser Control' extension,\n"
           f"or: python -m pymodaq_plugins_lasercontrol.extensions.laser_control {args.name}\n"
           f"then Presets → '{DEMO_PRESET}' → Load, and ▶ Acquisition in the status bar.")

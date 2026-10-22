@@ -319,6 +319,23 @@ def test_simulator_dashboard_preset_with_more_than_ten_actuators():
     assert [c.child('name').value() for c in p.child('Moves').children()] == [t for t, _ in sim_preset.DEFAULT_MOVES]
 
 
+def test_simulator_dashboard_preset_with_the_leco_viewer_of_computer_b():
+    """--leco-b: a LECODirector viewer LECO_B receiving the relay of computer B (lab LECO tests without motors)."""
+    pytest.importorskip('pymodaq')
+    from pmd_helpers import app
+    from pymodaq_plugins_lasercontrol.tools import sim_preset
+    if sim_preset.is_pymodaq_52():
+        pytest.skip('dashboard presets only exist up to PyMoDAQ 5.1')
+    app()
+    p = sim_preset.build_preset_51('t', sim_preset.DEFAULT_MOVES[:2], ())
+    sim_preset.add_leco_director_51(p, 'LECO_B', '192.168.0.100', 12300, 'CameraStation')
+    det = p.child('Detectors').children()[-1]
+    assert det.child('name').value() == 'LECO_B'
+    ds = sim_preset._find(det.child('params'), 'detector_settings')
+    assert (sim_preset._find(ds, 'host').value(), sim_preset._find(ds, 'port').value(),
+            sim_preset._find(ds, 'actor_name').value()) == ('192.168.0.100', 12300, 'CameraStation')
+
+
 def test_simulator_coupled_benches_follow_their_matrix():
     """The coupled benches respond exactly with COUPLED_SIMPLE / BEAM_WALK (noise and drift off)."""
     from pymodaq_plugins_lasercontrol.hardware.sim import BEAM_WALK, COUPLED_SIMPLE, LaserSimModel
