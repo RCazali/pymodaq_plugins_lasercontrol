@@ -10,6 +10,9 @@ The LECO coordinator and the relay of computer B must run first::
     python -m pymodaq_plugins_lasercontrol.tools.leco_lab_check --actor CameraStation_linkcheck --seconds 20
 
 Exit code 0 when the channels of B reached Laser Control with a growing frame counter.
+
+``--watch Cam1/x Cam2/x`` prints every second whether an automation could use these channels (USABLE) or would
+hold (HELD and why): to check what happens when B stops a camera, its relay or the network.
 """
 from __future__ import annotations
 
@@ -47,7 +50,23 @@ def _wait(pred=lambda: False, timeout=1.0):
     return pred()
 
 
-def run(host: str, port: int, actor: str, seconds: float, title: str = 'LECO_B') -> int:
+def _print_watch(signals, title: str, keys, elapsed: float):
+    """One line per second: state of the detector and, per watched channel, what an automation would see."""
+    st = signals.detector_status(title)
+    parts = [f'{elapsed:5.1f} s', f'{title} {st.state}' + (f' ({st.reason})' if st.reason else '')]
+    for key in keys:
+        ch = f'{title}/{key}'
+        s = signals.latest(ch)
+        ok, why = signals.freshness(ch)
+        if s is None:
+            parts.append(f'{key}: -')
+            continue
+        meas = f' frame {s.meas:.0f}' if s.meas is not None else ''
+        parts.append(f'{key}={s.value:.4g} seq {s.seq}{meas} -> ' + ('USABLE' if ok else f'HELD: {why}'))
+    print(' | '.join(parts), flush=True)
+
+
+def run(host: str, port: int, actor: str, seconds: float, title: str = 'LECO_B', watch=()) -> int:
     _app()
     from qtpy import QtWidgets
     from pymodaq_gui.utils.dock import DockArea
@@ -80,9 +99,13 @@ def run(host: str, port: int, actor: str, seconds: float, title: str = 'LECO_B')
         prefix = f'{title}/'
         got = _wait(lambda: any(c.startswith(prefix) for c in a.core.signals.channels()), 20)
         counters = []
+        if watch:
+            a.core.signals.set_heartbeats({title: f'{prefix}Stats/frame_counter'})
         t0 = time.time()
         while time.time() - t0 < seconds:
             _wait(timeout=1.0)
+            if watch:
+                _print_watch(a.core.signals, title, watch, time.time() - t0)
             fc = [c for c in a.core.signals.channels() if c.startswith(prefix) and c.endswith('frame_counter')]
             if fc:
                 try:
@@ -120,8 +143,11 @@ def main(argv=None) -> int:
     parser.add_argument('--port', type=int, default=12300)
     parser.add_argument('--actor', required=True, help='LECO name of the relay of computer B')
     parser.add_argument('--seconds', type=float, default=20.0)
+    parser.add_argument('--watch', nargs='*', default=[], metavar='CHANNEL',
+                        help='channels of B to follow every second (e.g. Cam1/x Cam2/x), with the heartbeat '
+                             'Stats/frame_counter declared: what an automation would do with them (USABLE / HELD)')
     a = parser.parse_args(argv)
-    return run(a.host, a.port, a.actor, a.seconds)
+    return run(a.host, a.port, a.actor, a.seconds, watch=a.watch)
 
 
 if __name__ == '__main__':

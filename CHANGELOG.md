@@ -23,6 +23,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
   `README.rst` instead of `README.md`, docstrings and `_epsilons` in the LaserSim plugins.
 
 ### Added
+- **`leco_lab_check --watch Cam1/x Cam2/x`**: every second, the state of the LECO detector and whether an
+  automation could use each channel (USABLE) or would hold (HELD and why), with the heartbeat of B declared: to
+  check in the lab what happens when B stops a camera, its relay or the network.
 - **`sim_preset --leco-b HOST:PORT:ACTOR`**: the simulator preset gets a LECODirector viewer `LECO_B` receiving
   the Camera Station relay of computer B (PyMoDAQ 5.1), to test the LECO link in the lab with simulated motors
   only (`--no-roles --no-demo` leave the roles file and the Laser Control presets untouched).
