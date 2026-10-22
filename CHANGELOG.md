@@ -4,6 +4,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 
 ## [Unreleased]
 
+### Fixed
+- **A camera result of computer B could be used twice, or before the move was over.** B publishes at a fixed rate
+  (2 Hz) whatever the analysis rate of each camera, so one result is received several times, each time with a
+  later reception time: a PID could integrate the same measurement twice, and a result taken *before* its last
+  move, received after the settle time, counted as taken after it. A group that carries its measurement number
+  and age (`<det>/<camera>/frame` and `/age`, the cameras of the Camera Station) now gives a new sample only when
+  its frame changes, timed at its acquisition (reception - age). PID, optimiser, scans and calibration wait for a
+  new measurement taken after the end of their last move + settle. Other detectors are unchanged.
+- **A frozen camera is stale even while B keeps publishing**: a measurement taken more than 2 x *Max data age*
+  ago holds the automations ("measurement N taken X s ago (source frozen)"); before, only the heartbeat of B
+  (which keeps advancing) and B's own 3 s staleness rule protected them.
+
 ### Changed
 - **PyMoDAQ acceptance checks** (`tests/test_plugin_package_structure.py`, PyMoDAQ >= 5.3.2) pass with no error,
   warning or todo on PyMoDAQ 5.3.8: closing goes through the `_quit_fun` guard (PMQ339), hooks

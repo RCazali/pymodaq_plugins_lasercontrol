@@ -274,7 +274,7 @@ class OptimizerAutomation(Automation):
             if len(buf) >= self._needed:
                 continue
             s = core.signals.latest(core.roles.channel_for(r))
-            if s is not None and s.seq > self._last_seq[r] and s.t >= self._t_min and is_finite(s.value):
+            if s is not None and s.seq > self._last_seq[r] and s.t_acq >= self._t_min and is_finite(s.value):
                 buf.append(s.value)
                 self._last_seq[r] = s.seq
         return all(len(b) >= self._needed for b in self._buf.values())

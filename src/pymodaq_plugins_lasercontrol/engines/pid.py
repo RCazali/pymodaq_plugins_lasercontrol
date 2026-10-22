@@ -243,8 +243,8 @@ class PIDLoop:
         if sample is None or sample.seq <= self.last_sample_seq:
             return None                       # wait for a new frame (no double counting)
         last_done = [t for t in (core.last_done_t(r) for r in roles) if t is not None]
-        if last_done and sample.t < max(last_done) + self.settings.settle_s:
-            return None                       # sample older than the end of the last move + settle
+        if last_done and sample.t_acq < max(last_done) + self.settings.settle_s:
+            return None                       # measurement taken before the end of the last move + settle
         if not is_finite(sample.value):
             return None                       # S12 (the core holds on stale/invalid data anyway)
         self.last_sample_seq = sample.seq

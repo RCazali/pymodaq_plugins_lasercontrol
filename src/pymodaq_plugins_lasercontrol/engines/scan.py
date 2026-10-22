@@ -146,7 +146,7 @@ class Scan1DAutomation(Automation):
                 if len(buf) >= self.samples:
                     continue
                 s = core.signals.latest(core.roles.channel_for(r))
-                if s is not None and s.seq > self._seq[r] and s.t >= self._t_min:
+                if s is not None and s.seq > self._seq[r] and s.t_acq >= self._t_min:
                     buf.append(s.value if is_finite(s.value) else math.nan)
                     self._seq[r] = s.seq
             if all(len(b) >= self.samples for b in self._buf.values()):

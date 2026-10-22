@@ -394,7 +394,7 @@ class CalibrationAutomation(Automation):
         detectors at different rates)."""
         for sig in self.signals:
             s = core.signals.latest(core.roles.channel_for(sig))
-            if s is not None and s.seq > self._seq[sig] and s.t >= self._t_done:
+            if s is not None and s.seq > self._seq[sig] and s.t_acq >= self._t_done:
                 self._seq[sig] = s.seq
                 self._frames[sig].append((s.t, float(s.value) if is_finite(s.value) else math.nan))
 

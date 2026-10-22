@@ -7,7 +7,15 @@ never trigger grabs: they read the latest value and its age. A value is *fresh* 
 * it was received less than ``max_age_s`` ago,
 * and, when a heartbeat channel (frame counter of computer B, O9-A) is declared for its
   detector, that counter advanced during the last ``max_age_s`` seconds (frozen data are stale
-  even if frames keep arriving).
+  even if frames keep arriving),
+* and, for a group that carries its own measurement number and age (``<det>/<group>/frame`` and
+  ``<det>/<group>/age``, a camera of computer B), its measurement was *taken* less than
+  ``MEASUREMENT_AGE_FACTOR * max_age_s`` ago (a frozen camera is stale even if B keeps publishing).
+
+Measurement identity: computer B publishes at a fixed rate, so one camera result can be received
+several times. In such a group a sample counts as new (``seq`` +1) only when its ``frame`` changed, and
+``t_acq`` is its acquisition time (reception time - ``age``): automations wait for a new measurement
+taken after the end of their last move, never a re-publication of an older one.
 """
 from __future__ import annotations
 
@@ -33,8 +41,14 @@ class Sample:
     value: float
     t: float          # monotonic reception time
     wall: float       # wall clock reception time
-    seq: int          # per channel frame counter (increments at every received frame)
+    seq: int          # per channel measurement counter (increments at every new measurement)
     detector: str
+    t_acq: Optional[float] = None    # monotonic acquisition time (reception time - age); None: = t
+    meas: Optional[float] = None     # measurement number of the source (camera frame), None if unknown
+
+    def __post_init__(self):
+        if self.t_acq is None:
+            self.t_acq = self.t
 
 
 class History:
@@ -75,8 +89,17 @@ class DetectorStatus:
     reason: str = ''
 
 
+def _number(values: Dict[str, float], key: str) -> Optional[float]:
+    try:
+        v = float(values[key])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) else None
+
+
 class SignalSource:
     WARN_FRACTION = 0.6
+    MEASUREMENT_AGE_FACTOR = 2.0     # a measurement taken longer ago than this x max_age_s is stale
 
     def __init__(self, clock: Optional[Clock] = None, max_age_s: float = 1.0,
                  history_len: int = 6000):
@@ -126,14 +149,29 @@ class SignalSource:
         st.last_frame_t = t
         self.frames_total += 1
 
+        groups: Dict[str, Tuple[Optional[float], float]] = {}   # 'Det/Cam1' -> (frame, acquisition time)
         for key, raw in values.items():
             try:
                 v = float(raw)
             except (TypeError, ValueError):
                 v = math.nan
+            group = key.rsplit('/', 1)[0] if key.count('/') >= 2 else None
+            meas, t_acq = None, t
+            if group is not None:
+                if group not in groups:      # both are needed: a plain channel may be called 'frame'
+                    frame = _number(values, f'{group}/frame')
+                    age = _number(values, f'{group}/age')
+                    known = frame is not None and frame >= 0 and age is not None and age >= 0
+                    groups[group] = (frame, t - age) if known else (None, t)
+                meas, t_acq = groups[group]
             prev = self._samples.get(key)
-            seq = prev.seq + 1 if prev is not None else 1
-            self._samples[key] = Sample(v, t, wall, seq, detector)
+            if prev is None:
+                seq = 1
+            elif meas is not None and prev.meas == meas:
+                seq, t_acq = prev.seq, prev.t_acq      # the same measurement published again: not new
+            else:
+                seq = prev.seq + 1
+            self._samples[key] = Sample(v, t, wall, seq, detector, t_acq, meas)
             self._channel_det[key] = detector
             hist = self._history.get(key)
             if hist is None:
@@ -223,6 +261,10 @@ class SignalSource:
         age = self.clock.now() - s.t
         if age > self.max_age_s:
             return False, f'{key}: stale ({age:.1f} s)'
+        if s.meas is not None:
+            taken = self.clock.now() - s.t_acq
+            if taken > self.MEASUREMENT_AGE_FACTOR * self.max_age_s:
+                return False, f'{key}: measurement {s.meas:.0f} taken {taken:.1f} s ago (source frozen)'
         st = self.detector_status(s.detector)
         if st.state == 'stale':
             return False, f'{key}: {st.reason}'
