@@ -6,7 +6,7 @@ Stabilisation of a mode-locked thin-disk laser with intracavity XUV generation: 
 signals (camera centroids, power...), periodic drift optimiser, routines, 1D scan, keyboard alignment,
 safety supervisor (S1-S12), HDF5 recording, versioned presets, logical roles per machine.
 
-Works with PyMoDAQ 5.1.x (developed on 5.1.10) and 5.2.x.
+Works with PyMoDAQ 5.1.x (developed on 5.1.10), 5.2.x and 5.3.x.
 """
 from pathlib import Path
 
@@ -95,9 +95,6 @@ class LaserControl(CustomExt):
     def setup_docks_and_widgets(self):
         self.app.build(self.dockarea)
 
-    def setup_docks(self):        # pymodaq_gui 5.0.x calls setup_docks from setup_ui
-        self.setup_docks_and_widgets()
-
     def setup_menus_and_toolbars(self, menubar=None):
         # PyMoDAQ >= 5.2: dashboard toolbar (show / hide the dashboard, experiment and state menus).
         # DashBoard.load_extension checks its 'show_dashboard' action once the extension is created.
@@ -107,9 +104,6 @@ class LaserControl(CustomExt):
                 create(add_break=False)
             except Exception as e:  # pragma: no cover - never block the extension for a toolbar
                 logger.warning(f'dashboard toolbar not created: {e}')
-
-    def setup_menu(self, menubar=None):
-        pass
 
     def setup_actions(self):
         self.add_action('estop', "Emergency stop", _icon('#c0392b', 'octagon'),
@@ -171,18 +165,26 @@ class LaserControl(CustomExt):
         return super().eventFilter(obj, event)
 
     def _quit_fun(self) -> bool:
-        return True       # PyMoDAQ 5.3: CustomExt.quit_fun does nothing unless this hook returns True
-
-    def quit_fun(self) -> bool:
+        """Guard of CustomExt.quit_fun: the automations are stopped (no question asked), then CustomExt.quit_fun
+        closes the window"""
         if self.app is not None:
             self.app.shutdown()
-        try:
-            super().quit_fun()
-        except Exception:
-            pass
+        return True
+
+
+if not hasattr(CustomExt, 'setup_docks_and_widgets'):  # PyMoDAQ 5.1: setup_ui calls the former hook names
+    LaserControl.setup_docks = LaserControl.setup_docks_and_widgets
+    LaserControl.setup_menu = LaserControl.setup_menus_and_toolbars
+
+if not hasattr(CustomExt, '_quit_fun'):  # PyMoDAQ 5.1: quit_fun only closes the window, without the _quit_fun guard
+    def _quit_with_guard(self) -> bool:
+        if not self._quit_fun():
+            return False
         if self.mainwindow is not None:
             self.mainwindow.close()
-        return True       # 5.3: the "Quit" button of the window closes it only if this is True
+        return True
+
+    LaserControl.quit_fun = _quit_with_guard
 
 
 def main():

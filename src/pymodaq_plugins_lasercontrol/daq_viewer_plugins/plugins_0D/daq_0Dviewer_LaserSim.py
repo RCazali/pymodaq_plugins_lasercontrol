@@ -19,6 +19,10 @@ from pymodaq_plugins_lasercontrol.hardware.sim import LaserSimModel
 
 
 class DAQ_0DViewer_LaserSim(DAQ_Viewer_base):
+    """Simulated 0D data of the LaserSim laser model (centroids, power, XUV flux, frame counter), no hardware nor
+    driver. The values follow the positions of the ``LaserSim`` actuators of this package; faults (mute, freeze,
+    noise, drift, intensity drops) are injected from the settings.
+    """
     params = comon_parameters + [
         {'title': 'Frame period (ms):', 'name': 'wait_time', 'type': 'int', 'value': 500, 'min': 10},
         {'title': 'Noise scale:', 'name': 'noise', 'type': 'float', 'value': 1.0, 'min': 0.0},

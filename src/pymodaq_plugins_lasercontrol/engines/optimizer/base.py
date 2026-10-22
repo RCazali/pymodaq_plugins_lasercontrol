@@ -115,13 +115,13 @@ class OptimizerAlgorithm:
     label = 'base'
 
     def start(self, ctx: OptContext) -> None:
-        raise NotImplementedError
+        raise NotImplementedError  # noqa: PMQ202 interface, implemented by the subclasses
 
     def propose(self) -> Optional[Request]:
-        raise NotImplementedError
+        raise NotImplementedError  # noqa: PMQ202 interface, implemented by the subclasses
 
     def observe(self, result) -> None:
-        raise NotImplementedError
+        raise NotImplementedError  # noqa: PMQ202 interface, implemented by the subclasses
 
     def close(self) -> None:
         pass

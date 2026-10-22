@@ -20,16 +20,16 @@ class ActuatorPort:
         return ''
 
     def position(self) -> Optional[float]:
-        raise NotImplementedError
+        raise NotImplementedError  # noqa: PMQ202 interface, implemented by the subclasses
 
     def move_abs(self, value: float) -> None:
-        raise NotImplementedError
+        raise NotImplementedError  # noqa: PMQ202 interface, implemented by the subclasses
 
     def move_rel(self, delta: float) -> None:
-        raise NotImplementedError
+        raise NotImplementedError  # noqa: PMQ202 interface, implemented by the subclasses
 
     def stop(self) -> None:
-        raise NotImplementedError
+        raise NotImplementedError  # noqa: PMQ202 interface, implemented by the subclasses
 
     def request_position(self) -> None:
         pass
@@ -38,7 +38,7 @@ class ActuatorPort:
         return False
 
     def jog(self, direction: int, speed: float) -> None:
-        raise NotImplementedError
+        raise NotImplementedError  # noqa: PMQ202 interface, implemented by the subclasses
 
     def set_setting(self, path: List[str], value) -> bool:
         return False

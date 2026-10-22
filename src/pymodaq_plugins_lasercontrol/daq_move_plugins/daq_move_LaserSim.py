@@ -13,15 +13,19 @@ from pymodaq_plugins_lasercontrol.hardware.sim import AXES, UNITS, LaserSimModel
 
 
 class DAQ_Move_LaserSim(DAQ_Move_base):
+    """Simulated motor of the LaserSim laser model: one axis of the shared simulation, no hardware nor driver.
+
+    Tested with the ``LaserSim`` 0D detector of this package (office tests of Laser Control).
+    """
     _controller_units = UNITS
     is_multiaxes = True
     _axis_names = list(AXES)
-    _epsilon = 0.01
+    _epsilons = 0.01
     data_actuator_type = DataActuatorType.DataActuator
 
     params = [
         {'title': 'Speed (µm/s):', 'name': 'speed', 'type': 'float', 'value': 50.0, 'min': 0.001},
-    ] + comon_parameters_fun(is_multiaxes, axis_names=_axis_names, epsilon=_epsilon)
+    ] + comon_parameters_fun(is_multiaxes, axis_names=_axis_names, epsilon=_epsilons)
 
     def ini_attributes(self):
         self.controller: LaserSimModel = None

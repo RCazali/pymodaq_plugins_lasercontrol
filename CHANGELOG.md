@@ -4,6 +4,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
 
 ## [Unreleased]
 
+### Changed
+- **PyMoDAQ acceptance checks** (`tests/test_plugin_package_structure.py`, PyMoDAQ >= 5.3.2) pass with no error,
+  warning or todo on PyMoDAQ 5.3.8: closing goes through the `_quit_fun` guard (PMQ339), hooks
+  `setup_docks_and_widgets` / `setup_menus_and_toolbars` (PMQ334, the old names are kept for PyMoDAQ 5.1 only),
+  `README.rst` instead of `README.md`, docstrings and `_epsilons` in the LaserSim plugins.
+
 ### Added
 - **Space = shake** in the jog window (as the old Alignment tab), only while it is armed (green border).
 - **Jog window: Setup group** in its settings: the preset (and **Save preset**), **Import** a setup of the

@@ -27,7 +27,7 @@ maintainers = [
 # nottodo: leave everything below as is (PyMoDAQ plugin template conventions)
 
 dynamic = ["version", "urls", "entry-points"]
-readme = "README.md"
+readme = "README.rst"
 license = { file = "LICENSE" }
 requires-python = ">=3.8"
 
@@ -64,7 +64,7 @@ source = "vcs"
 fallback-version = "0.2.0"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/hatch_build.py", "/README.md", "/LICENSE", "/docs", "/tests"]
+include = ["/src", "/hatch_build.py", "/README.rst", "/LICENSE", "/docs", "/tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pymodaq_plugins_lasercontrol"]
