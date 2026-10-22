@@ -23,6 +23,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: git 
   `README.rst` instead of `README.md`, docstrings and `_epsilons` in the LaserSim plugins.
 
 ### Added
+- **`tools/motor_check`**: checks that each motor answers, +1 then -1 in its units (back to its start), one motor
+  at a time and one command per second at most. The first motor that does not answer (no move done before its
+  timeout, target not reached, not back to its start, exception) is stopped and **every motor is locked**: the
+  file `~/.pymodaq/laser_control/MOTOR_LOCK.txt` refuses any further run until a person deletes it. Motors out of
+  their bounds or with an unreadable position are skipped; `--dry-run` only reads.
 - **`leco_lab_check --watch Cam1/x Cam2/x`**: every second, the state of the LECO detector and whether an
   automation could use each channel (USABLE) or would hold (HELD and why), with the heartbeat of B declared: to
   check in the lab what happens when B stops a camera, its relay or the network.
